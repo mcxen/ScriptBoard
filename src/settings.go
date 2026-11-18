@@ -25,7 +25,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 		inputW = 180
 	}
 	muted := func(text string) func() {
-		return func() { ui.Text(c, text).FontSize(fsSmall + 1).TextColor(p.muted) }
+		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
 
 	page(c, compact, func() {

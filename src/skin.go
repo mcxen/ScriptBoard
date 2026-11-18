@@ -53,21 +53,23 @@ var brandDefault = func() *theme.Config {
 // brandMac9 is the Mac OS 9 look. It is a light look: the dark appearance uses
 // the same colors, so a dark system does not turn the classic Mac dark.
 var brandMac9 = func() *theme.Config {
+	// The colors of AvaMedia's Platinum skin (PlatinumTokens.axaml): a gray
+	// desk, light panels, a slate accent, and text that is near black.
 	t := *theme.Light()
-	t.BgLayout = ui.Hex("#E2E2E2")    // the desk behind the windows
-	t.BgContainer = ui.Hex("#F4F4F4") // windows, cards and panels
-	t.BgElevated = ui.Hex("#FFFFFF")  // menus and the field under a cursor
-	t.BorderSecondary = ui.Hex("#8C8C8C")
-	t.Border = ui.Hex("#6E6E6E")
-	t.Primary = ui.Hex("#2B5FCC") // the highlight blue of the Platinum look
-	t.PrimaryHover = ui.Hex("#2250B0")
-	t.PrimaryActive = ui.Hex("#1B4290")
+	t.BgLayout = ui.Hex("#CCCCCC")    // the desk behind the windows
+	t.BgContainer = ui.Hex("#EEEEEE") // windows, cards and panels
+	t.BgElevated = ui.Hex("#FFFFFF")  // fields, and the menus
+	t.BorderSecondary = ui.Hex("#888888")
+	t.Border = ui.Hex("#555555")
+	t.Primary = ui.Hex("#3D4E80") // the slate accent
+	t.PrimaryHover = ui.Hex("#34446E")
+	t.PrimaryActive = ui.Hex("#2B3A5F")
 	t.PrimaryForeground = ui.Hex("#FFFFFF")
-	t.Text = ui.Hex("#000000")
-	t.TextSecondary = ui.Hex("#3A3A3A")
-	t.TextTertiary = ui.Hex("#5C5C5C")
-	t.FillTertiary = ui.Hex("#D6D6D6")
-	t.FillQuaternary = ui.Hex("#CCCCCC")
+	t.Text = ui.Hex("#111111")
+	t.TextSecondary = ui.Hex("#444444")
+	t.TextTertiary = ui.Hex("#777777")
+	t.FillTertiary = ui.Hex("#DDDDDD")
+	t.FillQuaternary = ui.Hex("#EEEEEE")
 	// Square corners everywhere: controls, cards and tags.
 	t.BorderRadius, t.BorderRadiusLG, t.BorderRadiusSM, t.BorderRadiusXS = 0, 0, 0, 0
 	dark := t
@@ -85,6 +87,7 @@ func brandFor(name string) *theme.Config {
 // applySkin makes the frame use the skin's theme, and sets the page's font
 // and background when the skin has them.
 func applySkin(c *ui.Context) {
+	setTypeScale(isMac())
 	brandFor(curSkin()).Apply(c)
 }
 
@@ -92,9 +95,9 @@ func applySkin(c *ui.Context) {
 // "" for the default skin, which keeps the system font.
 func skinFont() string {
 	if curSkin() == skinMac9 {
-		// Geneva is the classic Mac's text face; a system without it (Android)
-		// falls back to its own.
-		return "Geneva, system-ui"
+		// The bundled pixel face is Platinum's own (Fusion Pixel 12px, OFL);
+		// Geneva and the system's face follow if it is not registered.
+		return "Fusion Pixel 12px Prop zh-Hans, Geneva, system-ui"
 	}
 	return ""
 }
@@ -120,3 +123,18 @@ func skinCard(c *ui.Context) ui.Element {
 	}
 	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
 }
+
+// setTypeScale sets the type sizes of the skin. The default has the app's
+// scale. Mac OS 9 uses its 12 DIP pixel grid for all text, and 24 for the
+// counts: the pixel font has no other sizes that stay sharp.
+func setTypeScale(mac bool) {
+	if mac {
+		fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 12, 12, 12, 12, 12
+		fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 12, 12, 12, 24
+		return
+	}
+	fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 22, 15, 13.5, 12, 11
+	fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 13, 14, 20, 17, 14.5, 20
+}
+
+func init() { setTypeScale(false) }

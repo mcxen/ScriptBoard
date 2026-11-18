@@ -283,7 +283,7 @@ func (a *app) communityCard(c *ui.Context, s community.Script, width float32) {
 			chip(c, tr("下载 ")+strconv.Itoa(s.Downloads), p.muted, p.chip)
 		})
 		if s.Description != "" {
-			ui.Text(c, s.Description).FontSize(fsSmall + 1).TextColor(p.muted)
+			ui.Text(c, s.Description).FontSize(fsCaption).TextColor(p.muted)
 		}
 		if btn(c, tr("下载并导入")).Clicked() && !a.comm.busy {
 			a.importFromCommunity(s.ID)

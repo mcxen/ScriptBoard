@@ -15,6 +15,8 @@ import (
 // English tests switch it themselves.
 func TestMain(m *testing.M) {
 	os.Setenv("SCRIPTBOARD_LANG", "zh")
+	// The pixel font of the Mac OS 9 skin, as the app registers it.
+	_ = registerSkinFonts()
 	os.Exit(m.Run())
 }
 

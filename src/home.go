@@ -212,7 +212,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 	if hasTag {
 		titleW -= 56 + 10
 	}
-	title = fitText(title, max(titleW, 40), fsSmall+1)
+	title = fitText(title, max(titleW, 40), fsCaption)
 
 	el := card(c).Width(w).Height(h).Padding(16 * s).Gap(6 * s).Cursor(ui.CursorPointer).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
@@ -220,7 +220,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 			// The title gives way, with an ellipsis, so the tag and the buttons
 			// stay whole on a small card.
 			ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-				ui.Text(c, title).FontSize(fsSmall + 1).TextColor(p.muted).NoWrap()
+				ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
 			})
 			if g := st.res.Chart; ready && g != nil && g.Type == "gauge" && g.Gauge != nil {
 				_, frac := remaining(g.Gauge)

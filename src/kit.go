@@ -28,12 +28,14 @@ const (
 	gapItem    = 12 // between items inside a block
 	radCard    = 14
 	radControl = 8
+)
 
-	fsTitle   = 22
-	fsHeading = 15
-	fsBody    = 13.5
-	fsSmall   = 12
-	fsTiny    = 11
+// Type sizes, in DIPs. The default skin has a scale; Mac OS 9 has its pixel
+// grid of 12 DIPs, and 24 for counts (setTypeScale).
+var (
+	fsTitle, fsHeading, fsBody, fsSmall, fsTiny float32
+	fsCaption, fsLabel, fsSubtitle, fsEmphasis  float32
+	fsBodyLarge, fsCount                        float32
 )
 
 // The look of the app is Lobe UI's (github.com/lobehub/lobe-mygo): its tokens
@@ -168,7 +170,7 @@ func header(c *ui.Context, title, subtitle string, actions func()) {
 		ui.Column(c).Gap(2).Children(func() {
 			ui.Text(c, title).FontSize(fsTitle).FontWeight(650)
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsSmall + 1).TextColor(p.muted)
+				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
 			}
 		})
 		ui.Spacer(c)
@@ -193,9 +195,9 @@ func subheader(c *ui.Context, a *app, title, subtitle string, actions func()) {
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
 		ui.BackButton(c, a.router)
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(fsTitle - 2).FontWeight(650)
+			ui.Text(c, title).FontSize(fsSubtitle).FontWeight(650)
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsSmall + 1).TextColor(p.muted)
+				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
 			}
 		})
 		ui.Spacer(c)
@@ -238,7 +240,9 @@ type row struct {
 func group(c *ui.Context, title string, compact bool, rows ...row) {
 	p := pal(c)
 	ui.Column(c).Gap(8).Children(func() {
-		if title != "" {
+		if title != "" && isMac() {
+			macCategory(c, title)
+		} else if title != "" {
 			ui.Text(c, title).FontSize(fsSmall).FontWeight(600).TextColor(p.muted).Padding(0, 4)
 		}
 		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16)

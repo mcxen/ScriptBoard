@@ -30,7 +30,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	page(c, compact, func() {
 		subheader(c, a, tr(sc.Name), st.res.Title, func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				if ui.Text(c, tr("大图")).FontSize(fsSmall + 1).Cursor(ui.CursorPointer).Clicked() {
+				if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
 					a.big = !a.big
 				}
 				sw(c, &a.big)
@@ -66,7 +66,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 						if cs := summarize(res.Chart); cs.ok {
 							deltaChip(c, cs.pct)
 						}
-						ui.Text(c, res.Sub).FontSize(fsSmall + 1).TextColor(p.muted)
+						ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
 					})
 				})
 			})
@@ -111,7 +111,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		if len(res.Lines) > 0 || len(res.Logs) > 0 {
 			card(c).Padding(16).Gap(4).Children(func() {
 				for _, line := range res.Lines {
-					ui.Text(c, line).FontSize(fsSmall + 1)
+					ui.Text(c, line).FontSize(fsCaption)
 				}
 				for _, l := range res.Logs {
 					ui.Text(c, "log: "+l).FontSize(fsTiny).TextColor(p.muted)
@@ -140,7 +140,7 @@ func firstNonEmpty(a, b string) string {
 func infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compact bool) {
 	p := pal(c)
 	val := func(text string) func() {
-		return func() { ui.Text(c, text).FontSize(fsSmall + 1).TextColor(p.muted) }
+		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
 	kind := tr("内置脚本")
 	if isPluginScript(sc.ID) {

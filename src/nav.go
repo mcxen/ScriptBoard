@@ -50,7 +50,7 @@ func (a *app) view(c *ui.Context) {
 		p := pal(c)
 		path := a.router.Path()
 		if isMac() {
-			macMenuBar(c)
+			macMenuBar(c, a)
 		}
 		pages := func() {
 			skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
@@ -110,7 +110,7 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(2, 8, 18, 8).Children(func() {
 			iconBadge(c, "chart-line", p.accent, 30)
 			ui.Column(c).Children(func() {
-				ui.Text(c, appName()).FontSize(fsBody + 1).FontWeight(650)
+				ui.Text(c, appName()).FontSize(fsBodyLarge).FontWeight(650)
 				ui.Text(c, tr("脚本小组件")).FontSize(fsTiny).TextColor(p.faint)
 			})
 		})

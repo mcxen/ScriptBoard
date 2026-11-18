@@ -34,6 +34,9 @@ func main() {
 		}
 		return
 	}
+	if err := registerSkinFonts(); err != nil {
+		log.Printf("the pixel font: %v", err)
+	}
 	a, err := newApp(dir, false)
 	if err != nil {
 		log.Fatal(err)
@@ -45,12 +48,18 @@ func main() {
 	mygo.Use(native.New(updater.Options{Language: curLang()}))
 	mygo.App.WhenReady(func() {
 		applyUpdateSource(a.set.UpdateSource)
+		// The Mac OS 9 window has no system title bar: its menu bar is the
+		// frame, drawn by the app (see macMenuBar). The window is created
+		// that way only when the skin is chosen at launch; switching the skin
+		// keeps the system frame until the next launch.
+		a.frameless = a.set.Skin == skinMac9
 		w := mygo.NewWindow(mygo.WindowOptions{
 			Title:     appName(),
 			Width:     1180,
 			Height:    760,
 			MinWidth:  900,
 			MinHeight: 480,
+			Frameless: a.frameless,
 			// Opens where the user left it last time.
 			StateKey: "main",
 			// The window shows the interface MyGo draws, not a web page.

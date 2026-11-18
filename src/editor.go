@@ -194,7 +194,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	draft := func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
-				ui.Text(c, tr("编辑脚本")).FontSize(fsHeading + 2).Bold()
+				ui.Text(c, tr("编辑脚本")).FontSize(fsEmphasis).Bold()
 				if a.status != "" {
 					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
 				}

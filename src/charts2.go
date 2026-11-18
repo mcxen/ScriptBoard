@@ -97,7 +97,7 @@ func gaugeView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 			donut(pt, r, frac, color, p.chip)
 		})
 		ui.Column(c).Gap(3).MinWidth(0).Children(func() {
-			ui.Text(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100)).FontSize(fsHeading + 5).FontWeight(650).TextColor(color).NoWrap()
+			ui.Text(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100)).FontSize(fsCount).FontWeight(650).TextColor(color).NoWrap()
 			ui.Text(c, fmt.Sprintf("%s %s", formatAmount(left), g.Unit)).FontSize(fsBody).NoWrap()
 			ui.Text(c, fmt.Sprintf(tr("已用 %s / %s"), formatAmount(g.Used), formatAmount(g.Limit))).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			if g.Reset != "" {
