@@ -42,7 +42,7 @@ func (a *app) contentW() float32 {
 		w = a.width
 	}
 	if !a.compact {
-		w -= sidebarWidth
+		w -= a.sidebarW()
 	}
 	return w - 2*pad(a.compact)
 }
@@ -121,7 +121,7 @@ func (a *app) home(c *ui.Context, compact bool) {
 					}
 				}
 			})
-			if segmented(c, &a.cardSize, tr("小"), tr("中"), tr("大")).Changed() {
+			if choose(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
 				a.setAllSizes(a.cardSize)
 			}
 		})
@@ -212,7 +212,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 	if hasTag {
 		titleW -= 56 + 10
 	}
-	title = fitText(title, max(titleW, 40), fsSmall+1)
+	title = fitText(title, max(titleW, 40), fsCaption)
 
 	el := card(c).Width(w).Height(h).Padding(16 * s).Gap(6 * s).Cursor(ui.CursorPointer).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
@@ -220,7 +220,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 			// The title gives way, with an ellipsis, so the tag and the buttons
 			// stay whole on a small card.
 			ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-				ui.Text(c, title).FontSize(fsSmall + 1).TextColor(p.muted).NoWrap()
+				ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
 			})
 			if g := st.res.Chart; ready && g != nil && g.Type == "gauge" && g.Gauge != nil {
 				_, frac := remaining(g.Gauge)
@@ -242,12 +242,12 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 		default:
-			ui.Text(c, st.res.Big).FontSize(bigSize).Bold().NoWrap()
+			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			switch size {
 			case 1:
 				ui.Spacer(c)
-				Spark(c, st.res.Chart, 54*s)
+				SparkStyled(c, st.res.Chart, a.styles[sc.ID], 54*s)
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}

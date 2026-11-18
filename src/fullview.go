@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/engine"
@@ -30,7 +31,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	page(c, compact, func() {
 		subheader(c, a, tr(sc.Name), st.res.Title, func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				if ui.Text(c, tr("大图")).FontSize(fsSmall + 1).Cursor(ui.CursorPointer).Clicked() {
+				if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
 					a.big = !a.big
 				}
 				sw(c, &a.big)
@@ -61,12 +62,16 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
 				iconBadge(c, firstNonEmpty(res.Icon, meta.Icon), accent, 44)
 				ui.Column(c).Gap(2).Children(func() {
-					ui.Text(c, res.Big).FontSize(36).Bold().NoWrap()
+					ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(res, sel))).FontSize(36).Bold().NoWrap()
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						if cs := summarize(res.Chart); cs.ok {
 							deltaChip(c, cs.pct)
 						}
-						ui.Text(c, res.Sub).FontSize(fsSmall + 1).TextColor(p.muted)
+						if i := hoveredIndex(res.Chart, sel); i >= 0 {
+							detailRow(c, res.Chart, i)
+						} else {
+							ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
+						}
 					})
 				})
 			})
@@ -85,7 +90,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				if !isGaugeOrBars(res.Chart) {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
-						if segmented(c, &cur, labels...).Changed() {
+						if choose(c, &cur, labels...) {
 							a.styles[sc.ID] = opts[cur].key
 						}
 					})
@@ -111,7 +116,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		if len(res.Lines) > 0 || len(res.Logs) > 0 {
 			card(c).Padding(16).Gap(4).Children(func() {
 				for _, line := range res.Lines {
-					ui.Text(c, line).FontSize(fsSmall + 1)
+					ui.Text(c, line).FontSize(fsCaption)
 				}
 				for _, l := range res.Logs {
 					ui.Text(c, "log: "+l).FontSize(fsTiny).TextColor(p.muted)
@@ -140,7 +145,7 @@ func firstNonEmpty(a, b string) string {
 func infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compact bool) {
 	p := pal(c)
 	val := func(text string) func() {
-		return func() { ui.Text(c, text).FontSize(fsSmall + 1).TextColor(p.muted) }
+		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
 	kind := tr("内置脚本")
 	if isPluginScript(sc.ID) {
@@ -201,4 +206,66 @@ func sourceNames(src map[string]string) string {
 		out += k
 	}
 	return out
+}
+
+// hoveredIndex is the point the pointer is on, or -1 when none is chosen.
+func hoveredIndex(ch *engine.Chart, sel *int) int {
+	if ch == nil || sel == nil || *sel < 0 || *sel >= count(ch) {
+		return -1
+	}
+	return *sel
+}
+
+// heroText is the headline figure of a full view: the newest value, or the
+// value of the point under the pointer.
+func heroText(res engine.Result, sel *int) string {
+	ch := res.Chart
+	i := hoveredIndex(ch, sel)
+	switch {
+	case i < 0:
+		return res.Big
+	case ch.Type == "candle" && i < len(ch.Candles):
+		return fmt.Sprintf("%.2f", ch.Candles[i].C)
+	}
+	for _, sr := range ch.Series {
+		if i < len(sr.Points) {
+			return fmt.Sprintf("%.2f", sr.Points[i])
+		}
+	}
+	return res.Big
+}
+
+// detailRow is the readout of the point under the pointer, as a quote board
+// shows it under the price: its label, then the open, high, low and close of
+// a candle, or the value of each line.
+func detailRow(c *ui.Context, ch *engine.Chart, i int) {
+	p := pal(c)
+	label := fmt.Sprintf(tr("第 %d 个"), i+1)
+	if i < len(ch.Labels) && ch.Labels[i] != "" {
+		label = ch.Labels[i]
+	}
+	field := func(name, value string, color ui.Color) {
+		ui.Text(c, name).FontSize(fsSmall).TextColor(p.muted)
+		ui.Text(c, value).FontSize(fsSmall).Bold().TextColor(color).NoWrap()
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(10).Wrap().Children(func() {
+		ui.Text(c, label).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+		if ch.Type == "candle" && i < len(ch.Candles) {
+			cd := ch.Candles[i]
+			up := p.up
+			if cd.C < cd.O {
+				up = p.down
+			}
+			field("O", fmt.Sprintf("%.2f", cd.O), p.text)
+			field("H", fmt.Sprintf("%.2f", cd.H), p.text)
+			field("L", fmt.Sprintf("%.2f", cd.L), p.text)
+			field("C", fmt.Sprintf("%.2f", cd.C), up)
+			return
+		}
+		for _, sr := range ch.Series {
+			if i < len(sr.Points) {
+				field(sr.Name, fmt.Sprintf("%.2f", sr.Points[i]), p.text)
+			}
+		}
+	})
 }

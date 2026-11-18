@@ -82,6 +82,49 @@ type Series struct {
 	Name   string    `json:"name"`
 	Color  string    `json:"color"`
 	Points []float64 `json:"points"`
+	// Offset is the index on the chart's axis of the first point. Only the
+	// "combo" chart uses it, so that a curve can cover part of the axis: a
+	// solid part from the start and a dashed projection after it.
+	Offset int `json:"offset"`
+	// Dashed draws the line dashed, and leaves it unfilled: a projection.
+	Dashed bool `json:"dashed"`
+}
+
+// Grid is a heatmap table, such as a retention matrix: rows of cells with a
+// value from 0 to 100 each, shaded darker as the value grows. A cell with no
+// value is -1. Average, when set, is a row of its own under the table.
+type Grid struct {
+	Columns []string  `json:"columns"`
+	Rows    []GridRow `json:"rows"`
+	Average []float64 `json:"average"`
+	Footer  string    `json:"footer"`
+}
+
+// GridRow is one row of a Grid: its label, a note after the label (such as the
+// number of users), and its cells.
+type GridRow struct {
+	Label string    `json:"label"`
+	Note  string    `json:"note"`
+	Cells []float64 `json:"cells"`
+}
+
+// Panel is one panel of a "panels" chart: a titled chart of its own, stacked
+// under the others. Style is the look of its series (line, area, dot, bar, or
+// step). A reference line is a dashed series of one value repeated.
+type Panel struct {
+	Title  string   `json:"title"`
+	Style  string   `json:"style"`
+	Weight float64  `json:"weight"`
+	Series []Series `json:"series"`
+}
+
+// Ring is one circle of a "combo" chart: a share of 100 percent, with a label
+// under it. Text is what the circle shows; the percent when it is empty.
+type Ring struct {
+	Label   string  `json:"label"`
+	Percent float64 `json:"percent"`
+	Text    string  `json:"text"`
+	Color   string  `json:"color"`
 }
 
 // Candle is the open, high, low and close of one period, as a K-line.
@@ -114,6 +157,18 @@ type Chart struct {
 	Gauge   *Gauge   `json:"gauge"`
 	Labels  []string `json:"labels"`
 	XLabels []string `json:"xLabels"`
+	// Ticks, for a K-line, are the prices in time order; the host groups them
+	// into Candles of Period seconds (PeriodMonth for months), and keeps the
+	// last Limit candles when it is set.
+	Ticks  []Point `json:"ticks"`
+	Period int     `json:"period"`
+	Limit  int     `json:"limit"`
+	// Rings are the circles of a "combo" chart, drawn beside its curve.
+	Rings []Ring `json:"rings"`
+	// Grid is the table of a "heat" chart.
+	Grid *Grid `json:"grid"`
+	// Panels are the stacked charts of a "panels" chart.
+	Panels []Panel `json:"panels"`
 }
 
 // Result is what render returns, plus the lines the script logged.
@@ -229,6 +284,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return res, err
 	}
+	finishChart(res.Chart, in.TZOffset)
 	return res, nil
 }
 

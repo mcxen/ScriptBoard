@@ -28,26 +28,20 @@ const (
 	gapItem    = 12 // between items inside a block
 	radCard    = 14
 	radControl = 8
+)
 
-	fsTitle   = 22
-	fsHeading = 15
-	fsBody    = 13.5
-	fsSmall   = 12
-	fsTiny    = 11
+// Type sizes, in DIPs. The default skin has a scale; Mac OS 9 has its pixel
+// grid of 12 DIPs, and 24 for counts (setTypeScale).
+var (
+	fsTitle, fsHeading, fsBody, fsSmall, fsTiny float32
+	fsCaption, fsLabel, fsSubtitle, fsEmphasis  float32
+	fsBodyLarge, fsCount                        float32
 )
 
 // The look of the app is Lobe UI's (github.com/lobehub/lobe-mygo): its tokens
 // for color, radius and type, and its components, which take their inputs as
 // a Props struct: component(c, value, Props{Variant, Size, …}). brand is Lobe's
 // token set with a blue primary; there is no purple anywhere.
-var brand = func() *theme.Config {
-	light, dark := *theme.Light(), *theme.Dark()
-	// The whole primary family is set together, as Lobe's docs advise.
-	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#0559FF"), ui.Hex("#044EE0"), ui.Hex("#0343C2")
-	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#3D7BFF"), ui.Hex("#5C8FFF"), ui.Hex("#2F66E0")
-	light.PrimaryForeground, dark.PrimaryForeground = light.TextLightSolid, dark.TextLightSolid
-	return theme.NewConfig(light, dark)
-}()
 
 // palette is the handful of colors the building blocks use, read from the
 // tokens of the theme being built.
@@ -90,24 +84,41 @@ func pal(c *ui.Context) palette {
 // Wrappers that give Lobe's components this app's usual props, so that a page
 // reads as before: btn(c, "保存").Clicked().
 func btn(c *ui.Context, text string) ui.Element {
+	if isMac() {
+		return macButton(c, text, false)
+	}
 	return action.Button(c, text, action.ButtonProps{Size: theme.Small})
 }
 
 func primaryBtn(c *ui.Context, text string) ui.Element {
+	if isMac() {
+		return macButton(c, text, true)
+	}
 	return action.Button(c, text, action.ButtonProps{Variant: action.Primary, Size: theme.Small})
 }
 
 func segmented(c *ui.Context, sel *int, labels ...string) ui.Element {
+	if isMac() {
+		return macSegmented(c, sel, labels...)
+	}
 	return action.Segmented(c, sel, labels, action.SegmentedProps{Size: theme.Small})
 }
 
-func sw(c *ui.Context, on *bool) ui.Element { return choice.Switch(c, on, choice.SwitchProps{}) }
+func sw(c *ui.Context, on *bool) ui.Element {
+	if isMac() {
+		return macCheck(c, on)
+	}
+	return choice.Switch(c, on, choice.SwitchProps{})
+}
 
 func slider(c *ui.Context, v *float64, lo, hi float64) ui.Element {
 	return choice.Slider(c, v, choice.SliderProps{Min: lo, Max: hi})
 }
 
 func textInput(c *ui.Context, v *string, placeholder string) ui.Element {
+	if isMac() {
+		return macTextInput(c, v, placeholder)
+	}
 	return lfield.Input(c, v, lfield.InputProps{Placeholder: placeholder})
 }
 
@@ -129,9 +140,7 @@ func notice(c *ui.Context, text string, kind feedback.AlertType) ui.Element {
 }
 
 // card is Lobe's Block: an outlined rounded surface with a soft shadow.
-func card(c *ui.Context) ui.Element {
-	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
-}
+func card(c *ui.Context) ui.Element { return skinCard(c) }
 
 // pad is the padding around a page.
 func pad(compact bool) float32 {
@@ -152,12 +161,16 @@ func page(c *ui.Context, compact bool, body func()) ui.Element {
 // header is the top of a page: a title with a line of context under it, and
 // the page's actions at the right.
 func header(c *ui.Context, title, subtitle string, actions func()) {
+	if isMac() {
+		macHeader(c, title, subtitle, actions)
+		return
+	}
 	p := pal(c)
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
 			ui.Text(c, title).FontSize(fsTitle).FontWeight(650)
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsSmall + 1).TextColor(p.muted)
+				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
 			}
 		})
 		ui.Spacer(c)
@@ -169,13 +182,22 @@ func header(c *ui.Context, title, subtitle string, actions func()) {
 
 // subheader is a page header with a back button, for pages inside a page.
 func subheader(c *ui.Context, a *app, title, subtitle string, actions func()) {
+	if isMac() {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.BackButton(c, a.router)
+			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+				macHeader(c, title, subtitle, actions)
+			})
+		})
+		return
+	}
 	p := pal(c)
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
 		ui.BackButton(c, a.router)
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(fsTitle - 2).FontWeight(650)
+			ui.Text(c, title).FontSize(fsSubtitle).FontWeight(650)
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsSmall + 1).TextColor(p.muted)
+				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
 			}
 		})
 		ui.Spacer(c)
@@ -218,10 +240,16 @@ type row struct {
 func group(c *ui.Context, title string, compact bool, rows ...row) {
 	p := pal(c)
 	ui.Column(c).Gap(8).Children(func() {
-		if title != "" {
+		if title != "" && isMac() {
+			macCategory(c, title)
+		} else if title != "" {
 			ui.Text(c, title).FontSize(fsSmall).FontWeight(600).TextColor(p.muted).Padding(0, 4)
 		}
-		layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16).Children(func() {
+		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16)
+		if isMac() {
+			panel = macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel).Padding(2, 16), false)
+		}
+		panel.Children(func() {
 			for i, r := range rows {
 				r := r
 				if i > 0 {
@@ -267,6 +295,12 @@ func sign(pct float64) string {
 
 // iconBadge is an icon on a tinted rounded square.
 func iconBadge(c *ui.Context, name string, color ui.Color, size float32) ui.Element {
+	if isMac() {
+		return macBevel(ui.Row(c).Size(size, size).Background(macWhite), false).
+			AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			ui.Icon(c, icon(name)).FontSize(size * 0.56).TextColor(macBlack)
+		})
+	}
 	return ui.Row(c).Size(size, size).Radius(size * 0.28).Background(color.Alpha(0.13)).
 		AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 		ui.Icon(c, icon(name)).FontSize(size * 0.52).TextColor(color)

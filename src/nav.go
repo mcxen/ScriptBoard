@@ -42,15 +42,27 @@ func (n navItem) active(path string) bool {
 // view builds the window. A wide window has a sidebar beside the page; a
 // narrow one, the phone layout, has a bar of tabs under it.
 func (a *app) view(c *ui.Context) {
-	brand.Apply(c)
+	applySkin(c)
 	compact := a.width > 0 && a.width < compactWidth
 	a.compact = compact
 
-	ui.Column(c).Fill().Background(pal(c).canvas).Children(func() {
+	root := skinBackground(c, ui.Column(c).Fill())
+	// Escape goes back one page, as in notes; a dialog that is open takes it
+	// first, since it is built after the page.
+	if root.OverlayShortcut(0, ui.KeyEscape) {
+		a.router.Back()
+	}
+	root.Children(func() {
 		p := pal(c)
 		path := a.router.Path()
+		switch {
+		case isMac():
+			macMenuBar(c, a)
+		case !compact:
+			titleBar(c, a, func() {})
+		}
 		pages := func() {
-			ui.Column(c).Grow(1).Background(p.canvas).Children(func() {
+			skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
 				a.router.View(c, func(r *ui.Route) {
 					switch {
 					case r.Match("/"):
@@ -101,16 +113,33 @@ func (a *app) view(c *ui.Context) {
 }
 
 // sidebar is the brand, the places to go and the state of the network. Like
-// Kero's it sits on the desk's own color; the chosen row is a white tile.
+// Kero's it sits on the desk's own color; the chosen row is a white tile. It
+// folds into a rail of icons, which keeps the pages wide.
 func (a *app) sidebar(c *ui.Context, p palette, path string) {
+	if a.set.SidebarCollapsed {
+		a.sidebarRail(c, p, path)
+		return
+	}
 	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).Padding(18, 12).Gap(2).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(2, 8, 18, 8).Children(func() {
 			iconBadge(c, "chart-line", p.accent, 30)
-			ui.Column(c).Children(func() {
-				ui.Text(c, appName()).FontSize(fsBody + 1).FontWeight(650)
+			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+				ui.Text(c, appName()).FontSize(fsBodyLarge).FontWeight(650)
 				ui.Text(c, tr("脚本小组件")).FontSize(fsTiny).TextColor(p.faint)
 			})
+			if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
+				a.toggleSidebar()
+			}
 		})
+		if isMac() {
+			for _, n := range navItems {
+				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-24) {
+					a.router.Push(n.path)
+				}
+			}
+			a.sidebarStatus(c, p)
+			return
+		}
 		items := make([]display.ListItem, len(navItems))
 		active := ""
 		for i, n := range navItems {
@@ -123,14 +152,69 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 			a.router.Push(key)
 		}
 		ui.Spacer(c)
-		status, color := tr("在线"), p.down
-		if a.set.Offline {
-			status, color = tr("离线模式"), p.warn
+		a.sidebarStatus(c, p)
+	})
+}
+
+// sidebarRail is the sidebar folded: the toggle, one icon for each place, and
+// the network state as a dot, each with its name as a tooltip.
+func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
+	ui.Column(c).Width(railWidth).Background(p.sidebar).Padding(10, 6).Gap(6).AlignItems(ui.Center).Children(func() {
+		if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
+			a.toggleSidebar()
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 10).Children(func() {
-			ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
-			ui.Text(c, status).FontSize(fsSmall).TextColor(p.muted)
-		})
+		for _, n := range navItems {
+			if macOrRailItem(c, n, n.active(path), p) {
+				a.router.Push(n.path)
+			}
+		}
+		ui.Spacer(c)
+		color := p.down
+		if a.set.Offline {
+			color = p.warn
+		}
+		ui.Row(c).Size(7, 7).Radius(3.5).Background(color).Padding(0, 0, 10, 0)
+	})
+}
+
+// toggleSidebar folds the sidebar or opens it again, and keeps the choice.
+func (a *app) toggleSidebar() {
+	a.set.SidebarCollapsed = !a.set.SidebarCollapsed
+	a.saveSettings()
+}
+
+// sidebarToggle is the button that folds the sidebar: a square with the
+// panel's icon.
+func sidebarToggle(c *ui.Context, iconName, title string) ui.Element {
+	return ui.ButtonBase(c).Size(28, 28).Radius(6).AlignItems(ui.Center).Justify(ui.Center).Label(title).Tooltip(title).Children(func() {
+		ui.Icon(c, icon(iconName)).FontSize(16).TextColor(pal(c).muted)
+	})
+}
+
+// macOrRailItem is one place in the rail: its icon, chosen as a filled square.
+func macOrRailItem(c *ui.Context, n navItem, chosen bool, p palette) bool {
+	bg := ui.Color{}
+	if chosen {
+		bg = p.rowSel
+	}
+	el := ui.ButtonBase(c).Size(34, 34).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
+	if chosen {
+		el = el.Background(bg)
+	}
+	return el.Children(func() {
+		ui.Icon(c, icon(n.icon)).FontSize(18).TextColor(p.text)
+	}).Clicked()
+}
+
+// sidebarStatus is the line at the foot of the sidebar: online, or offline.
+func (a *app) sidebarStatus(c *ui.Context, p palette) {
+	status, color := tr("在线"), p.down
+	if a.set.Offline {
+		status, color = tr("离线模式"), p.warn
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 10).Children(func() {
+		ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
+		ui.Text(c, status).FontSize(fsSmall).TextColor(p.muted)
 	})
 }
 

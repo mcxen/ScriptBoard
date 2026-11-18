@@ -30,11 +30,16 @@ func (a *app) quickEntry(c *ui.Context, scriptID string, in engine.ManualInput) 
 	if step <= 0 {
 		step = 0.1
 	}
+	// The label gives way first, so the field and the button stay on the card.
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-		ui.Text(c, in.Label+"（"+unit+"）").FontSize(fsSmall).TextColor(p.muted).NoWrap()
-		ui.Spacer(c)
-		numberInput(c, v, 0, 1e6, step).Width(112)
-		if primaryBtn(c, tr("记录")).Clicked() {
+		// A text keeps its width, so the label sits in a box that can shrink.
+		ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+			ui.Text(c, in.Label+"（"+unit+"）").FontSize(fsSmall).TextColor(p.muted).Ellipsis("…").Shrink(1).MinWidth(0)
+		})
+		ui.Row(c).Shrink(0).Width(112).Children(func() {
+			numberInput(c, v, 0, 1e6, step).Width(112)
+		})
+		if primaryBtn(c, tr("记录")).Shrink(0).Clicked() {
 			if err := a.recordMetric(in.Metric, *v); err != nil {
 				a.quickNote = tr("记录失败：") + err.Error()
 			} else {

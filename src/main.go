@@ -34,6 +34,9 @@ func main() {
 		}
 		return
 	}
+	if err := registerSkinFonts(); err != nil {
+		log.Printf("the pixel font: %v", err)
+	}
 	a, err := newApp(dir, false)
 	if err != nil {
 		log.Fatal(err)
@@ -45,7 +48,7 @@ func main() {
 	mygo.Use(native.New(updater.Options{Language: curLang()}))
 	mygo.App.WhenReady(func() {
 		applyUpdateSource(a.set.UpdateSource)
-		w := mygo.NewWindow(mygo.WindowOptions{
+		w := mygo.NewWindow(framedOptions(mygo.WindowOptions{
 			Title:     appName(),
 			Width:     1180,
 			Height:    760,
@@ -55,7 +58,7 @@ func main() {
 			StateKey: "main",
 			// The window shows the interface MyGo draws, not a web page.
 			Content: ui.View(a.view),
-		})
+		}))
 		a.attach(w)
 	})
 	if err := mygo.App.Run(); err != nil {

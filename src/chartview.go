@@ -20,10 +20,12 @@ type styleOpt struct{ key, label string }
 
 var seriesStyles = []styleOpt{
 	{"line", "折线"}, {"area", "面积"}, {"dot", "点状"}, {"bar", "柱状"}, {"step", "阶梯"},
+	// The retro styles: they work with any skin, on any series chart.
+	{"stripe", "条纹柱"}, {"pixel", "像素点"}, {"grid", "网格折线"},
 }
 
 var candleStyles = []styleOpt{
-	{"candle", "K 线"}, {"close", "收盘线"}, {"bar", "收盘柱"},
+	{"candle", "K 线"}, {"hollow", "空心K线"}, {"ohlc", "美国线"}, {"close", "收盘线"}, {"bar", "收盘柱"},
 }
 
 // stylesFor lists the styles a chart can be drawn in.
@@ -93,6 +95,7 @@ type seriesLine struct {
 	color  ui.Color
 	vals   []float64
 	xs, ys []float32
+	dashed bool
 }
 
 // scaled is a chart mapped onto the plot: the value scale, the y ticks and
@@ -114,6 +117,9 @@ func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 func scale(ch *engine.Chart, fallback ui.Color) scaled {
 	var s scaled
 	s.n = count(ch)
+	if isCombo(ch) {
+		s.n = comboCount(ch)
+	}
 	if s.n == 0 {
 		s.empty = true
 		return s
@@ -166,8 +172,11 @@ func scale(ch *engine.Chart, fallback ui.Color) scaled {
 			continue
 		}
 		color := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
-		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points}
+		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points, dashed: sr.Dashed}
 		ln.xs = fractions(n)
+		if ch.Type == "combo" && sr.Offset >= 0 && sr.Offset+n <= len(s.xs) {
+			ln.xs = s.xs[sr.Offset : sr.Offset+n]
+		}
 		ln.ys = make([]float32, n)
 		for j, v := range sr.Points {
 			ln.ys[j] = s.y.At(v)
@@ -200,7 +209,7 @@ func fractions(n int) []float32 {
 // xsFor returns where each point sits in a style: bars sit in the middle of
 // their band, lines at their place on the edges.
 func xsFor(ch *engine.Chart, s scaled, style string) []float32 {
-	if ch.Type != "candle" && style == "bar" {
+	if ch.Type != "candle" && (style == "bar" || style == "stripe") {
 		band := candleBand(s.n, ch.Labels)
 		xs := make([]float32, s.n)
 		for i := range xs {
@@ -241,6 +250,15 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 }
 
 func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+	if isCombo(ch) {
+		return comboView(c, ch, style, h, sel, full)
+	}
+	if isHeat(ch) {
+		return heatView(c, ch, sel)
+	}
+	if isPanels(ch) {
+		return panelsView(c, ch, style, h, sel, full)
+	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
 			return gaugeView(c, ch, h)
@@ -271,13 +289,16 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	axisLabel := func(_ chart.Side, tk chart.Tick) {
 		ui.Text(c, tk.Label).NoWrap().FontSize(fsTiny).TextColor(pl.muted)
 	}
-	return chart.Plot(c, chart.Axes{Left: s.ticks, Bottom: bottom, Label: axisLabel}, func(area ui.Element) {
+	return skinPlot(c, chart.Plot(c, chart.Axes{Left: s.ticks, Bottom: bottom, Label: axisLabel}, func(area ui.Element) {
 		area.Draw(func(p *ui.Painter, r ui.Rect) {
 			for _, tk := range s.ticks {
 				y := chart.Y(r, tk.At)
 				p.Line(r.X, y, r.X+r.W, y, 1, pl.hairline)
 			}
 			paint(p, r, ch, s, style, xs, t.Accent)
+			if full {
+				lastPriceLine(p, r, ch, s)
+			}
 		})
 
 		if sel != nil {
@@ -287,12 +308,30 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 		if full {
 			crosshair(c, area, s, t)
 		}
-	}).Height(h).Gap(6)
+	}).Height(h).Gap(6))
 }
 
 // Spark draws ch as a bare curve or dots with no axes, for cards. It fills
 // the width and is h DIPs tall.
 func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
+	return SparkStyled(c, ch, "", h)
+}
+
+// SparkStyled is Spark in the style the user chose for the card; "" is the
+// chart's own default.
+func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Element {
+	if isCombo(ch) {
+		return comboView(c, ch, "", h, nil, false)
+	}
+	if isHeat(ch) {
+		// A card shows the average of the table; the table is for the full view.
+		g := ch.Grid
+		return heatView(c, &engine.Chart{Type: "heat", Grid: &engine.Grid{Columns: g.Columns, Average: g.Average, Footer: g.Footer}}, nil)
+	}
+	if isPanels(ch) {
+		// A card shows the first panel: the whole stack is for the full view.
+		return Spark(c, &engine.Chart{Type: "line", Series: ch.Panels[0].Series}, h)
+	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
 			return gaugeView(c, ch, h)
@@ -305,7 +344,7 @@ func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 		if s.empty {
 			return
 		}
-		style := resolveStyle(ch, "")
+		style := resolveStyle(ch, want)
 		if style == "line" {
 			style = "area" // a card's curve is shaded
 		}
@@ -319,14 +358,24 @@ func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, x
 	switch style {
 	case "candle":
 		drawCandles(p, r, ch.Candles, s)
+	case "hollow":
+		drawHollowCandles(p, r, ch.Candles, s)
+	case "ohlc":
+		drawOHLC(p, r, ch.Candles, s)
 	case "close":
 		drawLines(p, r, []seriesLine{closeLine(ch, s, accent)}, false, chart.CurveLinear)
 	case "bar":
 		if ch.Type == "candle" {
 			drawCloseBars(p, r, ch.Candles, s)
 		} else {
-			drawBars(p, r, s, xs)
+			drawBars(p, r, s, xs, false)
 		}
+	case "stripe":
+		drawBars(p, r, s, xs, true)
+	case "pixel":
+		drawPixels(p, r, s.series)
+	case "grid":
+		drawGridLine(p, r, s, xs)
 	case "area":
 		drawLines(p, r, s.series, true, chart.CurveMonotone)
 	case "step":
@@ -431,8 +480,15 @@ func drawLines(p *ui.Painter, r ui.Rect, lines []seriesLine, fill bool, curve ch
 		if len(ln.xs) == 0 {
 			continue
 		}
+		if ln.dashed {
+			drawDashed(p, r, ln)
+			continue
+		}
 		if fill && i == 0 {
-			p.FillPath(chart.Area(r, ln.xs, nil, ln.ys, curve), ln.color.Alpha(0.15))
+			// The fill fades from the line down to the axis, as a quote chart's does.
+			p.FillPathGradient(chart.Area(r, ln.xs, nil, ln.ys, curve), ui.LinearGradient{
+				From: ln.color.Alpha(0.32), To: ln.color.Alpha(0.02), Angle: 180,
+			})
 		}
 		p.StrokePath(chart.Line(r, ln.xs, ln.ys, curve), 2, ln.color)
 	}
@@ -450,7 +506,10 @@ func drawDots(p *ui.Painter, r ui.Rect, lines []seriesLine) {
 
 // drawBars paints a bar for each point of each series, the series side by
 // side within each band.
-func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
+//
+// With stripes, each bar is banded with light rows, as the bars of Mac OS 9's
+// charts were.
+func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32, stripes bool) {
 	k := float32(len(s.series))
 	if k == 0 {
 		return
@@ -465,10 +524,43 @@ func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
 			xl, xr := chart.X(r, x0)+1, chart.X(r, x0+w)-1
 			top := chart.Y(r, ln.ys[j])
 			lo, hi := math.Min(float64(top), float64(base)), math.Max(float64(top), float64(base))
-			p.Fill(ui.Rect{X: xl, Y: float32(lo), W: xr - xl, H: float32(hi - lo)}, ln.color.Alpha(0.85), 2)
+			bar := ui.Rect{X: xl, Y: float32(lo), W: xr - xl, H: float32(hi - lo)}
+			if !stripes {
+				p.Fill(bar, ln.color.Alpha(0.85), 2)
+				continue
+			}
+			p.Fill(bar, ln.color, 0)
+			for y := bar.Y + 2; y < bar.Y+bar.H; y += 6 {
+				p.Fill(ui.Rect{X: bar.X, Y: y, W: bar.W, H: 3}, ui.Hex("#FFFFFF").Alpha(0.45), 0)
+			}
 		}
 	}
 	_ = xs
+}
+
+// drawPixels paints each point as a small square, as the pixels of an old
+// screen.
+func drawPixels(p *ui.Painter, r ui.Rect, lines []seriesLine) {
+	for _, ln := range lines {
+		for j := range ln.xs {
+			// Kept inside the plot, so the last point at the edge is whole.
+			x := min(max(chart.X(r, ln.xs[j]), r.X+2.5), r.X+r.W-2.5)
+			y := min(max(chart.Y(r, ln.ys[j]), r.Y+2.5), r.Y+r.H-2.5)
+			p.Fill(ui.Rect{X: x - 2.5, Y: y - 2.5, W: 5, H: 5}, ln.color, 0)
+		}
+	}
+}
+
+// drawGridLine draws the lines with a grid behind them: a vertical rule at
+// each point, the same blue-gray as the horizontal rules of the chart.
+func drawGridLine(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
+	if len(s.series) > 0 {
+		for _, x := range xs {
+			xp := chart.X(r, x)
+			p.Line(xp, r.Y, xp, r.Y+r.H, 1, ui.Hex("#8C8C8C").Alpha(0.35))
+		}
+	}
+	drawLines(p, r, s.series, false, chart.CurveLinear)
 }
 
 // closeLine is the closing prices of a candle chart as a line.
@@ -574,4 +666,98 @@ func Detail(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
 		text = text + "    · " + hint
 	}
 	return ui.Text(c, text).FontSize(fsSmall).TextColor(pal(c).muted)
+}
+
+// drawDashed strokes a line as dashes: a projection that is not known yet.
+func drawDashed(p *ui.Painter, r ui.Rect, ln seriesLine) {
+	const dash, gap = 6.0, 4.0
+	for j := 0; j+1 < len(ln.xs); j++ {
+		x0, y0 := chart.X(r, ln.xs[j]), chart.Y(r, ln.ys[j])
+		x1, y1 := chart.X(r, ln.xs[j+1]), chart.Y(r, ln.ys[j+1])
+		length := math.Hypot(float64(x1-x0), float64(y1-y0))
+		if length == 0 {
+			continue
+		}
+		for t := 0.0; t < length; t += dash + gap {
+			end := math.Min(t+dash, length)
+			f0, f1 := float32(t/length), float32(end/length)
+			p.Line(x0+(x1-x0)*f0, y0+(y1-y0)*f0, x0+(x1-x0)*f1, y0+(y1-y0)*f1, 1.6, ln.color)
+		}
+	}
+}
+
+// comboCount is the length of a combo chart's axis: the furthest point of
+// its series.
+func comboCount(ch *engine.Chart) int {
+	n := 0
+	for _, sr := range ch.Series {
+		if end := sr.Offset + len(sr.Points); end > n {
+			n = end
+		}
+	}
+	return n
+}
+
+// drawHollowCandles paints the Chinese-market style of hollow candles: a rising
+// period is an outline, a falling one is filled; the wick is as in drawCandles.
+func drawHollowCandles(p *ui.Painter, r ui.Rect, cs []engine.Candle, s scaled) {
+	for i, cd := range cs {
+		up := cd.C >= cd.O
+		col := downColor
+		if up {
+			col = upColor
+		}
+		span := s.bands[i]
+		xc := chart.X(r, span.Mid())
+		x0, x1 := chart.X(r, span.Lo), chart.X(r, span.Hi)
+		p.Line(xc, chart.Y(r, s.y.At(cd.H)), xc, chart.Y(r, s.y.At(cd.L)), 1.2, col)
+
+		yo, yc := chart.Y(r, s.y.At(cd.O)), chart.Y(r, s.y.At(cd.C))
+		top, bot := min(yo, yc), max(yo, yc)
+		if bot-top < 1.5 {
+			mid := (top + bot) / 2
+			top, bot = mid-0.75, mid+0.75
+		}
+		if !up {
+			p.Fill(ui.Rect{X: x0, Y: top, W: x1 - x0, H: bot - top}, col, 1)
+			continue
+		}
+		const w = 1.5
+		p.Line(x0, top, x1, top, w, col)
+		p.Line(x0, bot, x1, bot, w, col)
+		p.Line(x0, top, x0, bot, w, col)
+		p.Line(x1, top, x1, bot, w, col)
+	}
+}
+
+// drawOHLC paints bars: a vertical line from the high to the low, with a tick
+// at the open on the left and one at the close on the right.
+func drawOHLC(p *ui.Painter, r ui.Rect, cs []engine.Candle, s scaled) {
+	for i, cd := range cs {
+		col := downColor
+		if cd.C >= cd.O {
+			col = upColor
+		}
+		span := s.bands[i]
+		xc := chart.X(r, span.Mid())
+		tick := (chart.X(r, span.Hi) - chart.X(r, span.Lo)) * 0.3
+		yo, yc := chart.Y(r, s.y.At(cd.O)), chart.Y(r, s.y.At(cd.C))
+		p.Line(xc, chart.Y(r, s.y.At(cd.H)), xc, chart.Y(r, s.y.At(cd.L)), 1.5, col)
+		p.Line(xc-tick, yo, xc, yo, 1.5, col)
+		p.Line(xc, yc, xc+tick, yc, 1.5, col)
+	}
+}
+
+// lastPriceLine draws a dashed rule at the newest value of a line chart: the
+// price a quote chart marks on its right edge.
+func lastPriceLine(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled) {
+	if ch.Type == "candle" || len(s.series) == 0 {
+		return
+	}
+	ln := s.series[0]
+	if len(ln.ys) == 0 {
+		return
+	}
+	rule := seriesLine{color: ln.color.Alpha(0.7), xs: []float32{0, 1}, ys: []float32{ln.ys[len(ln.ys)-1], ln.ys[len(ln.ys)-1]}}
+	drawDashed(p, r, rule)
 }

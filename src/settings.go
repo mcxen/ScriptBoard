@@ -25,21 +25,38 @@ func (a *app) settings(c *ui.Context, compact bool) {
 		inputW = 180
 	}
 	muted := func(text string) func() {
-		return func() { ui.Text(c, text).FontSize(fsSmall + 1).TextColor(p.muted) }
+		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
 
 	page(c, compact, func() {
 		header(c, tr("设置"), "", nil)
 
+		group(c, tr("外观"), compact,
+			row{title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
+				if choose(c, &a.skinIdx, tr("默认"), "Mac OS 9") {
+					a.set.Skin = skinNames[a.skinIdx]
+					setSkin(a.set.Skin)
+					a.saveSettings()
+				}
+			}},
+			row{title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
+				if choose(c, &a.themeIdx, tr("跟随系统"), tr("浅色"), tr("深色")) {
+					a.set.ThemeMode = themeModes[a.themeIdx]
+					setThemeMode(a.set.ThemeMode)
+					a.saveSettings()
+				}
+			}},
+		)
+
 		group(c, tr("数据"), compact,
 			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
-				if segmented(c, &a.unitIdx, unitNames...).Changed() {
+				if choose(c, &a.unitIdx, unitNames...) {
 					a.set.WeightUnit = unitNames[a.unitIdx]
 					a.saveSettings()
 				}
 			}},
 			row{title: tr("语言"), control: func() {
-				if segmented(c, &a.langIdx, tr("自动"), "中文", "English").Changed() {
+				if choose(c, &a.langIdx, tr("自动"), "中文", "English") {
 					a.set.Lang = []string{"", langZH, langEN}[a.langIdx]
 					setLang(a.set.Lang)
 					a.saveSettings()
@@ -50,30 +67,16 @@ func (a *app) settings(c *ui.Context, compact bool) {
 				}
 			}},
 			row{title: tr("离线模式"), note: tr("不请求网络，卡片显示示例数据"), control: func() {
-				if sw(c, &a.set.Offline).Changed() {
+				if toggle(c, &a.set.Offline) {
 					a.saveSettings()
 				}
 			}},
 			row{title: tr("数据文件"), note: a.store.Path()},
 		)
 
-		rows := []row{}
-		list := a.store.Scripts()
-		for i := range list {
-			i := i
-			rows = append(rows, row{title: tr(list[i].Name), control: func() {
-				if sw(c, &list[i].Home).Changed() {
-					if err := a.store.SaveScript(list[i]); err == nil {
-						a.invalidateAll()
-					}
-				}
-			}})
-		}
-		group(c, tr("首页组件"), compact, rows...)
-
 		group(c, tr("数据源"), compact,
 			row{title: tr("允许 exec 协议"), note: tr("数据源可以运行本机程序取数（exec:）。只在你信任的数据源上开启"), control: func() {
-				if sw(c, &a.set.AllowExec).Changed() {
+				if toggle(c, &a.set.AllowExec) {
 					a.saveSettings()
 				}
 			}},

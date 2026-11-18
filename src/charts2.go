@@ -14,6 +14,9 @@ import (
 // is left, and horizontal bars, which compare a few named things.
 
 // isGaugeOrBars reports whether a chart is drawn by this file.
+// isCombo reports whether ch is a curve with rings beside it.
+func isCombo(ch *engine.Chart) bool { return ch != nil && ch.Type == "combo" }
+
 func isGaugeOrBars(ch *engine.Chart) bool {
 	return ch != nil && (ch.Type == "gauge" || ch.Type == "barh")
 }
@@ -94,7 +97,7 @@ func gaugeView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 			donut(pt, r, frac, color, p.chip)
 		})
 		ui.Column(c).Gap(3).MinWidth(0).Children(func() {
-			ui.Text(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100)).FontSize(fsHeading + 5).FontWeight(650).TextColor(color).NoWrap()
+			ui.Text(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100)).FontSize(fsCount).FontWeight(650).TextColor(color).NoWrap()
 			ui.Text(c, fmt.Sprintf("%s %s", formatAmount(left), g.Unit)).FontSize(fsBody).NoWrap()
 			ui.Text(c, fmt.Sprintf(tr("已用 %s / %s"), formatAmount(g.Used), formatAmount(g.Limit))).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			if g.Reset != "" {
@@ -191,4 +194,50 @@ func (a *app) kindTiles(c *ui.Context, ch *engine.Chart) bool {
 		}
 	})
 	return true
+}
+
+// comboView is a curve on the left and rings on the right. The curve is drawn
+// as a chart is (a bare curve on a card, the full chart in full view); each
+// ring is a share of 100 percent, with its label under it.
+func comboView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+	ringSize := clampF(h*0.42, 40, 64)
+	return ui.Row(c).AlignItems(ui.Center).Gap(16).Children(func() {
+		if len(ch.Series) > 0 {
+			sub := &engine.Chart{Type: "line", Series: ch.Series, Labels: ch.Labels, XLabels: ch.XLabels}
+			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+				if full {
+					chartWith(c, sub, style, h, sel, true)
+				} else {
+					Spark(c, sub, h)
+				}
+			})
+		}
+		if len(ch.Rings) > 0 {
+			ui.Row(c).Shrink(0).Gap(14).AlignItems(ui.Center).Children(func() {
+				ringsView(c, ch.Rings, ringSize)
+			})
+		}
+	})
+}
+
+// ringsView draws each ring: a donut of its share, the percent or text in it,
+// and its label under it.
+func ringsView(c *ui.Context, rings []engine.Ring, d float32) {
+	p := pal(c)
+	for _, rg := range rings {
+		rg := rg
+		frac := math.Max(0, math.Min(1, rg.Percent/100))
+		color := parseColor(rg.Color, p.accent)
+		text := rg.Text
+		if text == "" {
+			text = fmt.Sprintf("%.0f%%", rg.Percent)
+		}
+		ui.Column(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Size(d, d).AlignItems(ui.Center).Justify(ui.Center).
+				Draw(func(pt *ui.Painter, r ui.Rect) { donut(pt, r, frac, color, p.chip) }).Children(func() {
+				ui.Text(c, text).FontSize(fsTiny).FontWeight(650).TextColor(p.text).NoWrap()
+			})
+			ui.Text(c, rg.Label).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+		})
+	}
 }

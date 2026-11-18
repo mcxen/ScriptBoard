@@ -47,6 +47,27 @@ func (a *app) newScript() {
 	a.invalidate(draftKey)
 }
 
+// duplicateDraft saves a copy of the draft as a new script, on the home page,
+// and opens it: a copy of the weather with another place is one edit away.
+func (a *app) duplicateDraft() {
+	sc := store.Script{
+		ID:     fmt.Sprintf("script-%d", a.now().UnixNano()),
+		Name:   a.draft.Name + " " + tr("副本"),
+		Source: a.draft.Source,
+		Home:   true,
+	}
+	if err := a.store.SaveScript(sc); err != nil {
+		a.status = tr("复制失败：") + err.Error()
+		return
+	}
+	a.editorID = sc.ID
+	a.draft = sc
+	delete(a.dims, draftKey)
+	a.invalidate(draftKey)
+	a.invalidateAll()
+	a.status = tr("已复制，可以修改后保存")
+}
+
 // saveDraft stores the draft and drops the cards' runs of it. A plugin's
 // script is changed in its folder, or with the MCP tools, not here.
 func (a *app) saveDraft() {
@@ -121,7 +142,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 
 	// Three columns need room; on a narrower window the scripts become a row of
 	// chips above two columns, and on a phone everything stacks.
-	avail := a.width - sidebarWidth - 32
+	avail := a.width - a.sidebarW() - 32
 	wide := !compact && avail >= 1000
 	listRow := !wide
 
@@ -194,12 +215,15 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	draft := func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
-				ui.Text(c, tr("编辑脚本")).FontSize(fsHeading + 2).Bold()
+				ui.Text(c, tr("编辑脚本")).FontSize(fsEmphasis).Bold()
 				if a.status != "" {
 					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
 				}
 			})
 			ui.Spacer(c)
+			if btn(c, tr("复制")).Clicked() {
+				a.duplicateDraft()
+			}
 			if btn(c, tr("导出")).Clicked() {
 				a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
 			}

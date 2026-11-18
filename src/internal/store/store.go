@@ -30,6 +30,13 @@ type Settings struct {
 	WeightUnit string `json:"weightUnit"`
 	// Lang is "zh", "en", or "" to follow the language of the computer.
 	Lang string `json:"lang"`
+	// Skin is the look of the app: "" the default, "mac9" Mac OS 9.
+	Skin string `json:"skin"`
+	// ThemeMode is the appearance: "" or "system" follows the system, "light"
+	// and "dark" force one.
+	ThemeMode string `json:"themeMode"`
+	// SidebarCollapsed folds the sidebar into a narrow rail of icons.
+	SidebarCollapsed bool `json:"sidebarCollapsed"`
 	// UpdateSource is where updates come from: "" automatic (the tvv.tw
 	// mirror for Chinese, GitHub otherwise), "github" or "tvv".
 	UpdateSource string `json:"updateSource"`
