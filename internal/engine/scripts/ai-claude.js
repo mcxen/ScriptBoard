@@ -63,12 +63,19 @@ export function render(ctx) {
     lines: u.note ? [u.note] : [],
   };
 
+  // A machine with no Claude Code logs has empty lists, not missing ones.
+  const daily = u.daily ?? [];
+  const models = u.models ?? [];
   if (view === 2) {
+    if (daily.length === 0) {
+      head.lines.push(t("还没有每日记录", "No daily records yet"));
+      return head;
+    }
     head.chart = {
       type: "line",
-      series: [{ name: "tokens", color: "#4FC3F7", points: u.daily.map((d) => d.value) }],
-      labels: u.daily.map((d) => d.name),
-      xLabels: [u.daily[0].name, u.daily[u.daily.length - 1].name],
+      series: [{ name: "tokens", color: "#4FC3F7", points: daily.map((d) => d.value) }],
+      labels: daily.map((d) => d.name),
+      xLabels: [daily[0].name, daily[daily.length - 1].name],
     };
     return head;
   }
@@ -82,8 +89,8 @@ export function render(ctx) {
   if (view === 0 && limit === 0) head.lines.push(t("在「设置 → AI 用量」填写额度即可看到剩余量", "Set a budget in Settings → AI usage to see what is left"));
   head.chart = {
     type: "barh",
-    series: [{ name: "tokens", color: "#4FC3F7", points: u.models.map((m) => m.value) }],
-    labels: u.models.map((m) => m.name.replace("claude-", "")),
+    series: [{ name: "tokens", color: "#4FC3F7", points: models.map((m) => m.value) }],
+    labels: models.map((m) => m.name.replace("claude-", "")),
   };
   return head;
 }
