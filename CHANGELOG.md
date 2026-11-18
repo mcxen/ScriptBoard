@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1
+
+- Mac OS 9 skin, after AvaMedia's Platinum: pixel font (Fusion Pixel 12px, OFL), Platinum colors, bevelled controls, category strips, lavender selection.
+- Appearance: style (default or Mac OS 9) and light, dark or system; settings are kept.
+- Charts: combo (curve with rings), heat table (click a cell for its detail), stacked panels with a shared crosshair; K-line periods by second, minute, hour, day, week and month; hollow candles and OHLC bars.
+- Numbers ease to their new value; the full view follows the point under the pointer, with its date and O/H/L/C.
+- Window: macOS traffic lights in a title row, and Windows/Linux minimize, maximize and close (as notes does).
+- The sidebar folds into an icon rail; Escape goes back a page.
+- Editor: copy a script as a new home card; home-card switches are in the editor.
+- Fixes: home cards keep the chosen chart style; the quick-entry button stays on medium cards.
+
 ## 0.1.0
 
 First release.
