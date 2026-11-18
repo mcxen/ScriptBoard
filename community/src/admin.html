@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScriptBoard 社区 · 审核</title>
+<style>
+  :root { color-scheme: light dark; --line: #d0d4da; --muted: #6b7280; --ok: #2e7d32; --bad: #c62828; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; max-width: 760px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 8px 0 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input[type=password], input[type=text] { flex: 1 1 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+  button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; font: inherit; cursor: pointer; }
+  button.ok { background: var(--ok); color: #fff; border-color: var(--ok); }
+  button.bad { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 12px 0; }
+  .meta { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+  pre { background: rgba(127,127,127,.12); padding: 10px; border-radius: 8px; overflow: auto; max-height: 280px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .status { color: var(--muted); font-size: 13px; min-height: 18px; margin: 6px 0; }
+  .tabs button.on { background: rgba(127,127,127,.15); }
+</style>
+</head>
+<body>
+<h1>社区审核</h1>
+<p class="meta">输入管理员密钥（由 <code>wrangler secret put ADMIN_KEY</code> 设置）。密钥只保存在本页的会话里，关闭标签页即清除。</p>
+<div class="row">
+  <input id="key" type="password" placeholder="管理员密钥" autocomplete="off">
+  <button id="load">加载</button>
+</div>
+<div class="row tabs" style="margin-top:10px">
+  <button data-status="pending" class="on">待审核</button>
+  <button data-status="approved">已通过</button>
+  <button data-status="rejected">已拒绝</button>
+</div>
+<div id="status" class="status"></div>
+<div id="list"></div>
+
+<script>
+  const keyInput = document.getElementById("key");
+  const list = document.getElementById("list");
+  const statusLine = document.getElementById("status");
+  let current = "pending";
+
+  keyInput.value = sessionStorage.getItem("sb-admin-key") || "";
+
+  function say(text) { statusLine.textContent = text; }
+
+  async function api(path, options = {}) {
+    const headers = { "x-admin-key": keyInput.value.trim(), "content-type": "application/json" };
+    const res = await fetch(path, { ...options, headers });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+    return body;
+  }
+
+  function el(tag, text, cls) {
+    const node = document.createElement(tag);
+    if (text != null) node.textContent = text;
+    if (cls) node.className = cls;
+    return node;
+  }
+
+  function render(scripts) {
+    list.replaceChildren();
+    if (!scripts.length) { list.append(el("p", "这里没有脚本。", "meta")); return; }
+    for (const s of scripts) {
+      const card = el("div", null, "card");
+      card.append(el("strong", s.name));
+      card.append(el("div", "作者 " + s.author_name + " · 提交于 " + new Date(s.created_at).toLocaleString(), "meta"));
+      if (s.description) card.append(el("div", s.description, "meta"));
+      card.append(el("pre", s.source));
+      if (current === "pending") {
+        const row = el("div", null, "row");
+        const ok = el("button", "通过", "ok");
+        const bad = el("button", "拒绝", "bad");
+        ok.onclick = () => review(s.id, "approve");
+        bad.onclick = () => review(s.id, "reject");
+        row.append(ok, bad);
+        card.append(row);
+      } else if (s.review_note) {
+        card.append(el("div", "备注：" + s.review_note, "meta"));
+      }
+      list.append(card);
+    }
+  }
+
+  async function load() {
+    if (!keyInput.value.trim()) { say("先输入管理员密钥"); return; }
+    sessionStorage.setItem("sb-admin-key", keyInput.value.trim());
+    say("加载中…");
+    try {
+      const body = await api("/api/admin/scripts?status=" + current);
+      render(body.scripts);
+      say("共 " + body.scripts.length + " 个");
+    } catch (err) {
+      list.replaceChildren();
+      say("出错：" + err.message);
+    }
+  }
+
+  async function review(id, action) {
+    const note = action === "reject" ? (prompt("拒绝的理由（可以留空）") || "") : "";
+    try {
+      await api("/api/admin/scripts/" + id + "/review", { method: "POST", body: JSON.stringify({ action, note }) });
+      await load();
+    } catch (err) {
+      say("出错：" + err.message);
+    }
+  }
+
+  document.getElementById("load").onclick = load;
+  keyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+  for (const b of document.querySelectorAll("[data-status]")) {
+    b.onclick = () => {
+      current = b.dataset.status;
+      for (const o of document.querySelectorAll("[data-status]")) o.classList.toggle("on", o === b);
+      load();
+    };
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+/build/
+/.mygo/
+mygo_windows_*.syso
+bin/
+.dev.vars
+.wrangler/
+node_modules/
+.DS_Store
+# written by `go test`; the README's pictures are in docs/images
+/screenshots/
+# local agent skills
+/.agents/
+# the update signing key never belongs here
+mygo-update.key

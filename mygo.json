@@ -1,0 +1,13 @@
+{
+  "name": "ScriptBoard",
+  "slug": "scriptboard",
+  "identifier": "app.openspring.scriptboard",
+  "version": "0.1.0",
+  "out": "build",
+  "updates": {
+    "publicKey": "7O6VOAAnVCzwDLYnNadP8n2s/vWLjnPjnzXiMX+ubxM=",
+    "github": "mcxen/ScriptBoard"
+  },
+  "ios": { "minimumSystemVersion": "17.0" },
+  "android": { "minSdk": 26 }
+}

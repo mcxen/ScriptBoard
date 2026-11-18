@@ -1,0 +1,182 @@
+name: Release
+
+# A tag v<version> builds the app for macOS, Windows, Linux and Android and
+# publishes the installers as a GitHub release. The tag must match mygo.json's
+# version, and CHANGELOG.md must have a "## <version>" section (it becomes the
+# update's release notes).
+#
+# Each desktop build signs its update with the MYGO_UPDATER_PRIVATE_KEY secret
+# (the key of mygo.json's updates.publicKey) and uploads it, with the
+# installers (-upload), to a draft release that the last jobs publish:
+# installed apps then read the manifests from the latest release, through the
+# tvv.tw mirror first when the user's language is Chinese (update.go).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # the draft release, and the uploads to it
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check the release version
+        if: github.ref_type == 'tag'
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(jq -r .version mygo.json)"
+          grep -q "^## $(jq -r .version mygo.json)\b" CHANGELOG.md
+      - run: go vet ./...
+      - run: CGO_ENABLED=0 go test -count=1 ./...
+      - run: GOOS=windows CGO_ENABLED=0 go vet ./...
+
+  draft-release:
+    name: Draft release
+    if: github.ref_type == 'tag'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            notes="$RUNNER_TEMP/notes.md"
+            cat > "$notes" <<'EOF2'
+          ## Before you install
+
+          - The macOS app is signed ad hoc and not notarized. After dragging it to Applications, open it with right-click › Open the first time, or run `xattr -dr com.apple.quarantine /Applications/ScriptBoard.app`.
+          - The Windows installer is not code-signed: SmartScreen may ask you to confirm (More info › Run anyway).
+          - ScriptBoard checks for signed updates itself (Settings › Updates). The `.deb` package is installed under /opt, where the app cannot replace itself: install the next release's package to update. The `.tar.gz` build, extracted somewhere you can write to, updates itself.
+          - The Android `.apk` is signed with a debug key: install it by hand; it does not update itself.
+          EOF2
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag --title "ScriptBoard $GITHUB_REF_NAME" --notes-file "$notes" --generate-notes
+          fi
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: draft-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: darwin/universal, os: macos-latest }
+          - { platform: windows/amd64, os: windows-latest }
+          - { platform: windows/arm64, os: windows-latest }
+          - { platform: linux/amd64, os: ubuntu-latest }
+          - { platform: linux/arm64, os: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # -sign - signs the macOS app ad hoc: the repository has no Developer ID
+      # yet, so the app is not notarized. The update itself is signed with the
+      # key of mygo.json's updates.publicKey, whatever the platform.
+      - name: Build and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: go tool mygo build -platform "${{ matrix.platform }}" -sign - -upload
+
+  android:
+    name: Build Android
+    needs: draft-release
+    runs-on: ubuntu-latest
+    # The APK is a bonus: a failure here does not stop the desktop release.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install the NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-35" "build-tools;35.0.0"
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: go tool mygo build -platform android
+      - name: Upload the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(jq -r .version mygo.json)"
+          gh release upload "$GITHUB_REF_NAME" "build/android/scriptboard-$version.apk" --clobber --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the draft and publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="$(jq -r .version mygo.json)"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort > assets.txt
+          cat assets.txt
+          # The installers, and a manifest for each platform that installed
+          # apps check: a release without them cannot be updated to.
+          for want in "scriptboard-$version.dmg" "scriptboard-setup-$version-amd64.exe" "scriptboard-setup-$version-arm64.exe" \
+                      "scriptboard_${version}_amd64.deb" "scriptboard_${version}_arm64.deb" \
+                      update-darwin-universal.json update-windows-amd64.json update-windows-arm64.json \
+                      update-linux-amd64.json update-linux-arm64.json; do
+            grep -qxF "$want" assets.txt || { echo "::error::the release lacks $want" >&2; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # The release page also lists tvv.tw links for the installers, for readers
+  # who cannot reach GitHub's downloads directly. The app's own updates reach
+  # the mirror through update.go and fall back to GitHub.
+  mirror-links:
+    name: Add mirror links
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append the tvv.tw links to the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="$GITHUB_REF_NAME"
+          notes="$RUNNER_TEMP/notes.md"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' | sed '/^## Mirror downloads/,$d' > "$notes"
+          {
+            echo '## Mirror downloads'
+            echo
+            echo 'For networks that cannot reach GitHub downloads (tvv.tw mirror):'
+            echo
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].url' | while IFS= read -r url; do
+              name="${url##*/}"
+              case "$name" in
+                update-*|*.json|*.delta|install.sh|install.ps1|SHA256SUMS) continue ;;
+              esac
+              echo "- [$name](https://tvv.tw/$url)"
+            done
+          } >> "$notes"
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"

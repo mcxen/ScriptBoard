@@ -1,0 +1,10 @@
+ScriptBoard uses these projects:
+
+- MyGo (github.com/egoist/mygo): the native UI toolkit and build tool.
+- Lobe MyGo (github.com/lobehub/lobe-mygo): components and design tokens.
+- moejs (github.com/MoeForge/moejs): the JavaScript runtime for scripts.
+- Lucide icons (icons/LICENSE-lucide.txt, ISC license).
+
+The tvv.tw mirror is a third-party GitHub proxy; ScriptBoard uses it only for
+update downloads, and checks every file against the signing key built into
+the app.

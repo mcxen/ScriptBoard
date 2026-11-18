@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: CGO_ENABLED=0 go test -count=1 ./...
+      - run: GOOS=windows CGO_ENABLED=0 go vet ./...
+      - run: GOOS=darwin CGO_ENABLED=0 go vet ./...
+      - run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go vet ./...
+  worker:
+    # The community Worker's smoke test needs wrangler, so it is not run here;
+    # this only checks that the JavaScript parses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --check community/src/index.js
