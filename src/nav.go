@@ -46,7 +46,7 @@ func (a *app) view(c *ui.Context) {
 	compact := a.width > 0 && a.width < compactWidth
 	a.compact = compact
 
-	root := ui.Column(c).Fill().Background(pal(c).canvas).Children(func() {
+	ui.Column(c).Fill().Background(pal(c).canvas).Children(func() {
 		p := pal(c)
 		path := a.router.Path()
 		pages := func() {
@@ -93,9 +93,10 @@ func (a *app) view(c *ui.Context) {
 			pages()
 		})
 	})
-	if a.win != nil || a.width == 0 {
-		a.width = root.Bounds().W
-		a.height = root.Bounds().H
+	// The page's own size in DIPs. The root's bounds are not the window's on
+	// Android, where they came out as a landscape rectangle.
+	if w, h := c.Size(); w > 0 {
+		a.width, a.height = float32(w), float32(h)
 	}
 }
 
