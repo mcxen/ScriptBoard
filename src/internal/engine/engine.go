@@ -90,6 +90,34 @@ type Series struct {
 	Dashed bool `json:"dashed"`
 }
 
+// Grid is a heatmap table, such as a retention matrix: rows of cells with a
+// value from 0 to 100 each, shaded darker as the value grows. A cell with no
+// value is -1. Average, when set, is a row of its own under the table.
+type Grid struct {
+	Columns []string  `json:"columns"`
+	Rows    []GridRow `json:"rows"`
+	Average []float64 `json:"average"`
+	Footer  string    `json:"footer"`
+}
+
+// GridRow is one row of a Grid: its label, a note after the label (such as the
+// number of users), and its cells.
+type GridRow struct {
+	Label string    `json:"label"`
+	Note  string    `json:"note"`
+	Cells []float64 `json:"cells"`
+}
+
+// Panel is one panel of a "panels" chart: a titled chart of its own, stacked
+// under the others. Style is the look of its series (line, area, dot, bar, or
+// step). A reference line is a dashed series of one value repeated.
+type Panel struct {
+	Title  string   `json:"title"`
+	Style  string   `json:"style"`
+	Weight float64  `json:"weight"`
+	Series []Series `json:"series"`
+}
+
 // Ring is one circle of a "combo" chart: a share of 100 percent, with a label
 // under it. Text is what the circle shows; the percent when it is empty.
 type Ring struct {
@@ -137,6 +165,10 @@ type Chart struct {
 	Limit  int     `json:"limit"`
 	// Rings are the circles of a "combo" chart, drawn beside its curve.
 	Rings []Ring `json:"rings"`
+	// Grid is the table of a "heat" chart.
+	Grid *Grid `json:"grid"`
+	// Panels are the stacked charts of a "panels" chart.
+	Panels []Panel `json:"panels"`
 }
 
 // Result is what render returns, plus the lines the script logged.

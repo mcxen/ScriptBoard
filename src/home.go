@@ -242,7 +242,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 		default:
-			ui.Text(c, st.res.Big).FontSize(bigSize).Bold().NoWrap()
+			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			switch size {
 			case 1:

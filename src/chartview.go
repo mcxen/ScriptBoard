@@ -253,6 +253,12 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	if isCombo(ch) {
 		return comboView(c, ch, style, h, sel, full)
 	}
+	if isHeat(ch) {
+		return heatView(c, ch, sel)
+	}
+	if isPanels(ch) {
+		return panelsView(c, ch, style, h, sel, full)
+	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
 			return gaugeView(c, ch, h)
@@ -290,6 +296,9 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 				p.Line(r.X, y, r.X+r.W, y, 1, pl.hairline)
 			}
 			paint(p, r, ch, s, style, xs, t.Accent)
+			if full {
+				lastPriceLine(p, r, ch, s)
+			}
 		})
 
 		if sel != nil {
@@ -307,6 +316,15 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 	if isCombo(ch) {
 		return comboView(c, ch, "", h, nil, false)
+	}
+	if isHeat(ch) {
+		// A card shows the average of the table; the table is for the full view.
+		g := ch.Grid
+		return heatView(c, &engine.Chart{Type: "heat", Grid: &engine.Grid{Columns: g.Columns, Average: g.Average, Footer: g.Footer}}, nil)
+	}
+	if isPanels(ch) {
+		// A card shows the first panel: the whole stack is for the full view.
+		return Spark(c, &engine.Chart{Type: "line", Series: ch.Panels[0].Series}, h)
 	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
@@ -461,7 +479,10 @@ func drawLines(p *ui.Painter, r ui.Rect, lines []seriesLine, fill bool, curve ch
 			continue
 		}
 		if fill && i == 0 {
-			p.FillPath(chart.Area(r, ln.xs, nil, ln.ys, curve), ln.color.Alpha(0.15))
+			// The fill fades from the line down to the axis, as a quote chart's does.
+			p.FillPathGradient(chart.Area(r, ln.xs, nil, ln.ys, curve), ui.LinearGradient{
+				From: ln.color.Alpha(0.32), To: ln.color.Alpha(0.02), Angle: 180,
+			})
 		}
 		p.StrokePath(chart.Line(r, ln.xs, ln.ys, curve), 2, ln.color)
 	}
@@ -719,4 +740,18 @@ func drawOHLC(p *ui.Painter, r ui.Rect, cs []engine.Candle, s scaled) {
 		p.Line(xc-tick, yo, xc, yo, 1.5, col)
 		p.Line(xc, yc, xc+tick, yc, 1.5, col)
 	}
+}
+
+// lastPriceLine draws a dashed rule at the newest value of a line chart: the
+// price a quote chart marks on its right edge.
+func lastPriceLine(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled) {
+	if ch.Type == "candle" || len(s.series) == 0 {
+		return
+	}
+	ln := s.series[0]
+	if len(ln.ys) == 0 {
+		return
+	}
+	rule := seriesLine{color: ln.color.Alpha(0.7), xs: []float32{0, 1}, ys: []float32{ln.ys[len(ln.ys)-1], ln.ys[len(ln.ys)-1]}}
+	drawDashed(p, r, rule)
 }
