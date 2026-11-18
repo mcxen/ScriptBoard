@@ -68,6 +68,7 @@ type app struct {
 	set     store.Settings
 	unitIdx int
 	langIdx int // the language row of the settings: 0 auto, 1 中文, 2 English
+	skinIdx int // the appearance row of the settings: 0 default, 1 Mac OS 9
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
@@ -166,6 +167,11 @@ func newApp(dir string, offline bool) (*app, error) {
 		a.langIdx = 2
 	}
 	setLang(a.set.Lang)
+	setSkin(a.set.Skin)
+	a.skinIdx = 0
+	if curSkin() == skinMac9 {
+		a.skinIdx = 1
+	}
 	return a, nil
 }
 

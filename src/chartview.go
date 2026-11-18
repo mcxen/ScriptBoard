@@ -20,6 +20,8 @@ type styleOpt struct{ key, label string }
 
 var seriesStyles = []styleOpt{
 	{"line", "折线"}, {"area", "面积"}, {"dot", "点状"}, {"bar", "柱状"}, {"step", "阶梯"},
+	// The retro styles: they work with any skin, on any series chart.
+	{"stripe", "条纹柱"}, {"pixel", "像素点"}, {"grid", "网格折线"},
 }
 
 var candleStyles = []styleOpt{
@@ -200,7 +202,7 @@ func fractions(n int) []float32 {
 // xsFor returns where each point sits in a style: bars sit in the middle of
 // their band, lines at their place on the edges.
 func xsFor(ch *engine.Chart, s scaled, style string) []float32 {
-	if ch.Type != "candle" && style == "bar" {
+	if ch.Type != "candle" && (style == "bar" || style == "stripe") {
 		band := candleBand(s.n, ch.Labels)
 		xs := make([]float32, s.n)
 		for i := range xs {
@@ -325,8 +327,14 @@ func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, x
 		if ch.Type == "candle" {
 			drawCloseBars(p, r, ch.Candles, s)
 		} else {
-			drawBars(p, r, s, xs)
+			drawBars(p, r, s, xs, false)
 		}
+	case "stripe":
+		drawBars(p, r, s, xs, true)
+	case "pixel":
+		drawPixels(p, r, s.series)
+	case "grid":
+		drawGridLine(p, r, s, xs)
 	case "area":
 		drawLines(p, r, s.series, true, chart.CurveMonotone)
 	case "step":
@@ -450,7 +458,10 @@ func drawDots(p *ui.Painter, r ui.Rect, lines []seriesLine) {
 
 // drawBars paints a bar for each point of each series, the series side by
 // side within each band.
-func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
+//
+// With stripes, each bar is banded with light rows, as the bars of Mac OS 9's
+// charts were.
+func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32, stripes bool) {
 	k := float32(len(s.series))
 	if k == 0 {
 		return
@@ -465,10 +476,43 @@ func drawBars(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
 			xl, xr := chart.X(r, x0)+1, chart.X(r, x0+w)-1
 			top := chart.Y(r, ln.ys[j])
 			lo, hi := math.Min(float64(top), float64(base)), math.Max(float64(top), float64(base))
-			p.Fill(ui.Rect{X: xl, Y: float32(lo), W: xr - xl, H: float32(hi - lo)}, ln.color.Alpha(0.85), 2)
+			bar := ui.Rect{X: xl, Y: float32(lo), W: xr - xl, H: float32(hi - lo)}
+			if !stripes {
+				p.Fill(bar, ln.color.Alpha(0.85), 2)
+				continue
+			}
+			p.Fill(bar, ln.color, 0)
+			for y := bar.Y + 2; y < bar.Y+bar.H; y += 6 {
+				p.Fill(ui.Rect{X: bar.X, Y: y, W: bar.W, H: 3}, ui.Hex("#FFFFFF").Alpha(0.45), 0)
+			}
 		}
 	}
 	_ = xs
+}
+
+// drawPixels paints each point as a small square, as the pixels of an old
+// screen.
+func drawPixels(p *ui.Painter, r ui.Rect, lines []seriesLine) {
+	for _, ln := range lines {
+		for j := range ln.xs {
+			// Kept inside the plot, so the last point at the edge is whole.
+			x := min(max(chart.X(r, ln.xs[j]), r.X+2.5), r.X+r.W-2.5)
+			y := min(max(chart.Y(r, ln.ys[j]), r.Y+2.5), r.Y+r.H-2.5)
+			p.Fill(ui.Rect{X: x - 2.5, Y: y - 2.5, W: 5, H: 5}, ln.color, 0)
+		}
+	}
+}
+
+// drawGridLine draws the lines with a grid behind them: a vertical rule at
+// each point, the same blue-gray as the horizontal rules of the chart.
+func drawGridLine(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
+	if len(s.series) > 0 {
+		for _, x := range xs {
+			xp := chart.X(r, x)
+			p.Line(xp, r.Y, xp, r.Y+r.H, 1, ui.Hex("#8C8C8C").Alpha(0.35))
+		}
+	}
+	drawLines(p, r, s.series, false, chart.CurveLinear)
 }
 
 // closeLine is the closing prices of a candle chart as a line.

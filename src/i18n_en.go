@@ -4,6 +4,12 @@ package main
 // Fragments that are joined to a value ("已登录：" + name) are listed as they
 // appear in the source.
 var enText = map[string]string{
+	"外观": "Appearance",
+	"默认": "Default",
+	"切换后所有页面立即换成所选的外观。": "Every page changes to the chosen look at once.",
+	"条纹柱":       "Striped bars",
+	"像素点":       "Pixel dots",
+	"网格折线":      "Grid line",
 	"tvv.tw 镜像": "tvv.tw mirror",
 	"检查更新":      "Check for updates",
 	"立即检查":      "Check now",

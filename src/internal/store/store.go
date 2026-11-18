@@ -30,6 +30,8 @@ type Settings struct {
 	WeightUnit string `json:"weightUnit"`
 	// Lang is "zh", "en", or "" to follow the language of the computer.
 	Lang string `json:"lang"`
+	// Skin is the look of the app: "" the default, "mac9" Mac OS 9.
+	Skin string `json:"skin"`
 	// UpdateSource is where updates come from: "" automatic (the tvv.tw
 	// mirror for Chinese, GitHub otherwise), "github" or "tvv".
 	UpdateSource string `json:"updateSource"`

@@ -31,6 +31,16 @@ func (a *app) settings(c *ui.Context, compact bool) {
 	page(c, compact, func() {
 		header(c, tr("设置"), "", nil)
 
+		group(c, tr("外观"), compact,
+			row{title: tr("外观"), note: tr("切换后所有页面立即换成所选的外观。"), control: func() {
+				if segmented(c, &a.skinIdx, tr("默认"), "Mac OS 9").Changed() {
+					a.set.Skin = skinNames[a.skinIdx]
+					setSkin(a.set.Skin)
+					a.saveSettings()
+				}
+			}},
+		)
+
 		group(c, tr("数据"), compact,
 			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
 				if segmented(c, &a.unitIdx, unitNames...).Changed() {

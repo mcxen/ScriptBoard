@@ -42,11 +42,11 @@ func (n navItem) active(path string) bool {
 // view builds the window. A wide window has a sidebar beside the page; a
 // narrow one, the phone layout, has a bar of tabs under it.
 func (a *app) view(c *ui.Context) {
-	brand.Apply(c)
+	applySkin(c)
 	compact := a.width > 0 && a.width < compactWidth
 	a.compact = compact
 
-	ui.Column(c).Fill().Background(pal(c).canvas).Children(func() {
+	skinBackground(c, ui.Column(c).Fill()).Children(func() {
 		p := pal(c)
 		path := a.router.Path()
 		pages := func() {

@@ -40,14 +40,6 @@ const (
 // for color, radius and type, and its components, which take their inputs as
 // a Props struct: component(c, value, Props{Variant, Size, …}). brand is Lobe's
 // token set with a blue primary; there is no purple anywhere.
-var brand = func() *theme.Config {
-	light, dark := *theme.Light(), *theme.Dark()
-	// The whole primary family is set together, as Lobe's docs advise.
-	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#0559FF"), ui.Hex("#044EE0"), ui.Hex("#0343C2")
-	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#3D7BFF"), ui.Hex("#5C8FFF"), ui.Hex("#2F66E0")
-	light.PrimaryForeground, dark.PrimaryForeground = light.TextLightSolid, dark.TextLightSolid
-	return theme.NewConfig(light, dark)
-}()
 
 // palette is the handful of colors the building blocks use, read from the
 // tokens of the theme being built.
@@ -129,9 +121,7 @@ func notice(c *ui.Context, text string, kind feedback.AlertType) ui.Element {
 }
 
 // card is Lobe's Block: an outlined rounded surface with a soft shadow.
-func card(c *ui.Context) ui.Element {
-	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
-}
+func card(c *ui.Context) ui.Element { return skinCard(c) }
 
 // pad is the padding around a page.
 func pad(compact bool) float32 {
