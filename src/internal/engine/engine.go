@@ -82,6 +82,21 @@ type Series struct {
 	Name   string    `json:"name"`
 	Color  string    `json:"color"`
 	Points []float64 `json:"points"`
+	// Offset is the index on the chart's axis of the first point. Only the
+	// "combo" chart uses it, so that a curve can cover part of the axis: a
+	// solid part from the start and a dashed projection after it.
+	Offset int `json:"offset"`
+	// Dashed draws the line dashed, and leaves it unfilled: a projection.
+	Dashed bool `json:"dashed"`
+}
+
+// Ring is one circle of a "combo" chart: a share of 100 percent, with a label
+// under it. Text is what the circle shows; the percent when it is empty.
+type Ring struct {
+	Label   string  `json:"label"`
+	Percent float64 `json:"percent"`
+	Text    string  `json:"text"`
+	Color   string  `json:"color"`
 }
 
 // Candle is the open, high, low and close of one period, as a K-line.
@@ -114,6 +129,8 @@ type Chart struct {
 	Gauge   *Gauge   `json:"gauge"`
 	Labels  []string `json:"labels"`
 	XLabels []string `json:"xLabels"`
+	// Rings are the circles of a "combo" chart, drawn beside its curve.
+	Rings []Ring `json:"rings"`
 }
 
 // Result is what render returns, plus the lines the script logged.

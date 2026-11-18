@@ -95,6 +95,7 @@ type seriesLine struct {
 	color  ui.Color
 	vals   []float64
 	xs, ys []float32
+	dashed bool
 }
 
 // scaled is a chart mapped onto the plot: the value scale, the y ticks and
@@ -116,6 +117,9 @@ func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 func scale(ch *engine.Chart, fallback ui.Color) scaled {
 	var s scaled
 	s.n = count(ch)
+	if ch.Type == "combo" {
+		s.n = comboCount(ch)
+	}
 	if s.n == 0 {
 		s.empty = true
 		return s
@@ -168,8 +172,11 @@ func scale(ch *engine.Chart, fallback ui.Color) scaled {
 			continue
 		}
 		color := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
-		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points}
+		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points, dashed: sr.Dashed}
 		ln.xs = fractions(n)
+		if ch.Type == "combo" && sr.Offset >= 0 && sr.Offset+n <= len(s.xs) {
+			ln.xs = s.xs[sr.Offset : sr.Offset+n]
+		}
 		ln.ys = make([]float32, n)
 		for j, v := range sr.Points {
 			ln.ys[j] = s.y.At(v)
@@ -243,6 +250,9 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 }
 
 func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+	if isCombo(ch) {
+		return comboView(c, ch, style, h, sel, full)
+	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
 			return gaugeView(c, ch, h)
@@ -295,6 +305,9 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 // Spark draws ch as a bare curve or dots with no axes, for cards. It fills
 // the width and is h DIPs tall.
 func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
+	if isCombo(ch) {
+		return comboView(c, ch, "", h, nil, false)
+	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
 			return gaugeView(c, ch, h)
@@ -437,6 +450,10 @@ func axisTicks(xs []float32, labels []string, n int) []chart.Tick {
 func drawLines(p *ui.Painter, r ui.Rect, lines []seriesLine, fill bool, curve chart.Curve) {
 	for i, ln := range lines {
 		if len(ln.xs) == 0 {
+			continue
+		}
+		if ln.dashed {
+			drawDashed(p, r, ln)
 			continue
 		}
 		if fill && i == 0 {
@@ -618,4 +635,34 @@ func Detail(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
 		text = text + "    · " + hint
 	}
 	return ui.Text(c, text).FontSize(fsSmall).TextColor(pal(c).muted)
+}
+
+// drawDashed strokes a line as dashes: a projection that is not known yet.
+func drawDashed(p *ui.Painter, r ui.Rect, ln seriesLine) {
+	const dash, gap = 6.0, 4.0
+	for j := 0; j+1 < len(ln.xs); j++ {
+		x0, y0 := chart.X(r, ln.xs[j]), chart.Y(r, ln.ys[j])
+		x1, y1 := chart.X(r, ln.xs[j+1]), chart.Y(r, ln.ys[j+1])
+		length := math.Hypot(float64(x1-x0), float64(y1-y0))
+		if length == 0 {
+			continue
+		}
+		for t := 0.0; t < length; t += dash + gap {
+			end := math.Min(t+dash, length)
+			f0, f1 := float32(t/length), float32(end/length)
+			p.Line(x0+(x1-x0)*f0, y0+(y1-y0)*f0, x0+(x1-x0)*f1, y0+(y1-y0)*f1, 1.6, ln.color)
+		}
+	}
+}
+
+// comboCount is the length of a combo chart's axis: the furthest point of
+// its series.
+func comboCount(ch *engine.Chart) int {
+	n := 0
+	for _, sr := range ch.Series {
+		if end := sr.Offset + len(sr.Points); end > n {
+			n = end
+		}
+	}
+	return n
 }
