@@ -129,6 +129,12 @@ type Chart struct {
 	Gauge   *Gauge   `json:"gauge"`
 	Labels  []string `json:"labels"`
 	XLabels []string `json:"xLabels"`
+	// Ticks, for a K-line, are the prices in time order; the host groups them
+	// into Candles of Period seconds (PeriodMonth for months), and keeps the
+	// last Limit candles when it is set.
+	Ticks  []Point `json:"ticks"`
+	Period int     `json:"period"`
+	Limit  int     `json:"limit"`
 	// Rings are the circles of a "combo" chart, drawn beside its curve.
 	Rings []Ring `json:"rings"`
 }
@@ -246,6 +252,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return res, err
 	}
+	finishChart(res.Chart, in.TZOffset)
 	return res, nil
 }
 

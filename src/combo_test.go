@@ -80,3 +80,36 @@ func TestComboWithoutRings(t *testing.T) {
 		t.Errorf("rings drawn without rings")
 	}
 }
+
+// The K-line styles draw on a candle chart: the candles, hollow candles and
+// OHLC bars, each with its own name in the style menu.
+func TestCandleStyles(t *testing.T) {
+	ch := &engine.Chart{Type: "candle", Labels: []string{"a", "b", "c", "d"}, Candles: []engine.Candle{
+		{O: 10, H: 13, L: 9, C: 12},
+		{O: 12, H: 12.5, L: 8, C: 9},
+		{O: 9, H: 11, L: 8.5, C: 10.5},
+		{O: 10.5, H: 14, L: 10, C: 13.2},
+	}}
+	styles := stylesFor(ch)
+	want := map[string]bool{"candle": false, "hollow": false, "ohlc": false, "close": false, "bar": false}
+	for _, o := range styles {
+		if _, ok := want[o.key]; ok {
+			want[o.key] = true
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("candle style %q missing from the menu", k)
+		}
+	}
+	for _, style := range []string{"candle", "hollow", "ohlc"} {
+		style := style
+		view := func(c *ui.Context) {
+			applySkin(c)
+			Chart(c, ChartProps{Data: ch, Style: style, Height: 200, Full: true})
+		}
+		tt := ui.NewTester(view, 480, 260)
+		settle(tt)
+		savePNG(t, tt, "19-candles-"+style)
+	}
+}

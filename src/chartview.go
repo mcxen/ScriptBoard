@@ -25,7 +25,7 @@ var seriesStyles = []styleOpt{
 }
 
 var candleStyles = []styleOpt{
-	{"candle", "K 线"}, {"close", "收盘线"}, {"bar", "收盘柱"},
+	{"candle", "K 线"}, {"hollow", "空心K线"}, {"ohlc", "美国线"}, {"close", "收盘线"}, {"bar", "收盘柱"},
 }
 
 // stylesFor lists the styles a chart can be drawn in.
@@ -334,6 +334,10 @@ func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, x
 	switch style {
 	case "candle":
 		drawCandles(p, r, ch.Candles, s)
+	case "hollow":
+		drawHollowCandles(p, r, ch.Candles, s)
+	case "ohlc":
+		drawOHLC(p, r, ch.Candles, s)
 	case "close":
 		drawLines(p, r, []seriesLine{closeLine(ch, s, accent)}, false, chart.CurveLinear)
 	case "bar":
@@ -665,4 +669,54 @@ func comboCount(ch *engine.Chart) int {
 		}
 	}
 	return n
+}
+
+// drawHollowCandles paints the Chinese-market style of hollow candles: a rising
+// period is an outline, a falling one is filled; the wick is as in drawCandles.
+func drawHollowCandles(p *ui.Painter, r ui.Rect, cs []engine.Candle, s scaled) {
+	for i, cd := range cs {
+		up := cd.C >= cd.O
+		col := downColor
+		if up {
+			col = upColor
+		}
+		span := s.bands[i]
+		xc := chart.X(r, span.Mid())
+		x0, x1 := chart.X(r, span.Lo), chart.X(r, span.Hi)
+		p.Line(xc, chart.Y(r, s.y.At(cd.H)), xc, chart.Y(r, s.y.At(cd.L)), 1.2, col)
+
+		yo, yc := chart.Y(r, s.y.At(cd.O)), chart.Y(r, s.y.At(cd.C))
+		top, bot := min(yo, yc), max(yo, yc)
+		if bot-top < 1.5 {
+			mid := (top + bot) / 2
+			top, bot = mid-0.75, mid+0.75
+		}
+		if !up {
+			p.Fill(ui.Rect{X: x0, Y: top, W: x1 - x0, H: bot - top}, col, 1)
+			continue
+		}
+		const w = 1.5
+		p.Line(x0, top, x1, top, w, col)
+		p.Line(x0, bot, x1, bot, w, col)
+		p.Line(x0, top, x0, bot, w, col)
+		p.Line(x1, top, x1, bot, w, col)
+	}
+}
+
+// drawOHLC paints bars: a vertical line from the high to the low, with a tick
+// at the open on the left and one at the close on the right.
+func drawOHLC(p *ui.Painter, r ui.Rect, cs []engine.Candle, s scaled) {
+	for i, cd := range cs {
+		col := downColor
+		if cd.C >= cd.O {
+			col = upColor
+		}
+		span := s.bands[i]
+		xc := chart.X(r, span.Mid())
+		tick := (chart.X(r, span.Hi) - chart.X(r, span.Lo)) * 0.3
+		yo, yc := chart.Y(r, s.y.At(cd.O)), chart.Y(r, s.y.At(cd.C))
+		p.Line(xc, chart.Y(r, s.y.At(cd.H)), xc, chart.Y(r, s.y.At(cd.L)), 1.5, col)
+		p.Line(xc-tick, yo, xc, yo, 1.5, col)
+		p.Line(xc, yc, xc+tick, yc, 1.5, col)
+	}
 }

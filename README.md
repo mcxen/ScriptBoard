@@ -110,10 +110,12 @@ Chart(c, ChartProps{
 | --- | --- | --- |
 | `line`（默认） | 折线 / 面积 / 点状 / 柱状 / 阶梯 | `series: [{name, color, points}]`，`labels` |
 | `dot` | 点状 | 同上 |
-| `candle` | K 线 / 收盘线 / 收盘柱 | `candles: [{o,h,l,c}]`，`labels` |
+| `candle` | K 线 / 空心K线 / 美国线 / 收盘线 / 收盘柱 | 两种给法：`candles: [{o,h,l,c}]` + `labels`；或者只给 `ticks: [{t,v}]`（按时间排好），再给 `period`（秒；`-1` 为日历月），宿主按周期聚合，`limit` 只保留最后几根 |
 | `gauge` | **剩余量**圆环：中间是剩余百分比，旁边是剩余、已用 / 上限、重置时间；剩余 ≤30% 变琥珀色，≤10% 变红色 | `gauge: {used, limit, unit, label, reset}` |
 | `barh` | **横置条形图**：每项一行，按大小排序，标签在左、数值在右 | `series[0].points` 与 `labels` |
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
+
+K 线的周期由宿主统一聚合（`internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
 多条折线时只给第一条填充面积，避免两层半透明色叠出不属于任何一条线的颜色。
 

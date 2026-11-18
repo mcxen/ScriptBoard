@@ -4,8 +4,10 @@ package main
 // Fragments that are joined to a value ("已登录：" + name) are listed as they
 // appear in the source.
 var enText = map[string]string{
-	"外观": "Appearance",
-	"默认": "Default",
+	"空心K线": "Hollow candles",
+	"美国线":  "OHLC bars",
+	"外观":   "Appearance",
+	"默认":   "Default",
 	"切换后所有页面立即换成所选的外观。": "Every page changes to the chosen look at once.",
 	"条纹柱":       "Striped bars",
 	"像素点":       "Pixel dots",
