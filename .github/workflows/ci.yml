@@ -27,4 +27,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --check community/src/index.js
+      - run: node --check src/community/src/index.js

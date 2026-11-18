@@ -235,7 +235,7 @@ export function meta() {
 
 ```bash
 cd ScriptBoard
-go build -o bin/sbmcp ./cmd/sbmcp
+go build -o bin/sbmcp ./src/cmd/sbmcp
 ```
 
 ```json
@@ -250,13 +250,13 @@ MCP 工具不需要登录，写入的插件应用里约一秒后可见。
 
 ## 社区
 
-社区由 Cloudflare Worker 提供，代码在 [`community/`](community/)，数据存在 D1 里。
+社区由 Cloudflare Worker 提供，代码在 [`src/community/`](src/community/)，数据存在 D1 里。
 
 - 下载：任何人，无需登录，`GET /api/scripts/:id/download` 返回可以直接导入的 JSON。
 - 上传：必须登录，提交后待审核。每人每天最多 10 个，单个脚本最大 64 KB。
 - 审核：管理员用管理员密钥（Worker 的 `ADMIN_KEY` 机密）登录 `/admin` 页面，通过或拒绝。管理员密钥不写在代码里，也不放在 App 里。
 
-部署和本地验证见 [community/README.md](community/README.md)。
+部署和本地验证的步骤见下面的「社区」一节。
 
 ### 本地验证
 
@@ -264,10 +264,10 @@ MCP 工具不需要登录，写入的插件应用里约一秒后可见。
 cd ScriptBoard/community
 npx wrangler d1 migrations apply scriptboard-community --local
 npx wrangler dev --local --port 8787
-# 另开一个终端（ADMIN_KEY 写在 community/.dev.vars 里，只用于本地）
+# 另开一个终端（ADMIN_KEY 写在 src/community/.dev.vars 里，只用于本地）
 ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' .dev.vars) BASE=http://localhost:8787 ./scripts/smoke-test.sh
 cd ..
-SB_COMMUNITY_URL=http://localhost:8787 SB_ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' community/.dev.vars) go test ./internal/community/
+SB_COMMUNITY_URL=http://localhost:8787 SB_ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' src/community/.dev.vars) go test ./internal/community/
 ```
 
 ## 运行与测试
@@ -330,9 +330,11 @@ export function render(ctx) {
 
 ## 目录
 
+源代码都在 `src/` 下（Go 包的入口是 `src/`，`mygo.json` 的 `main` 指向它）；`resources/`、`docs/`、`mygo.json`、CI 配置等在根目录。
+
 | 路径 | 内容 |
 | --- | --- |
-| `main.go`、`app.go` | 窗口、应用状态、脚本运行、手机排版与宽窄判断 |
+| `src/main.go`、`src/app.go` | 窗口、应用状态、脚本运行、手机排版与宽窄判断 |
 | `home.go` | 首页与组件卡片，卡片尺寸随窗口与滑条调节 |
 | `fullview.go`、`stats.go` | 全屏查看与统计 |
 | `chartview.go` | 图表样式、大图、十字线与坐标 |
@@ -351,8 +353,8 @@ export function render(ctx) {
 | `i18n.go`、`i18n_en.go`、`i18n_msg.go` | 中英文 |
 | `internal/plugins` | 插件与图标的文件夹，应用和 MCP 共用 |
 | `internal/community` | 社区接口客户端 |
-| `cmd/sbmcp` | MCP 服务器 |
-| `community/` | Cloudflare Worker：社区接口、D1 表结构、审核页 |
+| `src/cmd/sbmcp` | MCP 服务器 |
+| `src/community/` | Cloudflare Worker：社区接口、D1 表结构、审核页 |
 
 ## 已知限制
 

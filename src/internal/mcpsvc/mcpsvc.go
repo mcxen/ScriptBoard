@@ -1,0 +1,327 @@
+// Package mcpsvc is ScriptBoard's Model Context Protocol server. It lets an
+// assistant create and change local plugins and icons, which the app loads
+// from the data folder. It speaks JSON-RPC two ways: over stdio (one message
+// per line), and over HTTP at /mcp for the server the app runs, guarded by a
+// bearer key. Local use needs no login and no review.
+package mcpsvc
+
+import (
+	"bufio"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"scriptboard/src/internal/plugins"
+)
+
+const protocolVersion = "2024-11-05"
+
+type request struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+type response struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  any             `json:"result,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Tool describes one tool.
+type Tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+}
+
+// Server is the MCP server over a data folder.
+type Server struct {
+	DataDir string
+	// ReadOnly, when set and true, refuses the tools that change anything:
+	// the read tools still work.
+	ReadOnly func() bool
+}
+
+func (s Server) readOnly() bool { return s.ReadOnly != nil && s.ReadOnly() }
+
+// Serve reads JSON-RPC messages from in, one per line, and writes the replies
+// to out. The protocol uses stdout only; diagnostics go to stderr.
+func (s Server) Serve(in io.Reader, out io.Writer) error {
+	sc := bufio.NewScanner(in)
+	sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		if reply := s.Handle([]byte(line)); reply != nil {
+			if _, err := out.Write(append(reply, '\n')); err != nil {
+				return err
+			}
+		}
+	}
+	return sc.Err()
+}
+
+// Handle answers one JSON-RPC message. It returns nil for a notification,
+// which gets no reply.
+func (s Server) Handle(msg []byte) []byte {
+	var req request
+	if err := json.Unmarshal(msg, &req); err != nil {
+		return mustJSON(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, "bad JSON"}})
+	}
+	result, rerr := s.handle(req)
+	if len(req.ID) == 0 {
+		return nil
+	}
+	resp := response{JSONRPC: "2.0", ID: req.ID}
+	if rerr != nil {
+		resp.Error = rerr
+	} else {
+		resp.Result = result
+	}
+	return mustJSON(resp)
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}
+
+// HTTPHandler serves the same protocol at one endpoint over HTTP: a POST of a
+// JSON-RPC message is answered with one JSON object. Every request needs
+// "Authorization: Bearer <key>"; the key is the guard, so the origin is not
+// checked and a proxy in front may use any name.
+func (s Server) HTTPHandler(key string) http.Handler {
+	want := []byte("Bearer " + key)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if key == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="scriptboard"`)
+			http.Error(w, "unauthorized: send Authorization: Bearer <key>", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "POST a JSON-RPC message", http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		reply := s.Handle(body)
+		if reply == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(reply)
+	})
+}
+
+// NewKey makes a key for the HTTP server: "sbk-" and 40 hex digits.
+func NewKey() string {
+	raw := make([]byte, 20)
+	if _, err := rand.Read(raw); err != nil {
+		return fmt.Sprintf("sbk-%040x", time.Now().UnixNano())
+	}
+	return "sbk-" + hex.EncodeToString(raw)
+}
+
+func (s Server) handle(req request) (any, *rpcError) {
+	switch req.Method {
+	case "initialize":
+		return map[string]any{
+			"protocolVersion": protocolVersion,
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": "scriptboard", "version": "0.1.0"},
+		}, nil
+	case "ping":
+		return map[string]any{}, nil
+	case "tools/list":
+		return map[string]any{"tools": Tools()}, nil
+	case "tools/call":
+		var p struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, &rpcError{-32602, "bad params"}
+		}
+		text, err := s.call(p.Name, p.Arguments)
+		if err != nil {
+			return map[string]any{
+				"content": []map[string]any{{"type": "text", "text": err.Error()}},
+				"isError": true,
+			}, nil
+		}
+		return map[string]any{
+			"content": []map[string]any{{"type": "text", "text": text}},
+		}, nil
+	}
+	if strings.HasPrefix(req.Method, "notifications/") {
+		return nil, nil
+	}
+	return nil, &rpcError{-32601, fmt.Sprintf("method %q is not supported", req.Method)}
+}
+
+// Tools lists the tools the server offers.
+func Tools() []Tool {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	obj := func(props map[string]any, required ...string) map[string]any {
+		return map[string]any{"type": "object", "properties": props, "required": required}
+	}
+	return []Tool{
+		{
+			Name:        "plugin_list",
+			Description: "List the local plugins in the ScriptBoard data folder, and any that are broken.",
+			InputSchema: obj(map[string]any{}),
+		},
+		{
+			Name:        "plugin_get",
+			Description: "Read one plugin: its manifest and script source.",
+			InputSchema: obj(map[string]any{"id": str("plugin id")}, "id"),
+		},
+		{
+			Name: "plugin_save",
+			Description: "Create or update a local plugin. The script must be an ES module that exports " +
+				"meta() and render(ctx); it is compiled before anything is written. The app picks the " +
+				"change up within a second. No login or review is needed for local plugins.",
+			InputSchema: obj(map[string]any{
+				"id":          str("plugin id: lowercase letters, digits and hyphens"),
+				"name":        str("name shown in the app"),
+				"icon":        str("icon name, such as coins (optional)"),
+				"description": str("one line about the plugin (optional)"),
+				"home":        map[string]any{"type": "boolean", "description": "show as a home card"},
+				"source":      str("the script source"),
+			}, "id", "name", "source"),
+		},
+		{
+			Name:        "plugin_delete",
+			Description: "Delete a local plugin and its icons.",
+			InputSchema: obj(map[string]any{"id": str("plugin id")}, "id"),
+		},
+		{
+			Name:        "script_check",
+			Description: "Compile a script without saving it and report its meta (name, icon, dims).",
+			InputSchema: obj(map[string]any{"source": str("the script source")}, "source"),
+		},
+		{
+			Name: "icon_add",
+			Description: "Save an SVG icon. Give plugin to put it in that plugin's icons; leave it out " +
+				"for a shared icon. Scripts use it by name. Scripts, event attributes and external links " +
+				"in the SVG are refused; the SVG must be at most 32 KB.",
+			InputSchema: obj(map[string]any{
+				"name":   str("icon name: lowercase letters, digits and hyphens"),
+				"svg":    str("the SVG markup"),
+				"plugin": str("plugin id, optional"),
+			}, "name", "svg"),
+		},
+		{
+			Name:        "icon_list",
+			Description: "List the icons scripts can use: the shared ones and each plugin's.",
+			InputSchema: obj(map[string]any{}),
+		},
+	}
+}
+
+// call runs one tool and returns its text reply.
+func (s Server) call(name string, raw json.RawMessage) (string, error) {
+	dataDir := s.DataDir
+	switch name {
+	case "plugin_save", "plugin_delete", "icon_add":
+		if s.readOnly() {
+			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
+		}
+	}
+	var a map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &a); err != nil {
+			return "", fmt.Errorf("arguments are not an object: %w", err)
+		}
+	}
+	str := func(key string) string {
+		v, _ := a[key].(string)
+		return v
+	}
+	switch name {
+	case "plugin_list":
+		list, err := plugins.List(dataDir)
+		var b strings.Builder
+		for _, p := range list {
+			fmt.Fprintf(&b, "%s  %s  icon=%s  home=%v\n", p.Manifest.ID, p.Manifest.Name, p.Manifest.Icon, p.Manifest.Home)
+		}
+		if b.Len() == 0 {
+			b.WriteString("没有插件\n")
+		}
+		if err != nil {
+			fmt.Fprintf(&b, "有问题的插件：%v\n", err)
+		}
+		return b.String(), nil
+	case "plugin_get":
+		list, err := plugins.List(dataDir)
+		if err != nil {
+			return "", err
+		}
+		for _, p := range list {
+			if p.Manifest.ID == str("id") {
+				manifest, _ := json.MarshalIndent(p.Manifest, "", "  ")
+				return string(manifest) + "\n\n" + p.Source, nil
+			}
+		}
+		return "", fmt.Errorf("没有插件 %q", str("id"))
+	case "plugin_save":
+		home, _ := a["home"].(bool)
+		m := plugins.Manifest{
+			ID:          str("id"),
+			Name:        str("name"),
+			Icon:        str("icon"),
+			Description: str("description"),
+			Home:        home,
+		}
+		if err := plugins.Save(dataDir, m, str("source")); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("已保存插件 %s，在 %s", m.ID, plugins.PluginDir(dataDir)), nil
+	case "plugin_delete":
+		if err := plugins.Delete(dataDir, str("id")); err != nil {
+			return "", err
+		}
+		return "已删除插件 " + str("id"), nil
+	case "script_check":
+		meta, err := plugins.CheckSource("check.js", str("source"))
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.MarshalIndent(meta, "", "  ")
+		return "脚本可以运行\n" + string(out), nil
+	case "icon_add":
+		path, err := plugins.AddIcon(dataDir, str("plugin"), str("name"), []byte(str("svg")))
+		if err != nil {
+			return "", err
+		}
+		return "已保存图标 " + str("name") + "，在 " + path, nil
+	case "icon_list":
+		names := plugins.ListIcons(dataDir)
+		if len(names) == 0 {
+			return "没有自定义图标（内置图标见应用的 icons 目录）\n", nil
+		}
+		return strings.Join(names, "\n") + "\n", nil
+	}
+	return "", fmt.Errorf("没有这个工具：%s", name)
+}
