@@ -116,9 +116,11 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-35" "build-tools;35.0.0"
       - name: Build
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
-        run: go tool mygo build -platform android
+        # ANDROID_HOME is set by the runner's shell, not in the workflow's env
+        # context, so the NDK path is built here.
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          go tool mygo build -platform android
       - name: Upload the APK
         env:
           GH_TOKEN: ${{ github.token }}
