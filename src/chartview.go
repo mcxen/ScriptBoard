@@ -117,7 +117,7 @@ func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 func scale(ch *engine.Chart, fallback ui.Color) scaled {
 	var s scaled
 	s.n = count(ch)
-	if ch.Type == "combo" {
+	if isCombo(ch) {
 		s.n = comboCount(ch)
 	}
 	if s.n == 0 {
@@ -283,7 +283,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	axisLabel := func(_ chart.Side, tk chart.Tick) {
 		ui.Text(c, tk.Label).NoWrap().FontSize(fsTiny).TextColor(pl.muted)
 	}
-	return chart.Plot(c, chart.Axes{Left: s.ticks, Bottom: bottom, Label: axisLabel}, func(area ui.Element) {
+	return skinPlot(c, chart.Plot(c, chart.Axes{Left: s.ticks, Bottom: bottom, Label: axisLabel}, func(area ui.Element) {
 		area.Draw(func(p *ui.Painter, r ui.Rect) {
 			for _, tk := range s.ticks {
 				y := chart.Y(r, tk.At)
@@ -299,7 +299,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 		if full {
 			crosshair(c, area, s, t)
 		}
-	}).Height(h).Gap(6)
+	}).Height(h).Gap(6))
 }
 
 // Spark draws ch as a bare curve or dots with no axes, for cards. It fills

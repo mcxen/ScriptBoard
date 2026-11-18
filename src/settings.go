@@ -33,7 +33,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 
 		group(c, tr("外观"), compact,
 			row{title: tr("外观"), note: tr("切换后所有页面立即换成所选的外观。"), control: func() {
-				if segmented(c, &a.skinIdx, tr("默认"), "Mac OS 9").Changed() {
+				if choose(c, &a.skinIdx, tr("默认"), "Mac OS 9") {
 					a.set.Skin = skinNames[a.skinIdx]
 					setSkin(a.set.Skin)
 					a.saveSettings()
@@ -43,13 +43,13 @@ func (a *app) settings(c *ui.Context, compact bool) {
 
 		group(c, tr("数据"), compact,
 			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
-				if segmented(c, &a.unitIdx, unitNames...).Changed() {
+				if choose(c, &a.unitIdx, unitNames...) {
 					a.set.WeightUnit = unitNames[a.unitIdx]
 					a.saveSettings()
 				}
 			}},
 			row{title: tr("语言"), control: func() {
-				if segmented(c, &a.langIdx, tr("自动"), "中文", "English").Changed() {
+				if choose(c, &a.langIdx, tr("自动"), "中文", "English") {
 					a.set.Lang = []string{"", langZH, langEN}[a.langIdx]
 					setLang(a.set.Lang)
 					a.saveSettings()
@@ -60,7 +60,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 				}
 			}},
 			row{title: tr("离线模式"), note: tr("不请求网络，卡片显示示例数据"), control: func() {
-				if sw(c, &a.set.Offline).Changed() {
+				if toggle(c, &a.set.Offline) {
 					a.saveSettings()
 				}
 			}},
@@ -72,7 +72,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 		for i := range list {
 			i := i
 			rows = append(rows, row{title: tr(list[i].Name), control: func() {
-				if sw(c, &list[i].Home).Changed() {
+				if toggle(c, &list[i].Home) {
 					if err := a.store.SaveScript(list[i]); err == nil {
 						a.invalidateAll()
 					}
@@ -83,7 +83,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 
 		group(c, tr("数据源"), compact,
 			row{title: tr("允许 exec 协议"), note: tr("数据源可以运行本机程序取数（exec:）。只在你信任的数据源上开启"), control: func() {
-				if sw(c, &a.set.AllowExec).Changed() {
+				if toggle(c, &a.set.AllowExec) {
 					a.saveSettings()
 				}
 			}},

@@ -57,7 +57,7 @@ func (a *app) updateGroup(c *ui.Context, compact bool) {
 							cur = i
 						}
 					}
-					if segmented(c, &cur, names...).Changed() {
+					if choose(c, &cur, names...) {
 						a.set.UpdateSource = updateChoices[cur]
 						a.saveSettings()
 						applyUpdateSource(a.set.UpdateSource)
@@ -65,7 +65,7 @@ func (a *app) updateGroup(c *ui.Context, compact bool) {
 				}},
 			row{title: tr("自动检查更新"), note: tr("每天看一次，装之前会先问你。"), control: func() {
 				on := updater.AutomaticChecks()
-				if sw(c, &on).Changed() {
+				if toggle(c, &on) {
 					updater.SetAutomaticChecks(on)
 				}
 			}},

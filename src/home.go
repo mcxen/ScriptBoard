@@ -121,7 +121,7 @@ func (a *app) home(c *ui.Context, compact bool) {
 					}
 				}
 			})
-			if segmented(c, &a.cardSize, tr("小"), tr("中"), tr("大")).Changed() {
+			if choose(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
 				a.setAllSizes(a.cardSize)
 			}
 		})

@@ -208,7 +208,7 @@ func (a *app) mcpGroups(c *ui.Context, compact bool) {
 
 	group(c, tr("MCP 服务器"), compact,
 		row{title: tr("开启 MCP 服务器"), note: tr("让 AI 助手创建和修改本地插件与图标；默认关闭，每次请求都要带密钥。") + a.mcp.status(m), control: func() {
-			if sw(c, &on).Changed() {
+			if toggle(c, &on) {
 				m.Enabled = on
 				if on && m.Key == "" {
 					m.Key = mcpsvc.NewKey()
@@ -234,13 +234,13 @@ func (a *app) mcpGroups(c *ui.Context, compact bool) {
 			}
 		}},
 		row{title: tr("允许局域网访问"), note: tr("关闭时只有这台电脑能连；打开后其他电脑和代理也能连，仍然需要密钥"), control: func() {
-			if sw(c, &lan).Changed() {
+			if toggle(c, &lan) {
 				m.LAN = lan
 				a.saveMCP(m)
 			}
 		}},
 		row{title: tr("只读"), note: tr("助手只能读取，不能保存或删除插件和图标"), control: func() {
-			if sw(c, &ro).Changed() {
+			if toggle(c, &ro) {
 				m.ReadOnly = ro
 				a.saveMCP(m)
 			}

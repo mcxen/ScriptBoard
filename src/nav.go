@@ -49,8 +49,11 @@ func (a *app) view(c *ui.Context) {
 	skinBackground(c, ui.Column(c).Fill()).Children(func() {
 		p := pal(c)
 		path := a.router.Path()
+		if isMac() {
+			macMenuBar(c)
+		}
 		pages := func() {
-			ui.Column(c).Grow(1).Background(p.canvas).Children(func() {
+			skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
 				a.router.View(c, func(r *ui.Route) {
 					switch {
 					case r.Match("/"):
@@ -111,6 +114,15 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 				ui.Text(c, tr("脚本小组件")).FontSize(fsTiny).TextColor(p.faint)
 			})
 		})
+		if isMac() {
+			for _, n := range navItems {
+				if macSidebarItem(c, tr(n.label), n.icon, n.active(path)) {
+					a.router.Push(n.path)
+				}
+			}
+			a.sidebarStatus(c, p)
+			return
+		}
 		items := make([]display.ListItem, len(navItems))
 		active := ""
 		for i, n := range navItems {
@@ -123,14 +135,19 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 			a.router.Push(key)
 		}
 		ui.Spacer(c)
-		status, color := tr("在线"), p.down
-		if a.set.Offline {
-			status, color = tr("离线模式"), p.warn
-		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 10).Children(func() {
-			ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
-			ui.Text(c, status).FontSize(fsSmall).TextColor(p.muted)
-		})
+		a.sidebarStatus(c, p)
+	})
+}
+
+// sidebarStatus is the line at the foot of the sidebar: online, or offline.
+func (a *app) sidebarStatus(c *ui.Context, p palette) {
+	status, color := tr("在线"), p.down
+	if a.set.Offline {
+		status, color = tr("离线模式"), p.warn
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 10).Children(func() {
+		ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
+		ui.Text(c, status).FontSize(fsSmall).TextColor(p.muted)
 	})
 }
 

@@ -106,20 +106,17 @@ func skinBackground(c *ui.Context, el ui.Element) ui.Element {
 	if f := skinFont(); f != "" {
 		el = el.Font(f)
 	}
-	if curSkin() != skinMac9 {
-		return el.Background(pal(c).canvas)
+	if isMac() {
+		return macDesktop(c, el)
 	}
-	return el.Draw(func(p *ui.Painter, r ui.Rect) {
-		p.FillGradient(r, ui.LinearGradient{From: ui.Hex("#F2F2F2"), To: ui.Hex("#C9C9C9"), Angle: 180}, 0)
-	})
+	return el.Background(pal(c).canvas)
 }
 
 // skinCard is a card of the skin: a soft block by default, a square window
 // panel with a dark 1 px edge in Mac OS 9.
 func skinCard(c *ui.Context) ui.Element {
-	if curSkin() != skinMac9 {
-		return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
+	if isMac() {
+		return macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel), false)
 	}
-	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined}).
-		Radius(0).BorderWidth(1).BorderColor(pal(c).border)
+	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
 }

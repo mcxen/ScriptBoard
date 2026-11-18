@@ -82,24 +82,41 @@ func pal(c *ui.Context) palette {
 // Wrappers that give Lobe's components this app's usual props, so that a page
 // reads as before: btn(c, "保存").Clicked().
 func btn(c *ui.Context, text string) ui.Element {
+	if isMac() {
+		return macButton(c, text, false)
+	}
 	return action.Button(c, text, action.ButtonProps{Size: theme.Small})
 }
 
 func primaryBtn(c *ui.Context, text string) ui.Element {
+	if isMac() {
+		return macButton(c, text, true)
+	}
 	return action.Button(c, text, action.ButtonProps{Variant: action.Primary, Size: theme.Small})
 }
 
 func segmented(c *ui.Context, sel *int, labels ...string) ui.Element {
+	if isMac() {
+		return macSegmented(c, sel, labels...)
+	}
 	return action.Segmented(c, sel, labels, action.SegmentedProps{Size: theme.Small})
 }
 
-func sw(c *ui.Context, on *bool) ui.Element { return choice.Switch(c, on, choice.SwitchProps{}) }
+func sw(c *ui.Context, on *bool) ui.Element {
+	if isMac() {
+		return macCheck(c, on)
+	}
+	return choice.Switch(c, on, choice.SwitchProps{})
+}
 
 func slider(c *ui.Context, v *float64, lo, hi float64) ui.Element {
 	return choice.Slider(c, v, choice.SliderProps{Min: lo, Max: hi})
 }
 
 func textInput(c *ui.Context, v *string, placeholder string) ui.Element {
+	if isMac() {
+		return macTextInput(c, v, placeholder)
+	}
 	return lfield.Input(c, v, lfield.InputProps{Placeholder: placeholder})
 }
 
@@ -142,6 +159,10 @@ func page(c *ui.Context, compact bool, body func()) ui.Element {
 // header is the top of a page: a title with a line of context under it, and
 // the page's actions at the right.
 func header(c *ui.Context, title, subtitle string, actions func()) {
+	if isMac() {
+		macHeader(c, title, subtitle, actions)
+		return
+	}
 	p := pal(c)
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
@@ -159,6 +180,15 @@ func header(c *ui.Context, title, subtitle string, actions func()) {
 
 // subheader is a page header with a back button, for pages inside a page.
 func subheader(c *ui.Context, a *app, title, subtitle string, actions func()) {
+	if isMac() {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.BackButton(c, a.router)
+			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+				macHeader(c, title, subtitle, actions)
+			})
+		})
+		return
+	}
 	p := pal(c)
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
 		ui.BackButton(c, a.router)
@@ -211,7 +241,11 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 		if title != "" {
 			ui.Text(c, title).FontSize(fsSmall).FontWeight(600).TextColor(p.muted).Padding(0, 4)
 		}
-		layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16).Children(func() {
+		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16)
+		if isMac() {
+			panel = macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel).Padding(2, 16), false)
+		}
+		panel.Children(func() {
 			for i, r := range rows {
 				r := r
 				if i > 0 {
@@ -257,6 +291,12 @@ func sign(pct float64) string {
 
 // iconBadge is an icon on a tinted rounded square.
 func iconBadge(c *ui.Context, name string, color ui.Color, size float32) ui.Element {
+	if isMac() {
+		return macBevel(ui.Row(c).Size(size, size).Background(macWhite), false).
+			AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			ui.Icon(c, icon(name)).FontSize(size * 0.56).TextColor(macBlack)
+		})
+	}
 	return ui.Row(c).Size(size, size).Radius(size * 0.28).Background(color.Alpha(0.13)).
 		AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 		ui.Icon(c, icon(name)).FontSize(size * 0.52).TextColor(color)

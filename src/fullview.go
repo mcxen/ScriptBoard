@@ -85,7 +85,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				if !isGaugeOrBars(res.Chart) {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
-						if segmented(c, &cur, labels...).Changed() {
+						if choose(c, &cur, labels...) {
 							a.styles[sc.ID] = opts[cur].key
 						}
 					})
