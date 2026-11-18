@@ -12,7 +12,10 @@ import (
 // that matches nothing is shown as it is.
 
 var msgEN = map[string]string{
-	"地址必须是完整的 http 或 https 地址":         "The address must be a full http or https address",
+	"没有找到 Claude Code 的使用记录":   "No Claude Code usage records found",
+	"还没有填写密钥":                  "No key entered yet",
+	"响应里没有余额":                  "The response has no balance",
+	"地址必须是完整的 http 或 https 地址": "The address must be a full http or https address",
 	"数据源 id 只能用小写字母、数字和连字符，2 到 40 个字符": "A source id is 2–40 lowercase letters, digits or hyphens",
 	"JSON 路径不能为空，例如 data.price":        "The JSON path cannot be empty, e.g. data.price",
 	"取数方式只能是 json 或 regex":             "The extract kind is json or regex",
