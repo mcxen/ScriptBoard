@@ -32,10 +32,17 @@ func (a *app) settings(c *ui.Context, compact bool) {
 		header(c, tr("设置"), "", nil)
 
 		group(c, tr("外观"), compact,
-			row{title: tr("外观"), note: tr("切换后所有页面立即换成所选的外观。"), control: func() {
+			row{title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
 				if choose(c, &a.skinIdx, tr("默认"), "Mac OS 9") {
 					a.set.Skin = skinNames[a.skinIdx]
 					setSkin(a.set.Skin)
+					a.saveSettings()
+				}
+			}},
+			row{title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
+				if choose(c, &a.themeIdx, tr("跟随系统"), tr("浅色"), tr("深色")) {
+					a.set.ThemeMode = themeModes[a.themeIdx]
+					setThemeMode(a.set.ThemeMode)
 					a.saveSettings()
 				}
 			}},
@@ -66,20 +73,6 @@ func (a *app) settings(c *ui.Context, compact bool) {
 			}},
 			row{title: tr("数据文件"), note: a.store.Path()},
 		)
-
-		rows := []row{}
-		list := a.store.Scripts()
-		for i := range list {
-			i := i
-			rows = append(rows, row{title: tr(list[i].Name), control: func() {
-				if toggle(c, &list[i].Home) {
-					if err := a.store.SaveScript(list[i]); err == nil {
-						a.invalidateAll()
-					}
-				}
-			}})
-		}
-		group(c, tr("首页组件"), compact, rows...)
 
 		group(c, tr("数据源"), compact,
 			row{title: tr("允许 exec 协议"), note: tr("数据源可以运行本机程序取数（exec:）。只在你信任的数据源上开启"), control: func() {

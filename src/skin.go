@@ -84,11 +84,46 @@ func brandFor(name string) *theme.Config {
 	return brandDefault
 }
 
-// applySkin makes the frame use the skin's theme, and sets the page's font
-// and background when the skin has them.
+// Appearances: the system's, or one of the two forced.
+const (
+	themeSystem = "system"
+	themeLight  = "light"
+	themeDark   = "dark"
+)
+
+// themeModes are the appearance choices, in the order of the settings row.
+var themeModes = []string{themeSystem, themeLight, themeDark}
+
+var themeMode atomic.Value
+
+func init() { themeMode.Store(themeSystem) }
+
+// curThemeMode is the appearance in use.
+func curThemeMode() string { return themeMode.Load().(string) }
+
+// setThemeMode picks an appearance. An unknown name follows the system.
+func setThemeMode(name string) {
+	switch name {
+	case themeLight, themeDark:
+		themeMode.Store(name)
+	default:
+		themeMode.Store(themeSystem)
+	}
+}
+
+// applySkin makes the frame use the skin's theme in the appearance chosen:
+// the system's unless the user forced light or dark.
 func applySkin(c *ui.Context) {
 	setTypeScale(isMac())
-	brandFor(curSkin()).Apply(c)
+	cfg := brandFor(curSkin())
+	switch curThemeMode() {
+	case themeLight:
+		c.SetTheme(cfg.Theme(false))
+	case themeDark:
+		c.SetTheme(cfg.Theme(true))
+	default:
+		cfg.Apply(c)
+	}
 }
 
 // skinFont is the font family of the skin's text, as Element.Font takes it;

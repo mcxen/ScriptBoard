@@ -42,7 +42,7 @@ func (a *app) contentW() float32 {
 		w = a.width
 	}
 	if !a.compact {
-		w -= sidebarWidth
+		w -= a.sidebarW()
 	}
 	return w - 2*pad(a.compact)
 }

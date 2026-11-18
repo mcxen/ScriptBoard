@@ -185,9 +185,9 @@ func macHeader(c *ui.Context, title, subtitle string, actions func()) {
 
 // macSidebarItem is a row of the sidebar. The chosen one is inverted, as a
 // selected item of the Finder's list was. It reports a click.
-func macSidebarItem(c *ui.Context, label string, iconName string, chosen bool) bool {
+func macSidebarItem(c *ui.Context, label string, iconName string, chosen bool, width float32) bool {
 	fg := macBlack
-	row := ui.ButtonBase(c).Width(sidebarWidth-24).Padding(4, 8).Gap(8).AlignItems(ui.Center)
+	row := ui.ButtonBase(c).Width(width).Padding(4, 8).Gap(8).AlignItems(ui.Center)
 	if chosen {
 		row = row.Background(macSelection)
 	}

@@ -65,10 +65,11 @@ type app struct {
 	transferErr  string
 
 	// Settings. set is the working copy; it is saved on every change.
-	set     store.Settings
-	unitIdx int
-	langIdx int // the language row of the settings: 0 auto, 1 中文, 2 English
-	skinIdx int // the appearance row of the settings: 0 default, 1 Mac OS 9
+	set      store.Settings
+	unitIdx  int
+	langIdx  int // the language row of the settings: 0 auto, 1 中文, 2 English
+	skinIdx  int // the appearance row of the settings: 0 default, 1 Mac OS 9
+	themeIdx int // the light and dark row of the settings: 0 system, 1 light, 2 dark
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
@@ -112,8 +113,20 @@ const draftKey = "draft"
 // layout: a bottom bar in place of the sidebar, and cards stacked.
 const compactWidth = 640
 
-// sidebarWidth is the width of the sidebar on a wide window.
-const sidebarWidth = 232
+// sidebarWidth is the width of the sidebar on a wide window; railWidth is the
+// width of the sidebar folded into its rail of icons (notes' 46).
+const (
+	sidebarWidth = 232
+	railWidth    = 46
+)
+
+// sidebarW is the width the sidebar takes now: the full sidebar, or the rail.
+func (a *app) sidebarW() float32 {
+	if a.set.SidebarCollapsed {
+		return railWidth
+	}
+	return sidebarWidth
+}
 
 // newApp opens the data in dir. offline makes every run use sample data, with
 // no network requests.
@@ -168,6 +181,14 @@ func newApp(dir string, offline bool) (*app, error) {
 	}
 	setLang(a.set.Lang)
 	setSkin(a.set.Skin)
+	setThemeMode(a.set.ThemeMode)
+	a.themeIdx = 0
+	switch a.set.ThemeMode {
+	case themeLight:
+		a.themeIdx = 1
+	case themeDark:
+		a.themeIdx = 2
+	}
 	a.skinIdx = 0
 	if curSkin() == skinMac9 {
 		a.skinIdx = 1
