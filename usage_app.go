@@ -40,7 +40,22 @@ func (a *app) usageInput(ids []string, now time.Time) map[string]any {
 	return out
 }
 
+// usageReport is the report of one provider for a script, with its notes and
+// errors in the language in use. The cache keeps them as the packages wrote
+// them, so a change of language needs no new request.
 func (a *app) usageReport(id string, now time.Time) map[string]any {
+	r := a.usageReportRaw(id, now)
+	out := make(map[string]any, len(r))
+	for k, v := range r {
+		if s, ok := v.(string); ok && (k == "note" || k == "error") {
+			v = trMsg(s)
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func (a *app) usageReportRaw(id string, now time.Time) map[string]any {
 	a.usage.mu.Lock()
 	if e, ok := a.usage.entries[id]; ok {
 		ttl := usageTTL

@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -101,6 +102,19 @@ func TestEnglishScripts(t *testing.T) {
 					t.Errorf("%s: Chinese option %q", sc.ID, o.Label)
 				}
 			}
+		}
+	}
+}
+
+// Messages from the usage packages are translated where scripts read them.
+func TestUsageMessagesFollowTheLanguage(t *testing.T) {
+	t.Cleanup(func() { setLang(langZH) })
+	a := newTestApp(t)
+	setLang(langEN)
+	r := a.usageReport("claude-code", time.Now())
+	for k, v := range r {
+		if s, ok := v.(string); ok && (k == "note" || k == "error") && cjk.MatchString(s) {
+			t.Errorf("usage %s in Chinese on the English page: %q", k, s)
 		}
 	}
 }
