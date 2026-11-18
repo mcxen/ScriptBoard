@@ -247,7 +247,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 			switch size {
 			case 1:
 				ui.Spacer(c)
-				Spark(c, st.res.Chart, 54*s)
+				SparkStyled(c, st.res.Chart, a.styles[sc.ID], 54*s)
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}

@@ -49,8 +49,11 @@ func (a *app) view(c *ui.Context) {
 	skinBackground(c, ui.Column(c).Fill()).Children(func() {
 		p := pal(c)
 		path := a.router.Path()
-		if isMac() {
+		switch {
+		case isMac():
 			macMenuBar(c, a)
+		case !compact:
+			titleBar(c, a, func() {})
 		}
 		pages := func() {
 			skinSurface(c, ui.Column(c).Grow(1)).Children(func() {

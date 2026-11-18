@@ -114,27 +114,25 @@ func macTextInput(c *ui.Context, v *string, placeholder string) ui.Element {
 	})
 }
 
-// macMenuBar is the menu bar along the top of the window: the app's name and
-// the menus that the classic Mac had. Without the system frame it is the title
-// bar too: it drags the window, and its close box closes it.
+// macMenuBar is the Mac OS 9 menu bar: the title row of the window, with the
+// app's name and the menus the classic Mac had. The macOS lights sit at its
+// left, as they sat in the menu bar's corner.
 func macMenuBar(c *ui.Context, a *app) {
-	ui.Row(c).Height(22).Background(macWhite).AlignItems(ui.Center).Padding(0, 8).Gap(16).
-		BorderWidth(0, 0, 2, 0).BorderColor(macBlack).DragWindow().Children(func() {
-		if a.frameless {
-			if macCloseBox(c).Clicked() && a.win != nil {
-				a.win.Close()
-			}
-		}
-		ui.Text(c, appName()).FontSize(fsCaption).Bold().TextColor(macBlack)
+	titleBar(c, a, func() {
+		ui.Text(c, appName()).FontSize(fsCaption).Bold().TextColor(macBlack).Padding(0, 8)
 		for _, m := range []string{tr("文件"), tr("编辑"), tr("查看"), tr("特殊")} {
-			ui.Text(c, m).FontSize(fsCaption).TextColor(macBlack)
+			ui.Text(c, m).FontSize(fsCaption).TextColor(macBlack).Padding(0, 8)
 		}
 	})
 }
 
-// macCloseBox is the close box of a Mac OS 9 window: a bevelled square.
-func macCloseBox(c *ui.Context) ui.Element {
-	return macBevel(ui.ButtonBase(c).Size(13, 13).Background(macFace), false)
+// skinTitleBar gives a title row its skin's look: the Mac OS 9 menu bar is
+// white with a black edge below; the default row has none.
+func skinTitleBar(c *ui.Context, el ui.Element) ui.Element {
+	if isMac() {
+		return el.Background(macWhite).BorderWidth(0, 0, 2, 0).BorderColor(macBlack)
+	}
+	return el
 }
 
 // macCategory is a settings group's heading: a gray gradient strip with the

@@ -314,6 +314,12 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 // Spark draws ch as a bare curve or dots with no axes, for cards. It fills
 // the width and is h DIPs tall.
 func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
+	return SparkStyled(c, ch, "", h)
+}
+
+// SparkStyled is Spark in the style the user chose for the card; "" is the
+// chart's own default.
+func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Element {
 	if isCombo(ch) {
 		return comboView(c, ch, "", h, nil, false)
 	}
@@ -338,7 +344,7 @@ func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 		if s.empty {
 			return
 		}
-		style := resolveStyle(ch, "")
+		style := resolveStyle(ch, want)
 		if style == "line" {
 			style = "area" // a card's curve is shaded
 		}
