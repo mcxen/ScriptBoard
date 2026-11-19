@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - Look: a calmer palette (cool neutrals, a steadier blue), one type scale (11, 12, 14, 16, 20, 24), settings on the same white surface as the cards, and chart colors that are the same everywhere. Built-in scripts that were never edited take the new colors on start.
 - Phone: the first frame is laid out for a phone, not the desktop; the card-size control sits under the title; wide settings controls stack under their label; a long chart-style list is a dropdown; charts say "tap" rather than "hover".
