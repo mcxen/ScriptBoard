@@ -206,6 +206,8 @@ type Chart struct {
 	// Progress are the bars of a "progress" chart: each a value against its
 	// maximum (a completion), shown as a percentage bar.
 	Progress []Progress `json:"progress"`
+	// Ring styles a progressRing chart (RingStyle).
+	Ring *RingStyle `json:"ring,omitempty"`
 }
 
 // Progress is one bar of a "progress" chart: Value out of Max. A Max of 0
@@ -215,10 +217,16 @@ type Progress struct {
 	Value float64 `json:"value"`
 	Max   float64 `json:"max"`
 	Unit  string  `json:"unit,omitempty"`
+	// Color is the item's color, as "#RRGGBB"; without one a bar is the accent
+	// and the rings of a concentric chart each have a color of their own. To is
+	// the color a ring's arc deepens to, when it is not the color's own.
+	Color string `json:"color,omitempty"`
+	To    string `json:"to,omitempty"`
 }
 
-// Percent is how far the bar is full, 0 to 100.
-func (p Progress) Percent() float64 {
+// Raw is how far the bar is full in percent, past 100 when the value is over
+// its maximum (a ring goes round a second time).
+func (p Progress) Raw() float64 {
 	pct := p.Value
 	if p.Max > 0 {
 		pct = p.Value / p.Max * 100
@@ -226,12 +234,46 @@ func (p Progress) Percent() float64 {
 	if pct != pct || pct < 0 {
 		return 0
 	}
-	return min(pct, 100)
+	return pct
+}
+
+// Percent is how far the bar is full, 0 to 100.
+func (p Progress) Percent() float64 { return min(p.Raw(), 100) }
+
+// RingStyle styles a progressRing chart. Every field is optional, and the zero
+// value is the default ring.
+type RingStyle struct {
+	// Layout is "row" (the default: a ring for each item, side by side) or
+	// "concentric" (the items' rings nested in one, as Apple's activity rings,
+	// with a legend beside it).
+	Layout string `json:"layout,omitempty"`
+	// Size is a ring's size in DIPs, 32 to 200; 0 fits it to the card.
+	Size float32 `json:"size,omitempty"`
+	// Thickness is the width of the stroke as a share of the size, 0.04 to 0.3;
+	// 0 is 0.11 (0.085 for concentric rings).
+	Thickness float32 `json:"thickness,omitempty"`
+	// Cap is how the arc ends: "round" (the default) or "butt".
+	Cap string `json:"cap,omitempty"`
+	// Track is the ring under the arc: "tint" (the default: the arc's color,
+	// faint), "neutral" (gray) or "none".
+	Track string `json:"track,omitempty"`
+	// Fill is "gradient" (the default: the color deepens along the arc) or
+	// "solid".
+	Fill string `json:"fill,omitempty"`
+	// Center is what a ring shows inside: "percent" (the default), "value" or
+	// "none".
+	Center string `json:"center,omitempty"`
+	// Align is where the rings sit across the card: "left" (the default),
+	// "center", "right", or spread over it: "between", "around", "evenly".
+	Align string `json:"align,omitempty"`
+	// VAlign is where they sit down the card: "top" (the default, right under the
+	// summary), "middle" or "bottom".
+	VAlign string `json:"valign,omitempty"`
 }
 
 // ChartTypes are the chart types a result can draw. A script that names another
 // draws nothing useful, so script_check reports it.
-var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress"}
+var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress", "progressRing"}
 
 // UnknownChartType reports whether t is not one of ChartTypes (an empty type is
 // a line).
@@ -257,6 +299,14 @@ type Layout struct {
 	// Stats is "bottom" (the default) or "hide": the figures, in their own
 	// block under the chart.
 	Stats string `json:"stats,omitempty"`
+	// Actions is "hover" (the default) or "always": a card's buttons (refresh,
+	// size) show while the pointer is on the card, or all the time. A touch
+	// screen has no pointer and always shows them.
+	Actions string `json:"actions,omitempty"`
+	// Image is "cover" (the default) or "inline": a card with pictures is the
+	// picture, edge to edge, with its text and buttons over it while the pointer
+	// is on it; or the picture is a block among the card's other contents.
+	Image string `json:"image,omitempty"`
 }
 
 // Image is a picture of a result: its address, a caption under it, and, once the

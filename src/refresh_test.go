@@ -44,6 +44,7 @@ export function render(ctx) { return { title: "我的接口", big: String(ctx.so
 	settle(tt)
 	requireText(t, tt, "101")
 
+	hover(t, tt, "刷新数据") // the card's buttons show while the pointer is on it
 	click(t, tt, "刷新数据")
 	if hits.Load() < 2 {
 		t.Fatalf("the endpoint was asked %d times, want a second time after the refresh", hits.Load())

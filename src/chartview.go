@@ -259,6 +259,9 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	if ch != nil && ch.Type == "progress" {
 		return progressView(c, ch.Progress, 0)
 	}
+	if ch != nil && ch.Type == "progressRing" {
+		return progressRingView(c, ch, 0, clampF(h*0.4, 56, 104))
+	}
 	if isCombo(ch) {
 		return comboView(c, ch, style, h, sel, full)
 	}

@@ -27,8 +27,8 @@ func TestProgressPercent(t *testing.T) {
 }
 
 func TestProgressIsAKnownChartType(t *testing.T) {
-	if UnknownChartType("progress") {
-		t.Error("progress is reported as unknown")
+	if UnknownChartType("progress") || UnknownChartType("progressRing") {
+		t.Error("progress or progressRing is reported as unknown")
 	}
 	if !UnknownChartType("pie") {
 		t.Error("pie is not reported as unknown")
@@ -64,5 +64,35 @@ export function render(ctx) { return { title: "进度", big: "3/10", sub: "", li
 	}
 	if strings.TrimSpace(res.Title) == "" {
 		t.Error("the title is empty")
+	}
+}
+
+// A ring's options and an item's colors arrive in the result, and a value over
+// its maximum is more than a whole.
+func TestProgressRingOptionsFromScript(t *testing.T) {
+	src := `export function meta() { return { name: "环", sources: {} }; }
+export function render(ctx) { return { title: "环", big: "", sub: "", lines: [],
+  chart: { type: "progressRing",
+    ring: { layout: "concentric", size: 96, thickness: 0.2, cap: "butt", track: "none", fill: "solid", center: "value", align: "center", valign: "middle" },
+    progress: [{ name: "移动", value: 130, max: 100, color: "#F43F5E", to: "#FB923C" }] } }; }`
+	s, err := CompileLang("ring.js", src, "zh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Run(context.Background(), Input{Now: time.Now(), Lang: "zh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := res.Chart.Ring
+	if r == nil || r.Layout != "concentric" || r.Size != 96 || r.Thickness != 0.2 || r.Cap != "butt" ||
+		r.Track != "none" || r.Fill != "solid" || r.Center != "value" || r.Align != "center" || r.VAlign != "middle" {
+		t.Fatalf("ring %+v", r)
+	}
+	p := res.Chart.Progress[0]
+	if p.Color != "#F43F5E" || p.To != "#FB923C" {
+		t.Errorf("colors %+v", p)
+	}
+	if p.Raw() != 130 || p.Percent() != 100 {
+		t.Errorf("raw %v, percent %v, want 130 and 100", p.Raw(), p.Percent())
 	}
 }

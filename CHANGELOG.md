@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Cards show their buttons (refresh, size) only while the pointer is on them; a touch screen has no pointer and shows them all the time. A script can ask for them to stay: `layout: {actions: "always"}`.
+- A card with pictures is the picture, edge to edge. Its title, caption, arrows, source and copy-link actions, and buttons show over the picture while the pointer is on the card. A script that wants the picture among its other contents says `layout: {image: "inline"}`. The edit layout, the mini size and the full view keep their layouts.
+- Progress rings: a `progressRing` chart takes the same `progress` list as `progress` and draws a thin ring for each item, with round ends, a faint track in the ring's own color and an arc that deepens along its length (a medium card has room for three). Everything is adjustable with `ring: {layout, size, thickness, cap, track, fill, center, align, valign}`, and each item can have a `color` and a `to`. `layout: "concentric"` nests the rings in one, as Apple's activity rings are, with a legend, and a value over its maximum goes round a second time.
+- A card with no headline or summary no longer keeps an empty line for them, and a progress chart sits right under the summary instead of at the bottom of the card.
+
 ## 0.1.7
 
 - Refresh keeps what a card showed: while a card's run is asked again (refresh, a feed's poll, a metric recorded, a table edit, an AI usage update) the card keeps its last result, pictures and figures, marked as updating, instead of going blank. The editor's previews are not kept.

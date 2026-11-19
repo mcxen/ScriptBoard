@@ -38,7 +38,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			if compact {
 				// A phone has room for icons, not for a row of buttons; 大图 gives
 				// the chart the window's height, which a phone has none to spare.
-				a.refreshButton(c, sc)
+				a.refreshButton(c, sc, true)
 				a.resetIcon(c, sc)
 				if action.ActionIcon(c, icon("pencil-line"), action.ActionIconProps{Size: theme.Small, Title: tr("编辑")}).Clicked() {
 					a.router.Push("/edit/" + sc.ID)

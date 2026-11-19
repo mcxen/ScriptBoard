@@ -132,13 +132,16 @@ Chart(c, ChartProps{
 | `heat` | **热力表**：一张表，每格是 0–100 的数字，颜色随数字加深（留存矩阵、活跃日历）。点一格选中它，底部显示那一格的详情。`grid: {columns, rows: [{label, note, cells}], average, footer}`，空格写 `-1` | `grid` |
 | `panels` | **面板叠放**：价格和指标各占一块，共用一根时间轴，悬浮时十字线同时出现在每个面板上。参考线是虚线的常数序列 | `panels: [{title, style, weight, series}]` |
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
+| `progressRing` | **完成度环**：数据同 `progress`，每项一个环，环里是百分比，下面是名字和「已完成 / 总数」。可调：`ring: {layout, size, thickness, cap, track, fill, center, align, valign}`，每项还能给 `color` 和 `to`（见下）。中等卡片画前三项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
 | `progress` | **完成度条**：每项一根条，标出「已完成 / 总数 · 百分比」；没有上限时数值就是百分比。中等卡片画前两项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
 
 K 线的周期由宿主统一聚合（`internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
 多条折线时只给第一条填充面积，避免两层半透明色叠出不属于任何一条线的颜色。
 
-**版面：`layout`。** 结果可以带 `layout: {legend, summary, stats}`，分别控制图例（多条线的名字，`show` 或 `hide`）、摘要（标题下的那行字，`top` 或 `hide`）和统计块（图表下面独立的一块，`bottom` 或 `hide`）。不写就是图例显示、摘要在上、统计在下。用户也能在卡片的右键菜单里隐藏某张卡片的图例，这个选择会保留。
+**完成度环的样式：`ring`。** `layout` 是 `row`（每项一个环，默认）或 `concentric`（像 Apple Watch 的活动圆环，几个环套在一起，旁边是图例）；`size` 环的大小（32 到 200）；`thickness` 环的粗细，占大小的比例（0.04 到 0.3）；`cap` 是 `round`（圆头，默认）或 `butt`（平头）；`track` 是底环：`tint`（同色的淡色，默认）、`neutral`（灰）、`none`；`fill` 是 `gradient`（沿弧线渐深，默认）或 `solid`；`center` 是环里写什么：`percent`（默认）、`value`、`none`；`align` 是环在卡片里的左右位置：`left`（默认）、`center`、`right`、`between`、`around`、`evenly`；`valign` 是上下位置：`top`（紧挨摘要，默认）、`middle`、`bottom`。每一项还能写 `color`（`#RRGGBB`）和 `to`（弧线渐变到的颜色）。值超过上限，环会绕第二圈。
+
+**版面：`layout`。** 结果可以带 `layout: {legend, summary, stats}`，分别控制图例（多条线的名字，`show` 或 `hide`）、摘要（标题下的那行字，`top` 或 `hide`）和统计块（图表下面独立的一块，`bottom` 或 `hide`）。`actions` 是卡片按钮（刷新、切换大小）只在鼠标悬浮时出现（`hover`，默认；触屏没有鼠标，一直显示），还是一直显示（`always`）；`image` 是有图片的卡片让图片铺满整张卡片，文字和按钮悬浮时才出现在图片上（`cover`，默认），还是把图片当作卡片里的一块（`inline`）。不写就是图例显示、摘要在上、统计在下、按钮悬浮才出现、图片铺满。想要固定形态的，用内置的组件就好，脚本可以随意改。用户也能在卡片的右键菜单里隐藏某张卡片的图例，这个选择会保留。
 
 ## 点击刷新
 

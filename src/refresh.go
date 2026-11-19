@@ -54,10 +54,16 @@ func (a *app) refreshScript(sc store.Script) {
 
 // refreshButton is the button that refreshes a script: it shows as pressed
 // while the refresh runs.
-func (a *app) refreshButton(c *ui.Context, sc store.Script) {
-	if action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
+// show false hides it until the card is hovered: it stays built, transparent and
+// out of the pointer's way, so that assistive technology still finds it.
+func (a *app) refreshButton(c *ui.Context, sc store.Script, show bool) {
+	el := action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
 		Size: theme.Small, Title: tr("刷新数据"), Active: a.refreshing[sc.ID],
-	}).Clicked() {
+	})
+	if !show {
+		el = el.Opacity(0).IgnoreInput(true)
+	}
+	if el.Clicked() {
 		a.refreshScript(sc)
 	}
 }

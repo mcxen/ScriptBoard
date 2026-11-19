@@ -49,16 +49,10 @@ func shownImages(imgs []engine.Image) []engine.Image {
 // the arrows that step along them, the caption under it, and its place in the
 // list. The position is kept per script.
 func (a *app) imageCarousel(c *ui.Context, sc store.Script, imgs []engine.Image, w, h float32) {
-	shown := shownImages(imgs)
-	if len(shown) == 0 {
+	shown, idx, ok := a.carouselPos(sc, imgs)
+	if !ok {
 		return
 	}
-	if a.carouselIdx == nil {
-		a.carouselIdx = map[string]int{}
-	}
-	idx := a.carouselIdx[sc.ID]
-	idx = ((idx % len(shown)) + len(shown)) % len(shown)
-	a.carouselIdx[sc.ID] = idx
 	cur := shown[idx]
 	p := pal(c)
 	ui.Column(c).Gap(6).Children(func() {
@@ -69,28 +63,50 @@ func (a *app) imageCarousel(c *ui.Context, sc store.Script, imgs []engine.Image,
 				ui.Text(c, tr("图片不能显示")).FontSize(fsSmall).TextColor(p.muted)
 			})
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			if btn(c, "‹").Clicked() {
-				a.carouselIdx[sc.ID] = idx - 1
+		a.carouselRows(c, sc, shown, idx)
+	})
+}
+
+// carouselPos is the pictures a card can show, in order, and the one it is at
+// (kept per script, and wrapped round). ok is false when there is none.
+func (a *app) carouselPos(sc store.Script, imgs []engine.Image) (shown []engine.Image, idx int, ok bool) {
+	shown = shownImages(imgs)
+	if len(shown) == 0 {
+		return nil, 0, false
+	}
+	if a.carouselIdx == nil {
+		a.carouselIdx = map[string]int{}
+	}
+	idx = ((a.carouselIdx[sc.ID] % len(shown)) + len(shown)) % len(shown)
+	a.carouselIdx[sc.ID] = idx
+	return shown, idx, true
+}
+
+// carouselRows are the controls under a picture: the caption between the arrows
+// that move through the pictures, and the picture's own actions, as QX's gallery
+// has them: its source page, and a copy of its link.
+func (a *app) carouselRows(c *ui.Context, sc store.Script, shown []engine.Image, idx int) {
+	cur := shown[idx]
+	p := pal(c)
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		if btn(c, "‹").Clicked() {
+			a.carouselIdx[sc.ID] = idx - 1
+		}
+		ui.Text(c, cur.Caption).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+		ui.Text(c, fmt.Sprintf("%d / %d", idx+1, len(shown))).FontSize(fsTiny).TextColor(p.faint)
+		if btn(c, "›").Clicked() {
+			a.carouselIdx[sc.ID] = idx + 1
+		}
+	})
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		if cur.Source != "" && btn(c, tr("打开来源")).Clicked() {
+			if err := mygo.Shell.OpenExternal(cur.Source); err != nil {
+				a.status = err.Error()
 			}
-			ui.Text(c, cur.Caption).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
-			ui.Text(c, fmt.Sprintf("%d / %d", idx+1, len(shown))).FontSize(fsTiny).TextColor(p.faint)
-			if btn(c, "›").Clicked() {
-				a.carouselIdx[sc.ID] = idx + 1
-			}
-		})
-		// The picture's own actions, as QX's gallery has them: its source page, and
-		// a copy of its link.
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			if cur.Source != "" && btn(c, tr("打开来源")).Clicked() {
-				if err := mygo.Shell.OpenExternal(cur.Source); err != nil {
-					a.status = err.Error()
-				}
-			}
-			if btn(c, tr("复制链接")).Clicked() {
-				copyText(cur.URL)
-				a.status = tr("已复制")
-			}
-		})
+		}
+		if btn(c, tr("复制链接")).Clicked() {
+			copyText(cur.URL)
+			a.status = tr("已复制")
+		}
 	})
 }

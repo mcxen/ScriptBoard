@@ -7,9 +7,10 @@ import (
 )
 
 // layoutOf is a result's layout with the defaults filled in: the legend shows,
-// the summary sits at the top, the stats at the bottom.
+// the summary sits at the top, the stats at the bottom, the buttons show on
+// hover, and a picture fills its card.
 func layoutOf(res engine.Result) engine.Layout {
-	l := engine.Layout{Legend: "show", Summary: "top", Stats: "bottom"}
+	l := engine.Layout{Legend: "show", Summary: "top", Stats: "bottom", Actions: "hover", Image: "cover"}
 	if res.Layout == nil {
 		return l
 	}
@@ -21,6 +22,12 @@ func layoutOf(res engine.Result) engine.Layout {
 	}
 	if res.Layout.Stats != "" {
 		l.Stats = res.Layout.Stats
+	}
+	if res.Layout.Actions != "" {
+		l.Actions = res.Layout.Actions
+	}
+	if res.Layout.Image != "" {
+		l.Image = res.Layout.Image
 	}
 	return l
 }

@@ -186,7 +186,24 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	if h > 0 {
 		base = base.Height(h)
 	}
-	el := base.Padding(16 * s).Gap(6 * s).Cursor(ui.CursorPointer).Children(func() {
+	lay := layoutOf(st.res)
+	// A card with a picture is the picture, edge to edge, unless its layout says
+	// inline: its text and buttons are over it while the pointer is on it.
+	cv := a.coverOf(sc, st.res, ready && size != sizeMini && !a.editing && lay.Image != "inline")
+	padding := 16 * s
+	if cv != nil {
+		padding = 0
+	}
+	box := base.Padding(padding).Gap(6 * s).Cursor(ui.CursorPointer)
+	// The buttons show while the pointer is on the card. A touch screen has no
+	// pointer; a refresh under way and the edit layout show them too, and so does
+	// a script that asks for them (layout actions: "always").
+	showActions := box.Hovered() || lay.Actions == "always" || a.touchUI() || a.editing || a.refreshing[sc.ID]
+	el := box.Children(func() {
+		if cv != nil {
+			a.coverCard(c, sc, cv, st.res, lay, title, size, showActions)
+			return
+		}
 		if a.editing {
 			a.removeRow(c, sc)
 		}
@@ -217,14 +234,8 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					deltaChip(c, cs.pct).Shrink(0)
 				}
 			}
-			a.refreshButton(c, sc)
-			if action.ActionIcon(c, icon("maximize-2"), action.ActionIconProps{Size: theme.Small, Title: tr("右键切换大小")}).Clicked() {
-				next := (size + 1) % 3
-				if size >= 3 {
-					next = 0
-				}
-				a.setSize(sc.ID, next)
-			}
+			a.refreshButton(c, sc, showActions)
+			a.sizeButton(c, sc, size, showActions)
 		})
 		switch {
 		case st.loading:
@@ -233,9 +244,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 		default:
-			lay := layoutOf(st.res)
-			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
-			if lay.Summary != "hide" {
+			// A card with no headline, or no summary, does not keep a line empty.
+			if st.res.Big != "" {
+				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
+			}
+			if lay.Summary != "hide" && st.res.Sub != "" {
 				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			}
 			showLegend := a.legendShown(sc.ID, lay)
@@ -253,11 +266,18 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					}
 					break
 				}
-				ui.Spacer(c)
-				if st.res.Chart.Type == "progress" {
-					// A completion chart is bars, not a curve: a medium card draws
-					// two of them, and the full view or a large card shows all.
-					progressView(c, st.res.Chart.Progress, 2)
+				if !isProgress(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
+					ui.Spacer(c)
+				}
+				if isProgress(st.res.Chart) {
+					// A completion chart is bars or rings, not a curve: a medium
+					// card draws two bars or three rings, and the full view or a
+					// large card shows all.
+					if st.res.Chart.Type == "progressRing" {
+						progressRingView(c, st.res.Chart, 3, 46)
+					} else {
+						progressView(c, st.res.Chart.Progress, 2)
+					}
 				} else {
 					sparkH := max(54, b.Height-154) * s
 					if len(st.res.Stats) > 0 {
@@ -270,7 +290,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					a.quickEntry(c, sc.ID, in)
 				}
 			case 2, 3:
-				ui.Spacer(c)
+				// A completion chart sits right under the summary; a curve is
+				// pushed down to fill the card.
+				if !hasChart || !isProgress(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
+					ui.Spacer(c)
+				}
 				a.dimRow(c, idx, meta.Dims)
 				a.varRow(c, sc, meta)
 				// A wide card is a strip: its chart is shorter than a large card's.
@@ -284,6 +308,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					if showLegend {
 						legendRow(c, st.res.Chart)
 					}
+					if isProgress(st.res.Chart) && ringVAlign(st.res.Chart) != "bottom" {
+						ui.Spacer(c)
+					}
 				}
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
@@ -292,7 +319,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			// The stats are their own block at the foot of the card, when the
 			// layout keeps them. A medium card with bars has no room for them;
 			// its full view has them.
-			barsOnMedium := size == 1 && hasChart && st.res.Chart.Type == "progress"
+			barsOnMedium := size == 1 && hasChart && isProgress(st.res.Chart)
 			if size > 0 && lay.Stats != "hide" && !barsOnMedium {
 				cardStats(c, st.res.Stats)
 			}
