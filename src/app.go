@@ -368,6 +368,18 @@ func (a *app) selOf(key string) *int {
 	return &v
 }
 
+// startState is what a card shows while its run is under way: its last saved
+// result, marked as old and updating, when there is one, and a loading state
+// when not. A refresh shows the same, so that the card keeps its pictures and
+// figures while the new result comes in; the refresh only decides that the
+// network is asked (ensure).
+func (a *app) startState(sc store.Script, key string, meta engine.Meta) *runState {
+	if res, ok := a.savedResult(sc, key, meta); ok {
+		return &runState{old: true, updating: true, res: res}
+	}
+	return &runState{loading: true}
+}
+
 // ensure returns the run under key for sc, starting one if there is none yet.
 // A script that reads the network shows its last result at once, then the new
 // one when the run is done; if the run fails, the last result stays, marked as
@@ -376,18 +388,13 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 	if st, ok := a.runs[key]; ok {
 		return st
 	}
-	st := &runState{loading: true}
+	meta, _ := a.metaOf(sc)
+	st := a.startState(sc, key, meta)
 	a.runs[key] = st
 	// The run reads the table off the main thread, and the editor changes it.
 	sc.Table = sc.Table.Clone()
 	force := a.forced[sc.ID]
 	delete(a.forced, sc.ID)
-	meta, _ := a.metaOf(sc)
-	if !force {
-		if res, ok := a.savedResult(sc, key, meta); ok {
-			st.loading, st.old, st.updating, st.res = false, true, true, res
-		}
-	}
 	saved := st.res
 	run := func() {
 		res, err := a.executeOpt(sc, vals, force)
