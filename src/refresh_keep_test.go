@@ -53,3 +53,49 @@ export function render(ctx) { return { title: "图片", big: "2", sub: "", lines
 	settle(tt)
 	requireText(t, tt, "shown-while-refreshing")
 }
+
+// A script with no sources has no saved result, but its card still keeps what
+// it showed when the run is dropped to run again (an AI usage card, a feed's
+// poll, a table after an edit).
+func TestRefreshKeepsResultOfAScriptWithoutSources(t *testing.T) {
+	a := newTestApp(t)
+	sc := store.Script{ID: "plain", Name: "无源", Home: true, Origin: store.OriginUser,
+		Source: `export function meta() { return { name: "无源", sources: {} }; }
+export function render(ctx) { return { title: "无源", big: "7", sub: "", lines: [], chart: null }; }`}
+	a.store.SaveScript(sc)
+	meta, _ := a.metaOf(sc)
+	_, vals := a.viewOf(sc.ID, meta.Dims)
+	key := a.runKeyOf(sc.ID, sc, meta, vals)
+	a.ensure(key, sc, vals)
+	if got := a.runs[key]; got == nil || got.res.Big != "7" {
+		t.Fatalf("the run did not show its result: %+v", got)
+	}
+
+	a.invalidate(sc.ID)
+	if st := a.startState(sc, key, meta); st.loading || !st.old || !st.updating || st.res.Big != "7" {
+		t.Fatalf("after an invalidate the card shows %+v, want the last result, updating", st)
+	}
+
+	a.ensure(key, sc, vals)
+	a.invalidateAll()
+	if st := a.startState(sc, key, meta); st.loading || st.res.Big != "7" {
+		t.Fatalf("after invalidating everything the card shows %+v, want the last result", st)
+	}
+}
+
+// An editor preview is not kept: a preview of one script is never the result a
+// card of another shows, and the editor starts with a loading state.
+func TestEditorPreviewIsNotKept(t *testing.T) {
+	a := newTestApp(t)
+	sc := store.Script{ID: "draft-t", Name: "草稿", Origin: store.OriginUser,
+		Source: `export function meta() { return { name: "草稿", sources: {} }; }
+export function render(ctx) { return { title: "草稿", big: "draft", sub: "", lines: [], chart: null }; }`}
+	meta, _ := a.metaOf(sc)
+	_, vals := a.viewOf(sc.ID, meta.Dims)
+	key := a.runKeyOf(draftKey, sc, meta, vals)
+	a.runs[key] = &runState{res: engine.Result{Big: "draft"}}
+	a.invalidate(draftKey)
+	if st := a.startState(sc, key, meta); !st.loading || st.res.Big == "draft" {
+		t.Fatalf("the editor shows %+v, want a loading state", st)
+	}
+}

@@ -33,7 +33,10 @@ type app struct {
 	// quitting is set once the app quits, so that the window really closes.
 	quitting bool
 	// live is the state of the cards whose sources are asked for again (live_app.go).
-	live    liveState
+	live liveState
+	// shown is what each run key last showed, kept when the run is dropped to run
+	// again, so that its card keeps it meanwhile (see startState).
+	shown   map[string]engine.Result
 	router  *ui.Router
 	store   *store.Store
 	dataDir string // the folder of data.json; plugins and icons live under it
@@ -374,6 +377,9 @@ func (a *app) selOf(key string) *int {
 // figures while the new result comes in; the refresh only decides that the
 // network is asked (ensure).
 func (a *app) startState(sc store.Script, key string, meta engine.Meta) *runState {
+	if res, ok := a.shown[key]; ok {
+		return &runState{old: true, updating: true, res: res}
+	}
 	if res, ok := a.savedResult(sc, key, meta); ok {
 		return &runState{old: true, updating: true, res: res}
 	}
@@ -427,11 +433,30 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 // invalidate drops every run of key, and of the dimensions under it, so that
 // they start again on the next frame.
 func (a *app) invalidate(key string) {
-	for k := range a.runs {
+	for k, st := range a.runs {
 		if k == key || strings.HasPrefix(k, key+"|") {
+			a.keepShown(k, st)
 			delete(a.runs, k)
 		}
 	}
+}
+
+// keepShown remembers the result a run shows, before the run is dropped to run
+// again. The editor's previews are not kept: a preview of one script is not a
+// result of another.
+func (a *app) keepShown(key string, st *runState) {
+	if st == nil || strings.HasPrefix(key, draftKey) || !hasResult(st.res) {
+		return
+	}
+	if a.shown == nil {
+		a.shown = map[string]engine.Result{}
+	}
+	a.shown[key] = st.res
+}
+
+// hasResult says whether a result has anything a card shows.
+func hasResult(r engine.Result) bool {
+	return r.Big != "" || r.Title != "" || r.Chart != nil || len(r.Images) > 0 || len(r.Stats) > 0
 }
 
 // cardMenuOpen is the open state of a card's right-click menu.
@@ -475,7 +500,12 @@ func (a *app) invalidateMetric(metric string) {
 }
 
 // invalidateAll drops every run.
-func (a *app) invalidateAll() { a.runs = map[string]*runState{} }
+func (a *app) invalidateAll() {
+	for k, st := range a.runs {
+		a.keepShown(k, st)
+	}
+	a.runs = map[string]*runState{}
+}
 
 // execute compiles sc, fetches its sources and renders it with the values
 // of its dimensions. It does not touch the UI, so it may run on any goroutine.
