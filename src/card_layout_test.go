@@ -26,11 +26,11 @@ func hover(t *testing.T, tt *ui.Tester, label string) {
 // stats at the bottom; a layout changes only the parts it names.
 func TestLayoutDefaults(t *testing.T) {
 	def := layoutOf(engine.Result{})
-	if def != (engine.Layout{Legend: "show", Summary: "top", Stats: "bottom", Actions: "hover", Image: "cover"}) {
+	if def != (engine.Layout{Legend: "show", Summary: "top", Stats: "bottom", Actions: "hover", Title: "hide", Image: "cover"}) {
 		t.Errorf("defaults %+v", def)
 	}
 	part := layoutOf(engine.Result{Layout: &engine.Layout{Stats: "hide"}})
-	if part != (engine.Layout{Legend: "show", Summary: "top", Stats: "hide", Actions: "hover", Image: "cover"}) {
+	if part != (engine.Layout{Legend: "show", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide", Image: "cover"}) {
 		t.Errorf("a layout that names only stats: %+v", part)
 	}
 }

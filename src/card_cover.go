@@ -86,3 +86,25 @@ func (a *app) sizeButton(c *ui.Context, sc store.Script, size int, show bool) {
 		a.setSize(sc.ID, next)
 	}
 }
+
+// hoverBar is a card's name and buttons when it has no title row: a small panel
+// at the top right, over the content, while the pointer is on the card. Hidden,
+// it stays built, transparent and out of the pointer's way, so the name is still
+// there for assistive technology.
+func (a *app) hoverBar(c *ui.Context, sc store.Script, title string, size int, show bool, w float32) {
+	p := pal(c)
+	over := ui.Column(c).Absolute().Fill().Padding(8)
+	if !show {
+		over = over.Opacity(0).IgnoreInput(true)
+	}
+	over.Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Children(func() {
+			ui.Spacer(c)
+			ui.Row(c).AlignItems(ui.Center).Gap(4).Padding(2, 6).Radius(radControl).Background(p.card.Alpha(0.92)).Children(func() {
+				ui.Text(c, fitText(title, clampF(w*0.4, 60, 180), fsTiny)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				a.refreshButton(c, sc, true)
+				a.sizeButton(c, sc, size, true)
+			})
+		})
+	})
+}

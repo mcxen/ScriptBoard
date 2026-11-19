@@ -32,7 +32,8 @@ func TestRightClickChangesOnlyThatCard(t *testing.T) {
 	a := newTestApp(t)
 	tt := ui.NewTester(a.view, 1100, 760)
 	settle(tt)
-	if err := tt.RightClick("体重 · kg"); err != nil {
+	// The headline: a card has no title row.
+	if err := tt.RightClick("65.3 kg"); err != nil {
 		t.Fatalf("right click: %v", err)
 	}
 	settle(tt)

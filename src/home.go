@@ -199,6 +199,36 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// pointer; a refresh under way and the edit layout show them too, and so does
 	// a script that asks for them (layout actions: "always").
 	showActions := box.Hovered() || lay.Actions == "always" || a.touchUI() || a.editing || a.refreshing[sc.ID]
+	// A card is its content: its name is in a row of its own only when the layout
+	// asks (title: "show"), and shows over it, with the buttons, on hover. The
+	// height the row would take goes to the chart.
+	showTitle := lay.Title == "show"
+	lift := float32(0)
+	if !showTitle {
+		lift = 36 * s
+	}
+	// chip is the change of a curve, or what is left of a gauge: beside the
+	// title, or on the summary line when there is no title (the hover panel is
+	// at the top right, over the headline's line).
+	chipOK := false
+	if g := st.res.Chart; ready && g != nil && g.Type == "gauge" && g.Gauge != nil {
+		chipOK = true
+	} else if ready && size > 0 && len(st.res.Stats) == 0 {
+		// A live result has no change to show as a percentage: its curve
+		// is a day of readings, not a series to compare.
+		chipOK = summarize(st.res.Chart).ok
+	}
+	chip := func() {
+		if !chipOK {
+			return
+		}
+		if g := st.res.Chart; g != nil && g.Type == "gauge" && g.Gauge != nil {
+			_, frac := remaining(g.Gauge)
+			display.Tag(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100), display.TagProps{Color: tagFor(frac), Size: theme.Small}).Shrink(0)
+		} else {
+			deltaChip(c, summarize(st.res.Chart).pct).Shrink(0)
+		}
+	}
 	el := box.Children(func() {
 		if cv != nil {
 			a.coverCard(c, sc, cv, st.res, lay, title, size, showActions)
@@ -217,26 +247,19 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			}
 			return
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
-			// The title gives way, with an ellipsis, so the tag and the buttons
-			// stay whole on a small card.
-			ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-				ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
+		if showTitle {
+			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+				iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
+				// The title gives way, with an ellipsis, so the tag and the buttons
+				// stay whole on a small card.
+				ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+					ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
+				})
+				chip()
+				a.refreshButton(c, sc, showActions)
+				a.sizeButton(c, sc, size, showActions)
 			})
-			if g := st.res.Chart; ready && g != nil && g.Type == "gauge" && g.Gauge != nil {
-				_, frac := remaining(g.Gauge)
-				display.Tag(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100), display.TagProps{Color: tagFor(frac), Size: theme.Small}).Shrink(0)
-			} else if ready && size > 0 && len(st.res.Stats) == 0 {
-				// A live result has no change to show as a percentage: its curve
-				// is a day of readings, not a series to compare.
-				if cs := summarize(st.res.Chart); cs.ok {
-					deltaChip(c, cs.pct).Shrink(0)
-				}
-			}
-			a.refreshButton(c, sc, showActions)
-			a.sizeButton(c, sc, size, showActions)
-		})
+		}
 		switch {
 		case st.loading:
 			ui.Spacer(c)
@@ -248,8 +271,20 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			if st.res.Big != "" {
 				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 			}
-			if lay.Summary != "hide" && st.res.Sub != "" {
+			hasSub := lay.Summary != "hide" && st.res.Sub != ""
+			switch {
+			case showTitle && hasSub:
 				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			case !showTitle && (hasSub || chipOK):
+				// The summary, with the change beside it.
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					if hasSub {
+						ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
+							ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+						})
+					}
+					chip()
+				})
 			}
 			showLegend := a.legendShown(sc.ID, lay)
 			if size > 0 {
@@ -279,10 +314,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						progressView(c, st.res.Chart.Progress, 2)
 					}
 				} else {
-					sparkH := max(54, b.Height-154) * s
+					sparkH := max(54, b.Height-154)*s + lift
 					if len(st.res.Stats) > 0 {
 						// The stat strip takes the room a curve would have had.
-						sparkH = max(28, b.Height-210) * s
+						sparkH = max(28, b.Height-210)*s + lift
 					}
 					SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
 				}
@@ -298,9 +333,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				a.dimRow(c, idx, meta.Dims)
 				a.varRow(c, sc, meta)
 				// A wide card is a strip: its chart is shorter than a large card's.
-				chartH := max(120, b.Height-210) * s
+				chartH := max(120, b.Height-210)*s + lift
 				if size == 3 {
-					chartH = 120 * s
+					chartH = 120*s + lift
 				}
 				if hasChart {
 					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
@@ -329,6 +364,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				ui.Spacer(c)
 				a.resizeHandle(c, sc.ID, span, b)
 			})
+		}
+		if !showTitle {
+			a.hoverBar(c, sc, title, size, showActions, w)
 		}
 	})
 	// Right click on this card: a menu in the window with its four sizes. It

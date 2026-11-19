@@ -303,6 +303,10 @@ type Layout struct {
 	// size) show while the pointer is on the card, or all the time. A touch
 	// screen has no pointer and always shows them.
 	Actions string `json:"actions,omitempty"`
+	// Title is "hide" (the default) or "show": a card's name and icon in a row
+	// of their own at its top. Hidden, the card is its content, and its name
+	// shows over it, with the buttons, while the pointer is on the card.
+	Title string `json:"title,omitempty"`
 	// Image is "cover" (the default) or "inline": a card with pictures is the
 	// picture, edge to edge, with its text and buttons over it while the pointer
 	// is on it; or the picture is a block among the card's other contents.

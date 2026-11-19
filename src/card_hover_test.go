@@ -180,3 +180,41 @@ export function render(ctx) { return { title: "常显", big: "5", sub: "", lines
 		t.Error("the script asked for its buttons to stay, and the refresh button paints nothing")
 	}
 }
+
+// A card is its content: its name is not there to see at rest, and shows with
+// the buttons while the pointer is on the card. A script that wants the title
+// row says layout title: "show".
+func TestCardTitleShowsOnlyOnHoverUnlessAsked(t *testing.T) {
+	a := newTestApp(t)
+	mk := func(id, title, layout string) {
+		a.store.SaveScript(store.Script{ID: id, Name: title, Home: true, Origin: store.OriginUser,
+			Source: `export function meta() { return { name: "` + title + `", sources: {} }; }
+export function render(ctx) { return { title: "` + title + `", big: "5", sub: "", lines: [], chart: null` + layout + ` }; }`})
+	}
+	mk("tt-hidden", "标题隐藏", "")
+	mk("tt-shown", "标题常显", `, layout: { title: "show" }`)
+	for _, sc := range a.store.Scripts() {
+		sc.Home = sc.ID == "tt-hidden" || sc.ID == "tt-shown"
+		a.store.SaveScript(sc)
+	}
+	tt := ui.NewTester(a.view, 1200, 600)
+	settle(tt)
+	settle(tt)
+	ink := func(title string) int {
+		info, ok := tt.Access(title)
+		if !ok {
+			t.Fatalf("no %q in the card (it is built, though hidden)", title)
+		}
+		return inkIn(tt, info.Bounds.X, info.Bounds.Y, info.Bounds.W, info.Bounds.H)
+	}
+	if n := ink("标题隐藏"); n != 0 {
+		t.Errorf("at rest the hidden title paints %d dark pixels, want none", n)
+	}
+	if n := ink("标题常显"); n == 0 {
+		t.Error("the script asked for its title row, and it paints nothing")
+	}
+	hover(t, tt, "标题隐藏")
+	if n := ink("标题隐藏"); n == 0 {
+		t.Error("hovered, the name paints nothing")
+	}
+}
