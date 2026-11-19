@@ -65,7 +65,7 @@ func Fetch(ctx context.Context, client *http.Client, sources map[string]string, 
 func Offline(sources map[string]string) map[string]json.RawMessage {
 	out := make(map[string]json.RawMessage, len(sources))
 	for name := range sources {
-		out[name] = errorJSON(errors.New("offline mode"))
+		out[name] = errorJSON(errors.New(offlineWord("")))
 	}
 	return out
 }
@@ -141,6 +141,25 @@ type FetchOptions struct {
 	Offline bool
 	// Force asks the network whatever the TTL: the user pressed refresh.
 	Force bool
+	// Lang is the language of the messages a source's error carries: "zh" or
+	// "en"; anything else is English.
+	Lang string
+}
+
+// offlineWord is why a source gave no request: the app is offline.
+func offlineWord(lang string) string {
+	if lang == "zh" {
+		return "离线模式"
+	}
+	return "offline mode"
+}
+
+// offlineNothing is the error of a source that is offline with nothing saved.
+func offlineNothing(lang string) string {
+	if lang == "zh" {
+		return "离线模式，没有缓存的数据"
+	}
+	return "offline mode: nothing cached"
 }
 
 // FetchCached loads every source at the same time, through the cache. For each:
@@ -192,9 +211,9 @@ func fetchOne(ctx context.Context, client *http.Client, url string, now time.Tim
 	}
 	if opt.Offline {
 		if have {
-			return fromCache(true, errors.New("offline mode"))
+			return fromCache(true, errors.New(offlineWord(opt.Lang)))
 		}
-		err := errors.New("offline mode: nothing cached")
+		err := errors.New(offlineNothing(opt.Lang))
 		return errorJSON(err), SourceInfo{Error: err.Error()}
 	}
 	if have && !opt.Force && opt.TTL > 0 && now.Sub(cached.At) < opt.TTL {

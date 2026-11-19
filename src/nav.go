@@ -68,7 +68,8 @@ func (a *app) view(c *ui.Context) {
 		p := pal(c)
 		path := a.router.Path()
 		switch {
-		case isMac():
+		// A phone has no menu bar and no window buttons, whatever the skin.
+		case isMac() && !compact:
 			macMenuBar(c, a)
 		case !compact:
 			titleBar(c, a, func() {})
