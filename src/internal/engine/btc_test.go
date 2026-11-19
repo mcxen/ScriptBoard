@@ -97,8 +97,8 @@ func TestBtcTickerWithoutKlines(t *testing.T) {
 
 func TestBtcOfflineHasNoSample(t *testing.T) {
 	s := builtin(t, "btc")
-	if !strings.Contains(s.Meta.Sources["ticker"], "api.binance.com") {
-		t.Errorf("ticker %q", s.Meta.Sources["ticker"])
+	if !strings.Contains(s.Meta.Sources["ticker"].URL, "api.binance.com") {
+		t.Errorf("ticker %q", s.Meta.Sources["ticker"].URL)
 	}
 	res, err := s.Run(context.Background(), Input{
 		Now:     time.Now(),

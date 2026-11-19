@@ -364,6 +364,10 @@ export function meta() {
 
 **实况与统计：`stats`。** 结果里可以带 `stats: [{label, value, sub}]`，卡片标题下面排一行小字数字，全屏页排成卡片。实况类的脚本（例如「国内实况」）用它显示体感、湿度、风速和气压。
 
+**数据源的完整请求。** `sources` 的一项可以是地址字符串，也可以是对象 `{url, method, headers, query, body, paging}`：`method` 默认 GET，可以是 POST 并带 `body`；`headers` 里写 `Cookie` 就能带登录；`query` 会拼到地址后面。`paging: {param, start, step, pages, items}` 声明分页：页码放进 `param`，逐页读取后把列表拼成一个；`items` 是每页里列表的路径（如 `data.list`），为空表示响应本身就是列表；遇到没有数据的页就停下。
+
+**图标分类。** 脚本的 `icon` 从 `icon_catalog`（MCP 工具）里选，目录按天气、财经、图表、时间、身体、智能、数据与网络、界面分类；写了目录里没有的名字，`script_check` 会警告。
+
 **可切换的变量：配置，不写代码。** `meta()` 里用 `vars` 声明用户能切换的值，数据源地址里写 `{key}`，宿主按用户的选择填进去。例如城市或关注的货币对：
 
 ```js

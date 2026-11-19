@@ -24,7 +24,7 @@ func TestUndeclaredScriptRunsEverywhere(t *testing.T) {
 	if r.Declared || !r.Supports(caps.Desktop) || !r.Supports(caps.Mobile) || len(r.Needs) != 0 || len(r.Problems) != 0 {
 		t.Errorf("plain script: %+v", r)
 	}
-	r = Resolve(engine.Meta{Sources: map[string]string{"x": "https://example.com"}})
+	r = Resolve(engine.Meta{Sources: map[string]engine.Source{"x": {URL: "https://example.com"}}})
 	if !r.Needing(caps.Network) || r.Declared || len(r.Problems) != 0 {
 		t.Errorf("script with a source: %+v", r)
 	}
@@ -67,7 +67,7 @@ func TestClaimingAPhoneItCannotRunOn(t *testing.T) {
 func TestDeclaredScriptsAreChecked(t *testing.T) {
 	r := Resolve(engine.Meta{
 		Needs:   []string{},
-		Sources: map[string]string{"x": "https://example.com"},
+		Sources: map[string]engine.Source{"x": {URL: "https://example.com"}},
 	})
 	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "network") {
 		t.Errorf("undeclared network: %v", r.Problems)

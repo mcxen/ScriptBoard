@@ -1,0 +1,127 @@
+package engine
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+// A source is an address as a string, or an object: both read, and the object
+// keeps its method, headers and body.
+func TestSourceAcceptsStringAndObject(t *testing.T) {
+	src := `export function meta() { return { name: "x", sources: {
+  a: "https://example.com/a",
+  b: { url: "https://example.com/b", method: "post", headers: { Cookie: "s=1" }, body: '{"d":"{start}"}' } } }; }
+export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [], chart: null }; }`
+	s, err := Compile("x.js", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Meta.Sources["a"].URL != "https://example.com/a" || s.Meta.Sources["a"].Method != "" {
+		t.Errorf("string source: %+v", s.Meta.Sources["a"])
+	}
+	b := s.Meta.Sources["b"]
+	if b.URL != "https://example.com/b" || b.Method != "post" || b.Headers["Cookie"] != "s=1" || !strings.Contains(b.Body, "{start}") {
+		t.Errorf("object source: %+v", b)
+	}
+	r := b.Request(time.Date(2026, 11, 19, 0, 0, 0, 0, time.UTC), nil)
+	if r.Method != "POST" || !strings.Contains(r.Body, "2026-10-20") {
+		t.Errorf("request %+v", r)
+	}
+}
+
+// A POST goes out with its method, body and headers, and its response is kept
+// under a key of its own, apart from a GET of the same address.
+func TestPostSendsItsBody(t *testing.T) {
+	var gotMethod, gotBody, gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotCookie = r.Header.Get("Cookie")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		fmt.Fprint(w, `{"ok": true}`)
+	}))
+	defer srv.Close()
+	src := Source{URL: srv.URL, Method: "POST", Body: `{"q":1}`, Headers: map[string]string{"Cookie": "s=9"}}
+	body, info := FetchRequests(context.Background(), srv.Client(), map[string]Request{"p": src.Request(time.Now(), nil)}, time.Now(), FetchOptions{})
+	if gotMethod != "POST" || gotBody != `{"q":1}` || gotCookie != "s=9" {
+		t.Errorf("server saw %s %q cookie %q", gotMethod, gotBody, gotCookie)
+	}
+	if info["p"].Error != "" || !strings.Contains(string(body["p"]), "ok") {
+		t.Errorf("response %s %+v", body["p"], info["p"])
+	}
+	get := Request{Method: "GET", URL: srv.URL}
+	if get.CacheKey() == (Request{Method: "POST", URL: srv.URL, Body: `{"q":1}`}).CacheKey() {
+		t.Error("a POST and a GET of one address share a cache key")
+	}
+}
+
+// Query parameters join the address, and a query on an address that already
+// has one keeps it.
+func TestQueryJoinsTheAddress(t *testing.T) {
+	now := time.Now()
+	r := Source{URL: "https://example.com/x?a=1", Query: map[string]string{"b": "2", "c": "{start}"}}.Request(now, nil)
+	if !strings.HasPrefix(r.URL, "https://example.com/x?a=1&") || !strings.Contains(r.URL, "b=2") {
+		t.Errorf("url %s", r.URL)
+	}
+	if strings.Contains(r.URL, "{start}") {
+		t.Errorf("a query value was not expanded: %s", r.URL)
+	}
+}
+
+// Paging reads the pages in order, joins their lists, and stops at a page with
+// no items.
+func TestPagingJoinsPages(t *testing.T) {
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Query().Get("page")
+		pages = append(pages, p)
+		switch p {
+		case "1":
+			fmt.Fprint(w, `{"data":{"list":[{"v":1},{"v":2}]}}`)
+		case "2":
+			fmt.Fprint(w, `{"data":{"list":[{"v":3}]}}`)
+		default:
+			fmt.Fprint(w, `{"data":{"list":[]}}`)
+		}
+	}))
+	defer srv.Close()
+	src := Source{URL: srv.URL, Paging: &Paging{Param: "page", Start: 1, Pages: 5, Items: "data.list"}}
+	body, info := FetchRequests(context.Background(), srv.Client(), map[string]Request{"l": src.Request(time.Now(), nil)}, time.Now(), FetchOptions{})
+	if info["l"].Error != "" {
+		t.Fatal(info["l"].Error)
+	}
+	var items []map[string]int
+	if err := json.Unmarshal(body["l"], &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 || items[2]["v"] != 3 {
+		t.Errorf("joined items %v", items)
+	}
+	if strings.Join(pages, ",") != "1,2,3" {
+		t.Errorf("pages asked %v, want 1,2,3 (the third is empty and stops it)", pages)
+	}
+}
+
+// A page that fails after the first keeps what the earlier pages gave.
+func TestPagingKeepsWhatItHas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "1" {
+			fmt.Fprint(w, `[{"v":1}]`)
+			return
+		}
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	src := Source{URL: srv.URL, Paging: &Paging{Param: "page", Pages: 3}}
+	body, info := FetchRequests(context.Background(), srv.Client(), map[string]Request{"l": src.Request(time.Now(), nil)}, time.Now(), FetchOptions{})
+	if info["l"].Error != "" || string(body["l"]) != `[{"v":1}]` {
+		t.Errorf("body %s info %+v", body["l"], info["l"])
+	}
+}

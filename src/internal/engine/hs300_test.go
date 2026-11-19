@@ -77,8 +77,8 @@ func TestHs300RangeKeepsLastBars(t *testing.T) {
 
 func TestHs300OfflineHasNoSample(t *testing.T) {
 	s := builtin(t, "hs300")
-	if !strings.Contains(s.Meta.Sources["k"], "free-api.tickflow.org") {
-		t.Errorf("source %q, want TickFlow", s.Meta.Sources["k"])
+	if !strings.Contains(s.Meta.Sources["k"].URL, "free-api.tickflow.org") {
+		t.Errorf("source %q, want TickFlow", s.Meta.Sources["k"].URL)
 	}
 	res, err := s.Run(context.Background(), Input{
 		Now:     time.Now(),

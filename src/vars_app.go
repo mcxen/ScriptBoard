@@ -107,8 +107,9 @@ func (a *app) resetData(sc store.Script) error {
 	now := a.now()
 	if a.cache != nil {
 		for _, vals := range engine.Combinations(m.Vars) {
-			for _, tmpl := range m.Sources {
-				if err := a.cache.Forget(engine.ExpandVars(tmpl, now, vals)); err != nil {
+			for _, src := range m.Sources {
+				r := src.Request(now, vals)
+				if err := a.cache.Forget(r.CacheKey()); err != nil {
 					return err
 				}
 			}

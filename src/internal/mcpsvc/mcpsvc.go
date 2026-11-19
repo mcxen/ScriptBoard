@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"scriptboard/src/internal/iconcat"
 	"strings"
 	"time"
 
@@ -249,6 +250,15 @@ func Tools() []Tool {
 			Description: "List the icons scripts can use: the shared ones and each plugin's.",
 			InputSchema: obj(map[string]any{}),
 		},
+		{
+			Name: "icon_catalog",
+			Description: "The shipped icons, by category, with what each shows in Chinese and English. " +
+				"Pick a script's meta().icon from this list: it is the one shown on its card. " +
+				"Give category to list one category only.",
+			InputSchema: obj(map[string]any{
+				"category": str("category key, such as weather or finance; optional"),
+			}),
+		},
 	}
 }
 
@@ -335,7 +345,9 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		out, _ := json.MarshalIndent(meta, "", "  ")
-		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta), nil
+		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir), nil
+	case "icon_catalog":
+		return catalogText(str("category")), nil
 	case "icon_add":
 		path, err := plugins.AddIcon(dataDir, str("plugin"), str("name"), []byte(str("svg")))
 		if err != nil {
@@ -367,4 +379,44 @@ func contractReport(meta engine.Meta) string {
 		fmt.Fprintf(&b, "警告：%s\n", p)
 	}
 	return b.String()
+}
+
+// catalogText lists the shipped icons, all categories or one.
+func catalogText(category string) string {
+	var b strings.Builder
+	for _, g := range iconcat.Categories {
+		if category != "" && g.Key != category {
+			continue
+		}
+		fmt.Fprintf(&b, "%s · %s (%s)\n", g.Key, g.Zh, g.En)
+		for _, it := range g.Items {
+			fmt.Fprintf(&b, "  %s  %s / %s\n", it.Name, it.Zh, it.En)
+		}
+	}
+	if b.Len() == 0 {
+		return "没有这个分类；分类有：" + categoryKeys() + "\n"
+	}
+	return b.String()
+}
+
+func categoryKeys() string {
+	keys := make([]string, 0, len(iconcat.Categories))
+	for _, g := range iconcat.Categories {
+		keys = append(keys, g.Key)
+	}
+	return strings.Join(keys, ", ")
+}
+
+// iconReport warns when a script's icon is neither in the catalog nor among the
+// icons the user or a plugin added, so that it would show the default picture.
+func iconReport(meta engine.Meta, dataDir string) string {
+	if meta.Icon == "" || iconcat.Has(meta.Icon) {
+		return ""
+	}
+	for _, n := range plugins.ListIcons(dataDir) {
+		if strings.HasPrefix(n, meta.Icon+" ") || n == meta.Icon || strings.HasSuffix(n, " ("+meta.Icon+")") {
+			return ""
+		}
+	}
+	return "警告：图标 " + meta.Icon + " 不存在，会显示默认图标。用 icon_catalog 查看可选的图标。\n"
 }

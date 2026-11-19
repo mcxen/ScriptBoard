@@ -70,8 +70,8 @@ func TestAqiEnglishCategory(t *testing.T) {
 
 func TestAqiOfflineHasNoSample(t *testing.T) {
 	s := builtin(t, "aqi")
-	if !strings.Contains(s.Meta.Sources["air"], "air-quality-api.open-meteo.com") {
-		t.Errorf("source %q", s.Meta.Sources["air"])
+	if !strings.Contains(s.Meta.Sources["air"].URL, "air-quality-api.open-meteo.com") {
+		t.Errorf("source %q", s.Meta.Sources["air"].URL)
 	}
 	res, err := s.Run(context.Background(), Input{
 		Now:     time.Now(),

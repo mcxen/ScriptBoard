@@ -70,8 +70,8 @@ func TestFxcnySkipsMissing(t *testing.T) {
 
 func TestFxcnyOfflineHasNoSample(t *testing.T) {
 	s := builtin(t, "fxcny")
-	if !strings.Contains(s.Meta.Sources["fx"], "api.frankfurter.dev/v1/latest") {
-		t.Errorf("source %q, want frankfurter latest", s.Meta.Sources["fx"])
+	if !strings.Contains(s.Meta.Sources["fx"].URL, "api.frankfurter.dev/v1/latest") {
+		t.Errorf("source %q, want frankfurter latest", s.Meta.Sources["fx"].URL)
 	}
 	res, err := s.Run(context.Background(), Input{
 		Now:     time.Now(),

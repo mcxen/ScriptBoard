@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Sources in full: a source is an address, or `{url, method, headers, query, body, paging}`, so a POST with a body, a login cookie, or a query works. Paging: `paging: {param, start, step, pages, items}` reads a list over several pages and joins them.
+- Icons: a catalog of the shipped icons by category (`icon_catalog` over MCP); `script_check` warns about an icon that does not exist.
 - Results can carry `stats` (label, value, sub): a card shows them as a row under the headline, the full view as tiles. A live result's chart shows no percentage change.
 
 ## 0.1.5

@@ -488,14 +488,20 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	// The variables the user chose fill the sources: each combination is its
 	// own URL, so its own cache and history.
 	vars := a.varsOf(sc, s.Meta)
-	urls := make(map[string]string, len(s.Meta.Sources))
-	for name, tmpl := range s.Meta.Sources {
-		urls[name] = engine.ExpandVars(tmpl, now, vars)
+	reqs := make(map[string]engine.Request, len(s.Meta.Sources))
+	keys := make(map[string]string, len(s.Meta.Sources))
+	for name, src := range s.Meta.Sources {
+		r := src.Request(now, vars)
+		for k, v := range s.Meta.SourceHeaders[name] {
+			r.Headers[k] = v
+		}
+		reqs[name] = r
+		keys[name] = r.CacheKey()
 	}
-	sources, info := engine.FetchCached(context.Background(), a.client, urls, now, opt)
+	sources, info := engine.FetchRequests(context.Background(), a.client, reqs, now, opt)
 	var history map[string][]engine.HistoryPoint
 	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
-		history = engine.HistoryOf(opt.Cache, urls, names, n, now)
+		history = engine.HistoryOf(opt.Cache, keys, names, n, now)
 	}
 	res, err := s.Run(context.Background(), engine.Input{
 		Now:      now,

@@ -248,7 +248,7 @@ export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [],
 	if got := s.Meta.SourceHeaders["api"]["Cookie"]; got != "session=abc" {
 		t.Fatalf("meta lost the header: %+v", s.Meta.SourceHeaders)
 	}
-	body, info := FetchCached(context.Background(), srv.Client(), s.Meta.Sources, now,
+	body, info := FetchCached(context.Background(), srv.Client(), urlsOf(s.Meta.Sources), now,
 		FetchOptions{Headers: s.Meta.SourceHeaders})
 	if seen != "session=abc" {
 		t.Fatalf("server got Cookie %q", seen)
@@ -256,4 +256,13 @@ export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [],
 	if price(t, body["api"]) != 1 || info["api"].Error != "" {
 		t.Fatalf("%s %+v", body["api"], info["api"])
 	}
+}
+
+// urlsOf is the address of each source of a script.
+func urlsOf(src map[string]Source) map[string]string {
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v.URL
+	}
+	return out
 }

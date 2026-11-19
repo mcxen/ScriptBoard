@@ -255,7 +255,7 @@ func dimNames(dims []engine.Dim) string {
 	return out
 }
 
-func sourceNames(src map[string]string) string {
+func sourceNames[V any](src map[string]V) string {
 	out := ""
 	for k := range src {
 		if out != "" {

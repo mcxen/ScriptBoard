@@ -62,7 +62,7 @@ func Fetch(ctx context.Context, client *http.Client, sources map[string]string, 
 }
 
 // Offline gives every source the same error, for runs without the network.
-func Offline(sources map[string]string) map[string]json.RawMessage {
+func Offline[V any](sources map[string]V) map[string]json.RawMessage {
 	out := make(map[string]json.RawMessage, len(sources))
 	for name := range sources {
 		out[name] = errorJSON(errors.New(offlineWord("")))
@@ -177,21 +177,40 @@ func offlineNothing(lang string) string {
 //
 // A source that fails with nothing cached becomes {"error": "..."}, as in Fetch.
 func FetchCached(ctx context.Context, client *http.Client, sources map[string]string, now time.Time, opt FetchOptions) (map[string]json.RawMessage, map[string]SourceInfo) {
-	names := make([]string, 0, len(sources))
-	urls := make([]string, 0, len(sources))
+	reqs := make(map[string]Request, len(sources))
 	for name, tmpl := range sources {
+		reqs[name] = Request{Method: http.MethodGet, URL: Expand(tmpl, now)}
+	}
+	return FetchRequests(ctx, client, reqs, now, opt)
+}
+
+// FetchRequests loads every request at the same time, through the cache, as
+// FetchCached does. A request's headers from opt.Headers join its own.
+func FetchRequests(ctx context.Context, client *http.Client, reqs map[string]Request, now time.Time, opt FetchOptions) (map[string]json.RawMessage, map[string]SourceInfo) {
+	names := make([]string, 0, len(reqs))
+	for name := range reqs {
 		names = append(names, name)
-		urls = append(urls, Expand(tmpl, now))
 	}
 	raw := make([]json.RawMessage, len(names))
 	info := make([]SourceInfo, len(names))
 	var wg sync.WaitGroup
 	for i := range names {
+		r := reqs[names[i]]
+		if len(opt.Headers[names[i]]) > 0 {
+			merged := map[string]string{}
+			for k, v := range r.Headers {
+				merged[k] = v
+			}
+			for k, v := range opt.Headers[names[i]] {
+				merged[k] = v
+			}
+			r.Headers = merged
+		}
 		wg.Add(1)
-		go func(i int) {
+		go func(i int, r Request) {
 			defer wg.Done()
-			raw[i], info[i] = fetchOne(ctx, client, urls[i], opt.Headers[names[i]], now, opt)
-		}(i)
+			raw[i], info[i] = fetchOne(ctx, client, r, now, opt)
+		}(i, r)
 	}
 	wg.Wait()
 	bodies := make(map[string]json.RawMessage, len(names))
@@ -202,11 +221,12 @@ func FetchCached(ctx context.Context, client *http.Client, sources map[string]st
 	return bodies, infos
 }
 
-func fetchOne(ctx context.Context, client *http.Client, url string, header map[string]string, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
+func fetchOne(ctx context.Context, client *http.Client, r Request, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
+	key := r.CacheKey()
 	var cached CachedBody
 	var have bool
 	if opt.Cache != nil {
-		cached, have = opt.Cache.Get(url)
+		cached, have = opt.Cache.Get(key)
 	}
 	fromCache := func(stale bool, why error) (json.RawMessage, SourceInfo) {
 		in := SourceInfo{At: cached.At.UnixMilli(), Cached: true, Stale: stale}
@@ -225,7 +245,13 @@ func fetchOne(ctx context.Context, client *http.Client, url string, header map[s
 	if have && !opt.Force && opt.TTL > 0 && now.Sub(cached.At) < opt.TTL {
 		return fromCache(false, nil)
 	}
-	body, err := get(ctx, client, url, header)
+	var body []byte
+	var err error
+	if r.Paging != nil {
+		body, err = fetchPaged(ctx, client, r)
+	} else {
+		body, err = send(ctx, client, r)
+	}
 	if err == nil && !json.Valid(body) {
 		err = errors.New("response is not JSON")
 	}
@@ -236,7 +262,7 @@ func fetchOne(ctx context.Context, client *http.Client, url string, header map[s
 		return errorJSON(err), SourceInfo{Error: err.Error()}
 	}
 	if opt.Cache != nil {
-		opt.Cache.Put(url, body, now)
+		opt.Cache.Put(key, body, now)
 	}
 	return body, SourceInfo{At: now.UnixMilli()}
 }

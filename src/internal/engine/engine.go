@@ -57,9 +57,10 @@ type Meta struct {
 	// Feeds names the data sources the script reads, as ctx.feeds[name]. The
 	// host polls them and aggregates their samples by hour and by day.
 	Feeds []string `json:"feeds"`
-	// Sources maps a name to a URL. {start} and {end} expand to the dates of
+	// Sources maps a name to where its data comes from: an address, or a
+	// request of its own (request.go). {start} and {end} expand to the dates of
 	// the last 30 days, as yyyy-mm-dd.
-	Sources map[string]string `json:"sources"`
+	Sources map[string]Source `json:"sources"`
 	// SourceHeaders gives the request headers of a source, by its name: a
 	// Cookie header is how a source that needs the user's login is read, as
 	// {"api": {"Cookie": "session=…"}}. The values stay in the script.
