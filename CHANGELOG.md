@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Settings open in a window of their own on a computer, at a width that suits them; the main window stays where it was, and asking again brings the window forward. A phone keeps the page. The window has its title once, in its title row.
+- Settings, tidied: the daily reminder (it was only saved, never used), the tech stack row and the plugin group's two lines of explanation are gone; the language moved under appearance; the data file and the plugin folder moved into About, which now shows the real version (it said 0.1.0); the MCP server shows its port, keys and the buttons that copy its configuration only once it is on, and the four copy buttons are one row.
+
 ## 0.1.8
 
 - Content width is a setting (设置 → 外观 → 内容宽度): auto (pages of data, the home cards and the detail page, fill the window; text pages such as settings keep a reading width), comfortable, wide, or full. A page that is capped sits in the middle of the window, and what is sized from the page (the card grid, the statistics tiles, a picture) follows the same cap. Before, the detail page stopped at a fixed width with blank space on its right, and its tiles wrapped.

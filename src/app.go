@@ -36,10 +36,12 @@ type app struct {
 	live liveState
 	// shown is what each run key last showed, kept when the run is dropped to run
 	// again, so that its card keeps it meanwhile (see startState).
-	shown   map[string]engine.Result
-	router  *ui.Router
-	store   *store.Store
-	dataDir string // the folder of data.json; plugins and icons live under it
+	shown map[string]engine.Result
+	// settingsWin is the settings window, while it is open (settings_window.go).
+	settingsWin *mygo.Window
+	router      *ui.Router
+	store       *store.Store
+	dataDir     string // the folder of data.json; plugins and icons live under it
 	// cache keeps the responses of the sources, their history and the last
 	// result of each card, for offline use and for opening quickly.
 	cache *cache.Store
@@ -591,6 +593,8 @@ func (a *app) saveSettings() {
 		a.set = a.store.Settings()
 	}
 	a.invalidateAll()
+	// A setting may be changed in the settings window: this one redraws.
+	a.post(func() {})
 }
 
 // fmtTime formats a Unix millisecond time for lists: local month, day, hour

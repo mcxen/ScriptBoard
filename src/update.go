@@ -98,7 +98,7 @@ func updateHTTPGet(ctx context.Context, url string, timeout time.Duration) (io.R
 		cancel()
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "scriptboard/"+appVersion)
+	req.Header.Set("User-Agent", "scriptboard/"+versionString())
 	resp, err := (&http.Client{Transport: netproxy.Transport()}).Do(req)
 	if err != nil {
 		cancel()

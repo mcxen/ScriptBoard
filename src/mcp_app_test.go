@@ -116,6 +116,7 @@ func TestMCPSettingsPage(t *testing.T) {
 	defer func() { copyText = old }()
 	m := a.store.Settings().MCP
 	m.Key = mcpsvc.NewKey()
+	m.Enabled = true // its keys and the copy buttons show once it is on
 	if err := a.store.SetSettings(withMCP(a, m)); err != nil {
 		t.Fatal(err)
 	}

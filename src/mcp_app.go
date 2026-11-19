@@ -206,7 +206,7 @@ func (a *app) mcpGroups(c *ui.Context, compact bool) {
 		w = 170
 	}
 
-	group(c, tr("MCP 服务器"), compact,
+	rows := []row{
 		row{title: tr("开启 MCP 服务器"), note: tr("让 AI 助手创建和修改本地插件与图标；默认关闭，每次请求都要带密钥。") + a.mcp.status(m), control: func() {
 			if toggle(c, &on) {
 				m.Enabled = on
@@ -216,74 +216,77 @@ func (a *app) mcpGroups(c *ui.Context, compact bool) {
 				a.saveMCP(m)
 			}
 		}},
-		row{title: tr("端口"), note: tr("改完按回车保存"), control: func() {
-			in := textInput(c, &a.mcpPort, "")
-			in.Width(96)
-			if in.Submitted() {
-				port, err := strconv.Atoi(strings.TrimSpace(a.mcpPort))
-				if err != nil || port < 1024 || port > 65535 {
-					a.mcpNote = tr("端口要在 1024 到 65535 之间")
-					return
-				}
-				m.Port = port
-				if port == store.DefaultMCPPort {
-					m.Port = 0
-				}
-				a.mcpNote = ""
-				a.saveMCP(m)
-			}
-		}},
-		row{title: tr("允许局域网访问"), note: tr("关闭时只有这台电脑能连；打开后其他电脑和代理也能连，仍然需要密钥"), control: func() {
-			if toggle(c, &lan) {
-				m.LAN = lan
-				a.saveMCP(m)
-			}
-		}},
-		row{title: tr("只读"), note: tr("助手只能读取，不能保存或删除插件和图标"), control: func() {
-			if toggle(c, &ro) {
-				m.ReadOnly = ro
-				a.saveMCP(m)
-			}
-		}},
-		row{title: tr("公开地址"), note: tr("可选，经代理访问时填写，如 https://example.com/mcp，会写进复制的配置；按回车保存"), control: func() {
-			in := textInput(c, &a.mcpPublic, "https://…")
-			in.Width(w)
-			if in.Submitted() {
-				m.PublicURL = strings.TrimSpace(a.mcpPublic)
-				a.saveMCP(m)
-			}
-		}},
-		row{title: tr("密钥"), note: maskedKey(m.Key), control: func() {
-			if btn(c, tr("复制密钥")).Clicked() && m.Key != "" {
-				copyText(m.Key)
-				a.mcpNote = tr("密钥已复制")
-			}
-			if btn(c, tr("重新生成")).Clicked() {
-				m.Key = mcpsvc.NewKey()
-				a.saveMCP(m)
-				a.mcpNote = tr("已生成新密钥，旧密钥不能再用")
-			}
-		}},
-	)
-
-	copyRow := func(title, note string, text func() string) row {
-		return row{title: title, note: note, control: func() {
-			if btn(c, tr("复制")).Clicked() {
-				if m.Key == "" && title != tr("复制 stdio 配置") {
-					a.mcpNote = tr("先开启 MCP 服务器，生成密钥")
-					return
-				}
-				copyText(text())
-				a.mcpNote = tr("已复制：") + title
-			}
-		}}
 	}
-	group(c, tr("连接助手"), compact,
-		copyRow(tr("复制提示词"), tr("地址、密钥和全部工具，粘贴到助手的指令里"), func() string { return mcpPrompt(m) }),
-		copyRow(tr("复制 Claude Code 命令"), tr("一条命令把服务器加进 Claude Code"), func() string { return claudeCodeCommand(m) }),
-		copyRow(tr("复制 JSON 配置"), tr("给按地址连接的客户端（Cursor、Claude Desktop 等）"), func() string { return httpConfig(m) }),
-		copyRow(tr("复制 stdio 配置"), tr("给启动程序的客户端：由本应用以 --mcp-stdio 运行，不需要密钥，直接读写数据目录"), stdioConfig),
-	)
+	// The rest matters once the server is on.
+	if m.Enabled {
+		rows = append(rows,
+			row{title: tr("端口"), note: tr("改完按回车保存"), control: func() {
+				in := textInput(c, &a.mcpPort, "")
+				in.Width(96)
+				if in.Submitted() {
+					port, err := strconv.Atoi(strings.TrimSpace(a.mcpPort))
+					if err != nil || port < 1024 || port > 65535 {
+						a.mcpNote = tr("端口要在 1024 到 65535 之间")
+						return
+					}
+					m.Port = port
+					if port == store.DefaultMCPPort {
+						m.Port = 0
+					}
+					a.mcpNote = ""
+					a.saveMCP(m)
+				}
+			}},
+			row{title: tr("允许局域网访问"), note: tr("关闭时只有这台电脑能连；打开后其他电脑和代理也能连，仍然需要密钥"), control: func() {
+				if toggle(c, &lan) {
+					m.LAN = lan
+					a.saveMCP(m)
+				}
+			}},
+			row{title: tr("只读"), note: tr("助手只能读取，不能保存或删除插件和图标"), control: func() {
+				if toggle(c, &ro) {
+					m.ReadOnly = ro
+					a.saveMCP(m)
+				}
+			}},
+			row{title: tr("公开地址"), note: tr("可选，经代理访问时填写，如 https://example.com/mcp，会写进复制的配置；按回车保存"), control: func() {
+				in := textInput(c, &a.mcpPublic, "https://…")
+				in.Width(w)
+				if in.Submitted() {
+					m.PublicURL = strings.TrimSpace(a.mcpPublic)
+					a.saveMCP(m)
+				}
+			}},
+			row{title: tr("密钥"), note: maskedKey(m.Key), control: func() {
+				if btn(c, tr("复制密钥")).Clicked() && m.Key != "" {
+					copyText(m.Key)
+					a.mcpNote = tr("密钥已复制")
+				}
+				if btn(c, tr("重新生成")).Clicked() {
+					m.Key = mcpsvc.NewKey()
+					a.saveMCP(m)
+					a.mcpNote = tr("已生成新密钥，旧密钥不能再用")
+				}
+			}},
+			row{stack: true, title: tr("连接助手"), note: tr("复制后粘贴给助手。stdio 配置由本应用以 --mcp-stdio 运行，不需要密钥，直接读写数据目录。"), control: func() {
+				copyBtn := func(label string, text func() string) {
+					if btn(c, label).Clicked() {
+						if m.Key == "" && label != tr("复制 stdio 配置") {
+							a.mcpNote = tr("先开启 MCP 服务器，生成密钥")
+							return
+						}
+						copyText(text())
+						a.mcpNote = tr("已复制：") + label
+					}
+				}
+				copyBtn(tr("复制提示词"), func() string { return mcpPrompt(m) })
+				copyBtn(tr("复制 Claude Code 命令"), func() string { return claudeCodeCommand(m) })
+				copyBtn(tr("复制 JSON 配置"), func() string { return httpConfig(m) })
+				copyBtn(tr("复制 stdio 配置"), stdioConfig)
+			}},
+		)
+	}
+	group(c, tr("MCP 服务器"), compact, rows...)
 	if a.mcpNote != "" {
 		notice(c, a.mcpNote, feedback.Info)
 	}

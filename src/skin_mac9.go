@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -117,8 +118,11 @@ func macTextInput(c *ui.Context, v *string, placeholder string) ui.Element {
 // macMenuBar is the Mac OS 9 menu bar: the title row of the window, with the
 // app's name and the menus the classic Mac had. The macOS lights sit at its
 // left, as they sat in the menu bar's corner.
-func macMenuBar(c *ui.Context, a *app) {
-	titleBar(c, a, func() {
+func macMenuBar(c *ui.Context, a *app) { macMenuBarIn(c, a, a.win) }
+
+// macMenuBarIn is macMenuBar for the window w.
+func macMenuBarIn(c *ui.Context, a *app, w *mygo.Window) {
+	titleBarIn(c, a, w, func() {
 		ui.Text(c, appName()).FontSize(fsCaption).Bold().TextColor(macBlack).Padding(0, 8)
 		for _, m := range []string{tr("文件"), tr("编辑"), tr("查看"), tr("特殊")} {
 			ui.Text(c, m).FontSize(fsCaption).TextColor(macBlack).Padding(0, 8)

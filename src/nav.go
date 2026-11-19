@@ -147,7 +147,7 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 		if isMac() {
 			for _, n := range navItems {
 				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-24) {
-					a.router.Push(n.path)
+					a.goTo(n.path)
 				}
 			}
 			a.sidebarStatus(c, p)
@@ -178,7 +178,7 @@ func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
 		}
 		for _, n := range navItems {
 			if macOrRailItem(c, n, n.active(path), p) {
-				a.router.Push(n.path)
+				a.goTo(n.path)
 			}
 		}
 		ui.Spacer(c)
@@ -250,7 +250,7 @@ func (a *app) tabBar(c *ui.Context, p palette, path string) {
 				}
 			})
 			if el.Clicked() {
-				a.router.Push(n.path)
+				a.goTo(n.path)
 			}
 		}
 	})

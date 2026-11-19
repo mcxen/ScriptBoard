@@ -10,16 +10,18 @@ import (
 	"scriptboard/src/internal/plugins"
 )
 
-const (
-	appVersion = "0.1.0"
-	stackInfo  = "MyGo v0.10.0 · moejs v0.1.1"
-)
+// appVersion is what a build that did not get a version reports (versionString).
+const appVersion = "dev"
 
 var unitNames = []string{"kg", "斤"}
 
 // settings is the settings page: groups of rows, each with a title, a line of
 // explanation and its control. Every change is saved at once.
-func (a *app) settings(c *ui.Context, compact bool) {
+func (a *app) settings(c *ui.Context, compact bool) { a.settingsBody(c, compact, true) }
+
+// settingsBody is the settings page; titled says whether it has a title of its
+// own (the settings window has its title in its title row).
+func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 	p := pal(c)
 	inputW := float32(260)
 	if compact {
@@ -30,7 +32,9 @@ func (a *app) settings(c *ui.Context, compact bool) {
 	}
 
 	page(c, compact, func() {
-		header(c, tr("设置"), "", nil)
+		if titled {
+			header(c, tr("设置"), "", nil)
+		}
 
 		group(c, tr("外观"), compact,
 			row{stack: true, title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
@@ -40,26 +44,10 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					a.saveSettings()
 				}
 			}},
-			row{stack: true, title: tr("内容宽度"), note: tr("自动：首页和详情页铺满窗口，设置等文字页保持易读的宽度；也可以固定为舒适、宽，或始终铺满。"), control: func() {
-				idx := widthIndex(a.set.ContentWidth)
-				if choose(c, &idx, tr("自动"), tr("舒适"), tr("宽"), tr("铺满")) {
-					a.set.ContentWidth = widthModes[idx]
-					a.saveSettings()
-				}
-			}},
 			row{stack: true, title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
 				if choose(c, &a.themeIdx, tr("跟随系统"), tr("浅色"), tr("深色")) {
 					a.set.ThemeMode = themeModes[a.themeIdx]
 					setThemeMode(a.set.ThemeMode)
-					a.saveSettings()
-				}
-			}},
-		)
-
-		group(c, tr("数据"), compact,
-			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
-				if choose(c, &a.unitIdx, unitNames...) {
-					a.set.WeightUnit = unitNames[a.unitIdx]
 					a.saveSettings()
 				}
 			}},
@@ -72,6 +60,22 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					if a.win != nil {
 						a.win.SetTitle(appName())
 					}
+				}
+			}},
+			row{stack: true, title: tr("内容宽度"), note: tr("自动：首页和详情页铺满窗口，设置等文字页保持易读的宽度；也可以固定为舒适、宽，或始终铺满。"), control: func() {
+				idx := widthIndex(a.set.ContentWidth)
+				if choose(c, &idx, tr("自动"), tr("舒适"), tr("宽"), tr("铺满")) {
+					a.set.ContentWidth = widthModes[idx]
+					a.saveSettings()
+				}
+			}},
+		)
+
+		group(c, tr("数据"), compact,
+			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
+				if choose(c, &a.unitIdx, unitNames...) {
+					a.set.WeightUnit = unitNames[a.unitIdx]
+					a.saveSettings()
 				}
 			}},
 			row{title: tr("离线模式"), note: tr("不请求网络，用缓存的数据，没有缓存就显示示例"), control: func() {
@@ -88,8 +92,9 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					}
 				}
 			}},
-			row{title: tr("数据文件"), note: a.store.Path()},
 		)
+
+		a.usageGroups(c, compact)
 
 		group(c, tr("数据源"), compact,
 			row{title: tr("允许 exec 协议"), note: tr("数据源可以运行本机程序取数（exec:）。只在你信任的数据源上开启"), control: func() {
@@ -99,20 +104,14 @@ func (a *app) settings(c *ui.Context, compact bool) {
 			}},
 			row{title: tr("curl 数据源"), note: tr("每隔一段时间请求接口，存下数字，画按小时或按天的曲线") + " · " + tr("支持的协议：") + strings.Join(feed.Schemes(), " "), control: func() {
 				if btn(c, tr("管理")).Clicked() {
-					a.router.Push("/feeds")
+					a.openFeeds()
 				}
 			}},
 		)
 
 		a.updateGroup(c, compact)
 
-		group(c, tr("提醒"), compact,
-			row{title: tr("每日提醒时间"), note: tr("尚未接入系统通知，目前只保存这个时间"), control: func() {
-				if textInput(c, &a.set.RemindAt, "HH:MM").Width(96).Changed() {
-					a.saveSettings()
-				}
-			}},
-		)
+		a.mcpGroups(c, compact)
 
 		group(c, tr("社区"), compact,
 			row{title: tr("社区地址"), note: tr("Cloudflare Worker 的地址，留空则不用社区"), control: func() {
@@ -122,22 +121,14 @@ func (a *app) settings(c *ui.Context, compact bool) {
 			}},
 		)
 
-		a.usageGroups(c, compact)
-
-		a.mcpGroups(c, compact)
-
-		pluginRows := []row{
+		aboutRows := []row{
+			{title: appName(), control: muted(versionString())},
+			{title: tr("数据文件"), note: a.store.Path()},
 			{title: tr("插件目录"), note: plugins.PluginDir(a.dataDir)},
-			{title: tr("本地插件"), note: tr("放进这个目录，或用 MCP 工具 sbmcp 创建；不需要登录，也不经过审核，改动约一秒后生效")},
 		}
 		if a.pluginNote != "" {
-			pluginRows = append(pluginRows, row{title: tr("有插件没能加载"), note: a.pluginNote})
+			aboutRows = append(aboutRows, row{title: tr("有插件没能加载"), note: a.pluginNote})
 		}
-		group(c, tr("插件"), compact, pluginRows...)
-
-		group(c, tr("关于"), compact,
-			row{title: appName(), control: muted(appVersion)},
-			row{title: tr("技术栈"), control: muted(stackInfo)},
-		)
+		group(c, tr("关于"), compact, aboutRows...)
 	})
 }

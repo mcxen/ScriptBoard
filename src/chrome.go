@@ -44,7 +44,11 @@ func framedOptions(o mygo.WindowOptions) mygo.WindowOptions {
 // titleBar draws the title row across the top of the window and fills it with
 // body. The row keeps clear of the macOS lights and, on Windows and Linux, ends
 // in the window's own buttons.
-func titleBar(c *ui.Context, a *app, body func()) {
+func titleBar(c *ui.Context, a *app, body func()) { titleBarIn(c, a, a.win, body) }
+
+// titleBarIn is titleBar for the window w: its buttons act on that window, so
+// the settings window's close does not close the main one.
+func titleBarIn(c *ui.Context, a *app, w *mygo.Window, body func()) {
 	bar := ui.Row(c).Height(titleRow).AlignItems(ui.Center).DragWindow()
 	bar = skinTitleBar(c, bar)
 	bar.Children(func() {
@@ -54,32 +58,32 @@ func titleBar(c *ui.Context, a *app, body func()) {
 		body()
 		ui.Spacer(c)
 		if ownControls {
-			a.windowButtons(c)
+			a.windowButtons(c, w)
 		}
 	})
 }
 
 // windowButtons are the minimize, maximize and close buttons of Windows and
 // Linux. Close turns red on hover, as the system's does.
-func (a *app) windowButtons(c *ui.Context) {
+func (a *app) windowButtons(c *ui.Context, w *mygo.Window) {
 	p := pal(c)
 	ui.Row(c).Shrink(0).Height(titleRow).Children(func() {
-		if captionButton(c, "minus", p.text, p.hover, false).Clicked() && a.win != nil {
-			a.win.Minimize()
+		if captionButton(c, "minus", p.text, p.hover, false).Clicked() && w != nil {
+			w.Minimize()
 		}
 		maxIcon := "square"
-		if a.win != nil && a.win.IsMaximized() {
+		if w != nil && w.IsMaximized() {
 			maxIcon = "copy" // two squares: restore
 		}
-		if captionButton(c, maxIcon, p.text, p.hover, false).Clicked() && a.win != nil {
-			if a.win.IsMaximized() {
-				a.win.Restore()
+		if captionButton(c, maxIcon, p.text, p.hover, false).Clicked() && w != nil {
+			if w.IsMaximized() {
+				w.Restore()
 			} else {
-				a.win.Maximize()
+				w.Maximize()
 			}
 		}
-		if captionButton(c, "x", p.text, ui.Hex("#E81123"), true).Clicked() && a.win != nil {
-			a.win.Close()
+		if captionButton(c, "x", p.text, ui.Hex("#E81123"), true).Clicked() && w != nil {
+			w.Close()
 		}
 	})
 }
