@@ -134,3 +134,45 @@ func TestCombinations(t *testing.T) {
 		t.Errorf("no variables: %d combinations, want one empty", len(got))
 	}
 }
+
+// Every built-in script compiles, and each variable's default is one of its
+// own options, so a fresh install always has a value to show.
+func TestBuiltinVariablesAreWellFormed(t *testing.T) {
+	for _, b := range engine.Builtins() {
+		s, err := engine.Compile(b.ID+".js", b.Source)
+		if err != nil {
+			t.Errorf("%s: %v", b.ID, err)
+			continue
+		}
+		for _, v := range s.Meta.Vars {
+			if len(v.Options) == 0 {
+				t.Errorf("%s: variable %s has no options", b.ID, v.Key)
+			}
+			ok := false
+			for _, o := range v.Options {
+				ok = ok || o.Value == v.Default
+			}
+			if !ok {
+				t.Errorf("%s: default %q of %s is not one of its options", b.ID, v.Default, v.Key)
+			}
+		}
+	}
+}
+
+// A built-in with a city switch shows the city the user chose.
+func TestWeatherShowsTheChosenCity(t *testing.T) {
+	a := newTestApp(t)
+	sc, ok := a.store.Script("weather")
+	if !ok {
+		t.Fatal("no weather script")
+	}
+	res, err := a.execute(sc, nil)
+	if err != nil || !strings.Contains(res.Title, "上海") {
+		t.Fatalf("default title %q %v", res.Title, err)
+	}
+	a.setVar(sc, "city", "latitude=39.90&longitude=116.41")
+	res, err = a.execute(sc, nil)
+	if err != nil || !strings.Contains(res.Title, "北京") {
+		t.Errorf("after switching: title %q %v", res.Title, err)
+	}
+}

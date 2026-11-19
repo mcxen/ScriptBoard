@@ -1,15 +1,18 @@
-// 比特币：币安现货 24h、日 K 与 U 本位资金费，无需 key。离线或失败时不造数。
+// 加密货币：币安现货 24h、日 K 与 U 本位资金费，无需 key。离线或失败时不造数。
+// 币种是 vars 里的一个变量：要加币种，在 COINS 里加一行即可（需要币安有该 USDT 合约）。
 // 语言：meta({lang}) 和 render(ctx) 都带 lang（"zh" 或 "en"）。
 // Language: meta({lang}) and render(ctx) both get lang ("zh" or "en").
 let EN = false;
 const t = (zh, en) => (EN ? en : zh);
 
+const COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE"];
+
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("比特币", "Bitcoin"),
-    description: t("比特币现货、日 K 线和资金费率", "Bitcoin spot, daily candles and funding rate"),
-    version: "1.0.0",
+    name: t("加密货币", "Crypto"),
+    description: t("所选币种的现货、日 K 线和资金费率", "Spot price, daily candles and funding rate for a coin"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "circle-dollar-sign",
@@ -24,10 +27,18 @@ export function meta(a) {
         ],
       },
     ],
+    vars: [
+      {
+        key: "coin",
+        label: t("币种", "Coin"),
+        default: "BTC",
+        options: COINS.map((c) => ({ value: c, label: c + " / USDT" })),
+      },
+    ],
     sources: {
-      ticker: "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",
-      klines: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=60",
-      funding: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT",
+      ticker: "https://api.binance.com/api/v3/ticker/24hr?symbol={coin}USDT",
+      klines: "https://api.binance.com/api/v3/klines?symbol={coin}USDT&interval=1d&limit=60",
+      funding: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol={coin}USDT",
     },
   };
 }
@@ -87,7 +98,8 @@ function empty(title, why, lines) {
 
 export function render(ctx) {
   EN = ctx.lang === "en";
-  const title = t("比特币 · USDT", "Bitcoin · USDT");
+  const coin = COINS.includes(ctx.vars.coin) ? ctx.vars.coin : "BTC";
+  const title = coin + " · USDT";
   const sources = ctx.sources || {};
   let bars = barsOf(sources.klines);
   const n = ctx.view.range ?? 30;

@@ -1,4 +1,5 @@
-// 沪深300 日 K：TickFlow 免费日线（无需 key）。离线或失败时不造数。
+// 指数日 K：TickFlow 免费日线（无需 key），默认沪深300。离线或失败时不造数。
+// 指数是 vars 里的一个变量：要加指数，在 INDEXES 里加一行即可。
 // 语言：meta({lang}) 和 render(ctx) 都带 lang（"zh" 或 "en"）。
 // Language: meta({lang}) and render(ctx) both get lang ("zh" or "en").
 let EN = false;
@@ -7,12 +8,22 @@ const t = (zh, en) => (EN ? en : zh);
 // A-share daily bars are China-session dates (UTC+8).
 const CN_OFFSET = 8 * 3600;
 
+// value 是 TickFlow 的代码（市场后缀 .SH 上交所、.SZ 深交所）。
+const INDEXES = [
+  { value: "000300.SH", zh: "沪深300", en: "CSI 300" },
+  { value: "000905.SH", zh: "中证500", en: "CSI 500" },
+  { value: "000688.SH", zh: "科创50", en: "STAR 50" },
+  { value: "000001.SH", zh: "上证指数", en: "SSE Composite" },
+  { value: "399001.SZ", zh: "深证成指", en: "SZSE Component" },
+  { value: "399006.SZ", zh: "创业板指", en: "ChiNext" },
+];
+
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("沪深300", "CSI 300"),
-    description: t("沪深300 指数日 K 线", "CSI 300 daily candles"),
-    version: "1.0.0",
+    name: t("指数日 K", "Index daily candles"),
+    description: t("所选指数的日 K 线", "Daily candles of an index"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "candlestick-chart",
@@ -27,8 +38,16 @@ export function meta(a) {
         ],
       },
     ],
+    vars: [
+      {
+        key: "index",
+        label: t("指数", "Index"),
+        default: INDEXES[0].value,
+        options: INDEXES.map((x) => ({ value: x.value, label: t(x.zh, x.en) })),
+      },
+    ],
     sources: {
-      k: "https://free-api.tickflow.org/v1/klines?symbol=000300.SH&interval=1d&limit=60",
+      k: "https://free-api.tickflow.org/v1/klines?symbol={index}&interval=1d&limit=60",
     },
   };
 }
@@ -90,7 +109,8 @@ function empty(title, why, lines) {
 
 export function render(ctx) {
   EN = ctx.lang === "en";
-  const title = t("沪深300 · 日K", "CSI 300 · daily");
+  const ix = INDEXES.find((x) => x.value === ctx.vars.index) || INDEXES[0];
+  const title = t(ix.zh, ix.en) + " · " + t("日K", "daily");
   const src = ctx.sources && ctx.sources.k;
   if (!src || src.error) {
     const why = src && src.error ? String(src.error) : t("无数据", "no data");

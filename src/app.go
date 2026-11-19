@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"net/http"
@@ -544,7 +546,7 @@ func (a *app) homeScripts() []store.Script {
 }
 
 // ensureBuiltins adds the built-in scripts a data file from an earlier version
-// does not have yet (including goldacc, aqi, hs300, btc), and refreshes gold /
+// does not have yet (including goldacc, aqi, hs300, btc, fxcny), and refreshes gold /
 // goldk when they still use the old mock or hand-entered source. Scripts that
 // need a key start off the home page.
 func (a *app) ensureBuiltins() error {
@@ -590,6 +592,14 @@ func refreshBuiltin(id, source string) bool {
 			return true
 		}
 	}
+	if fingerprints := previousBuiltins[id]; len(fingerprints) > 0 {
+		sum := sha256.Sum256([]byte(source))
+		for _, f := range fingerprints {
+			if hex.EncodeToString(sum[:]) == f {
+				return true
+			}
+		}
+	}
 	for _, b := range engine.Builtins() {
 		if b.ID == id {
 			old := legacyColors(b.Source)
@@ -597,6 +607,24 @@ func refreshBuiltin(id, source string) bool {
 		}
 	}
 	return false
+}
+
+// previousBuiltins are the SHA-256 fingerprints of the built-in scripts as they
+// shipped before they took switchable variables (and, for weather and fx,
+// before the chart colors changed). A stored copy with one of them was never
+// edited, so it takes the new script on start; an edited copy is kept.
+var previousBuiltins = map[string][]string{
+	"fx": {
+		"bef1d20129a0faa4d8ee06c34319bdc80746996bc2b52b9fba60794b11b9fed6",
+		"e1c51dfb3ea10b04344eafd0327876f56b5f0465e9d581a3db9849c06e1a6907",
+	},
+	"weather": {
+		"0098ead3b6349df77d9ddb91495179ff02d1b07a6a460c9d25d3d484e355b56a",
+		"df88f52041b64e51c335b67c86de9818178d13c4acde824ce6b799dc5b1abd84",
+	},
+	"aqi":   {"8577e85043f4d9529b62ecb2abe1a28ec4de9d213a8afe77e4912ae671f84289"},
+	"btc":   {"8a04a645d916fe443f0b450518db27a4fcbeec5324122bae51da2c97cf117f6e"},
+	"hs300": {"30482a41f0ffca6f1becda31e97abd690ea0bc2963910c5370218ae0be6b9adb"},
 }
 
 // legacyColors writes a built-in script with the pastel chart colors it had

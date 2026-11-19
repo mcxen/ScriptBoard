@@ -109,7 +109,7 @@ func TestHs300EnglishMeta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Meta.Name != "CSI 300" {
-		t.Errorf("name %q, want CSI 300", s.Meta.Name)
+	if s.Meta.Name != "Index daily candles" {
+		t.Errorf("name %q, want Index daily candles", s.Meta.Name)
 	}
 }

@@ -1,16 +1,19 @@
-// 汇率曲线：近 30 天 USD 兑 CNY，来自 frankfurter（无需 key）。
-// 网络失败时用示例数据，并在 lines 里标明。
+// 汇率曲线：近 30 天所选货币兑人民币的汇率，来自 frankfurter（无需 key）。
+// 网络失败时：美元用示例数据，并在 lines 里标明；其它货币不造数。
 // 语言：meta({lang}) 和 render(ctx) 都带 lang（"zh" 或 "en"）。
 // Language: meta({lang}) and render(ctx) both get lang ("zh" or "en").
+// 货币是 vars 里的一个变量：要加货币，在 BASES 里加一行即可。
 let EN = false;
 const t = (zh, en) => (EN ? en : zh);
+
+const BASES = ["USD", "EUR", "JPY", "HKD", "GBP", "KRW", "AUD", "SGD"];
 
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("汇率 USD/CNY", "USD/CNY rate"),
-    description: t("美元兑人民币汇率走势", "US dollar to yuan exchange rate"),
-    version: "1.0.0",
+    name: t("汇率", "Exchange rate"),
+    description: t("外币兑人民币汇率走势", "A foreign currency to yuan exchange rate"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "dollar-sign",
@@ -25,7 +28,15 @@ export function meta(a) {
         ],
       },
     ],
-    sources:{ fx: "https://api.frankfurter.dev/v1/{start}..{end}?from=USD&to=CNY" },
+    vars: [
+      {
+        key: "base",
+        label: t("货币", "Currency"),
+        default: "USD",
+        options: BASES.map((b) => ({ value: b, label: b + " / CNY" })),
+      },
+    ],
+    sources: { fx: "https://api.frankfurter.dev/v1/{start}..{end}?from={base}&to=CNY" },
   };
 }
 
@@ -43,6 +54,7 @@ function fromRates(rates) {
   return { dates: dd, values: vv };
 }
 
+// 示例数据只对美元有意义（约 7.1）；其它货币没有示例。
 function sample() {
   const values = [];
   const dates = [];
@@ -55,15 +67,24 @@ function sample() {
 
 export function render(ctx) {
   EN = ctx.lang === "en";
+  const base = BASES.includes(ctx.vars.base) ? ctx.vars.base : "USD";
+  const pair = base + " / CNY";
+  const title = pair + " · " + t("近 30 天", "last 30 days");
   const src = ctx.sources.fx;
-  let data;
+  let data = { dates: [], values: [] };
   let note = "";
   if (src && !src.error && src.rates) {
     data = fromRates(src.rates);
   }
-  if (!data || data.values.length === 0) {
-    data = sample();
-    note = t("示例数据：", "Sample data: ") + (src && src.error ? src.error : t("无数据", "no data"));
+  if (data.values.length === 0) {
+    const why = src && src.error ? src.error : t("无数据", "no data");
+    if (base === "USD") {
+      data = sample();
+      note = t("示例数据：", "Sample data: ") + why;
+    } else {
+      note = t("未能取到汇率：", "Could not fetch the rate: ") + why;
+      return { title: title, icon: "dollar-sign", big: "--", sub: note, lines: [note], chart: null };
+    }
   }
   // 范围：只看最近 n 个交易日（0 为全部）。
   const n = ctx.view.range ?? 0;
@@ -75,14 +96,14 @@ export function render(ctx) {
   const first = v[0];
   const d = last - first;
   return {
-    title: t("USD / CNY · 近 30 天", "USD / CNY · last 30 days"),
+    title: title,
     icon: "dollar-sign",
     big: last.toFixed(4),
     sub: `${t("区间", "Range")} ${d >= 0 ? "+" : ""}${d.toFixed(4)}`,
     lines: note ? [note] : [],
     chart: {
       type: "line",
-      series: [{ name: "USD/CNY", color: "#10B981", points: v }],
+      series: [{ name: base + "/CNY", color: "#10B981", points: v }],
       labels: data.dates,
       xLabels: [String(data.dates[0]), String(data.dates[data.dates.length - 1])],
     },

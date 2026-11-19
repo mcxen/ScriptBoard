@@ -23,7 +23,8 @@ func TestPhoneEditorIsListThenThing(t *testing.T) {
 	settle(tt)
 	click(t, tt, "编辑")
 	requireText(t, tt, "体重记录")
-	requireText(t, tt, "汇率 USD/CNY")
+	requireText(t, tt, "汇率")
+	requireText(t, tt, "七日天气")
 	requireText(t, tt, "+ 数据表")
 	absent(t, tt, "源码", "保存")
 	savePNG(t, tt, "p0-list")
@@ -34,7 +35,7 @@ func TestPhoneEditorIsListThenThing(t *testing.T) {
 	}
 	requireText(t, tt, "源码")
 	requireText(t, tt, "保存")
-	absent(t, tt, "汇率 USD/CNY", "录入数据") // no list, no data-entry panel
+	absent(t, tt, "汇率", "录入数据") // no list, no data-entry panel
 	savePNG(t, tt, "p1-script")
 
 	click(t, tt, "预览")
@@ -44,7 +45,7 @@ func TestPhoneEditorIsListThenThing(t *testing.T) {
 	// Back to the list.
 	a.router.Back()
 	settle(tt)
-	requireText(t, tt, "汇率 USD/CNY")
+	requireText(t, tt, "汇率")
 }
 
 // A data table on a phone: its rows are cards of fields, the columns are edited
