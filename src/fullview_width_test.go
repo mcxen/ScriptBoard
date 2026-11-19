@@ -20,11 +20,22 @@ func TestFullViewUsesTheWholeWindow(t *testing.T) {
 	if !ok1 || !ok2 {
 		t.Fatalf("missing the tiles (%v, %v)", ok1, ok2)
 	}
-	if first.Bounds.Y != last.Bounds.Y {
+	if !sameRow(first.Bounds.Y, last.Bounds.Y) {
 		t.Errorf("the first tile is at y=%v and the last at y=%v: they wrapped to two rows", first.Bounds.Y, last.Bounds.Y)
 	}
 	// The last tile reaches the right side of the window, not stops at 1120.
 	if right := last.Bounds.X + last.Bounds.W; right < 1500 {
 		t.Errorf("the tiles end at x=%v of a 1700 window", right)
 	}
+}
+
+// sameRow says whether two things sit on one row: their tops are within a few
+// pixels. Another system's fonts shift a line by half a pixel; a wrapped row is
+// a whole tile lower.
+func sameRow(a, b float32) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < 4
 }

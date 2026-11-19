@@ -46,7 +46,7 @@ func TestContentWidthDecidesTheDetailPage(t *testing.T) {
 		if !ok1 || !ok2 {
 			t.Fatalf("mode %q: missing the tiles", mode)
 		}
-		if first.Bounds.Y != last.Bounds.Y {
+		if !sameRow(first.Bounds.Y, last.Bounds.Y) {
 			t.Errorf("mode %q: the tiles wrapped to two rows", mode)
 		}
 		return first.Bounds.X, last.Bounds.X + last.Bounds.W
