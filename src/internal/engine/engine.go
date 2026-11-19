@@ -203,7 +203,9 @@ type Chart struct {
 type Image struct {
 	URL     string `json:"url"`
 	Caption string `json:"caption,omitempty"`
-	Local   string `json:"local,omitempty"`
+	// Source is the page the picture comes from, opened by its action.
+	Source string `json:"source,omitempty"`
+	Local  string `json:"local,omitempty"`
 }
 
 // Stat is one figure of a result: its name, its value, and a line under it.

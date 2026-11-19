@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/engine"
@@ -76,6 +77,19 @@ func (a *app) imageCarousel(c *ui.Context, sc store.Script, imgs []engine.Image,
 			ui.Text(c, fmt.Sprintf("%d / %d", idx+1, len(shown))).FontSize(fsTiny).TextColor(p.faint)
 			if btn(c, "›").Clicked() {
 				a.carouselIdx[sc.ID] = idx + 1
+			}
+		})
+		// The picture's own actions, as QX's gallery has them: its source page, and
+		// a copy of its link.
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			if cur.Source != "" && btn(c, tr("打开来源")).Clicked() {
+				if err := mygo.Shell.OpenExternal(cur.Source); err != nil {
+					a.status = err.Error()
+				}
+			}
+			if btn(c, tr("复制链接")).Clicked() {
+				copyText(cur.URL)
+				a.status = tr("已复制")
 			}
 		})
 	})
