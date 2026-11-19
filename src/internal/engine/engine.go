@@ -60,6 +60,10 @@ type Meta struct {
 	// Sources maps a name to a URL. {start} and {end} expand to the dates of
 	// the last 30 days, as yyyy-mm-dd.
 	Sources map[string]string `json:"sources"`
+	// SourceHeaders gives the request headers of a source, by its name: a
+	// Cookie header is how a source that needs the user's login is read, as
+	// {"api": {"Cookie": "session=…"}}. The values stay in the script.
+	SourceHeaders map[string]map[string]string `json:"sourceHeaders"`
 	// History names the sources whose past responses the script wants, as
 	// ctx.history[name]: the host keeps them on disk, so a script can draw a
 	// curve from an API that only says what the price is now.

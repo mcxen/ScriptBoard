@@ -228,3 +228,32 @@ export function render(ctx) { return { title: "x", big: Object.keys(ctx.history)
 		t.Errorf("empty objects: %q %v", res.Big, err)
 	}
 }
+
+// A source that needs the user's login gets the headers its script names, and
+// the script's meta() carries them.
+func TestSourceHeadersCarryACookie(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get("Cookie")
+		fmt.Fprint(w, `{"p": 1}`)
+	}))
+	defer srv.Close()
+
+	src := `export function meta() { return { name: "登录", sources: { api: "` + srv.URL + `" }, sourceHeaders: { api: { Cookie: "session=abc" } } }; }
+export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [], chart: null }; }`
+	s, err := Compile("login.js", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Meta.SourceHeaders["api"]["Cookie"]; got != "session=abc" {
+		t.Fatalf("meta lost the header: %+v", s.Meta.SourceHeaders)
+	}
+	body, info := FetchCached(context.Background(), srv.Client(), s.Meta.Sources, now,
+		FetchOptions{Headers: s.Meta.SourceHeaders})
+	if seen != "session=abc" {
+		t.Fatalf("server got Cookie %q", seen)
+	}
+	if price(t, body["api"]) != 1 || info["api"].Error != "" {
+		t.Fatalf("%s %+v", body["api"], info["api"])
+	}
+}

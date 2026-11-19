@@ -42,7 +42,7 @@ func Fetch(ctx context.Context, client *http.Client, sources map[string]string, 
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			body, err := get(ctx, client, urls[i])
+			body, err := get(ctx, client, urls[i], nil)
 			switch {
 			case err != nil:
 				raw[i] = errorJSON(err)
@@ -70,7 +70,7 @@ func Offline(sources map[string]string) map[string]json.RawMessage {
 	return out
 }
 
-func get(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+func get(ctx context.Context, client *http.Client, url string, header map[string]string) ([]byte, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -79,6 +79,9 @@ func get(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+	for k, v := range header {
+		req.Header.Set(k, v)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -141,6 +144,9 @@ type FetchOptions struct {
 	Offline bool
 	// Force asks the network whatever the TTL: the user pressed refresh.
 	Force bool
+	// Headers are the request headers of each source, by name (a script's
+	// sourceHeaders).
+	Headers map[string]map[string]string
 	// Lang is the language of the messages a source's error carries: "zh" or
 	// "en"; anything else is English.
 	Lang string
@@ -184,7 +190,7 @@ func FetchCached(ctx context.Context, client *http.Client, sources map[string]st
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			raw[i], info[i] = fetchOne(ctx, client, urls[i], now, opt)
+			raw[i], info[i] = fetchOne(ctx, client, urls[i], opt.Headers[names[i]], now, opt)
 		}(i)
 	}
 	wg.Wait()
@@ -196,7 +202,7 @@ func FetchCached(ctx context.Context, client *http.Client, sources map[string]st
 	return bodies, infos
 }
 
-func fetchOne(ctx context.Context, client *http.Client, url string, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
+func fetchOne(ctx context.Context, client *http.Client, url string, header map[string]string, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
 	var cached CachedBody
 	var have bool
 	if opt.Cache != nil {
@@ -219,7 +225,7 @@ func fetchOne(ctx context.Context, client *http.Client, url string, now time.Tim
 	if have && !opt.Force && opt.TTL > 0 && now.Sub(cached.At) < opt.TTL {
 		return fromCache(false, nil)
 	}
-	body, err := get(ctx, client, url)
+	body, err := get(ctx, client, url, header)
 	if err == nil && !json.Valid(body) {
 		err = errors.New("response is not JSON")
 	}

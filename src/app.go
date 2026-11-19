@@ -466,7 +466,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	now := a.now()
 	_, tz := now.Zone()
 	set := a.store.Settings()
-	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force, Lang: curLang()}
+	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force, Lang: curLang(), Headers: s.Meta.SourceHeaders}
 	if a.cache != nil {
 		opt.Cache = cacheAdapter{a.cache}
 	}

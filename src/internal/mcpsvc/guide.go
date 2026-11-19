@@ -67,7 +67,7 @@ func Guide() string {
 	w("| `ctx.now`, `ctx.tzOffset`, `ctx.lang` | time in milliseconds, local offset in seconds, `\"zh\"` or `\"en\"` |")
 	w("| `ctx.view` | the value of each adjusted `dims` entry, by key |")
 	w("| `ctx.metrics` | the values the user recorded, by `inputs` metric: `[{t, v}]` |")
-	w("| `ctx.sources` | each `sources` URL, fetched and parsed as JSON; `{error}` if it failed |")
+	w("| `ctx.sources` | each `sources` URL, fetched and parsed as JSON; `{error}` if it failed. A source that needs the user's login takes its headers from `sourceHeaders: { name: { Cookie: \"session=…\" } }` in `meta()` |")
 	w("| `ctx.feeds` | each `feeds` source (curl, tcp, file, exec) with its `hour` and `day` aggregates, `latest`, `stale`, `error` |")
 	w("| `ctx.usage` | each `usage` provider's report: tokens or a balance, windows, models, daily |")
 	w("| `ctx.sourceInfo` | for each source `{t, cached, stale, error}`: when it was fetched (ms), whether it came from the cache, and whether the cache stood in for a failed or offline request |")
