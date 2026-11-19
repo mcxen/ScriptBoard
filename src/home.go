@@ -16,11 +16,12 @@ import (
 
 // cardSizes are the base widths and heights of the home cards: small shows
 // the headline only, medium adds a curve, large a chart you can hover over.
-var cardSizes = [4][2]float32{
+var cardSizes = [5][2]float32{
 	{170, 128},
 	{300, 208},
 	{620, 400},
 	{0, 208}, // wide: the width is the whole row's
+	{0, 96},  // mini: only the number, the smallest card
 }
 
 const cardGap = 16
@@ -51,7 +52,7 @@ func (a *app) contentW() float32 {
 // sizeOf is the size of a home card: its own when the user gave it one, else
 // the default.
 func (a *app) sizeOf(id string) int {
-	if n, ok := a.set.CardSizes[id]; ok && n >= 0 && n <= 3 {
+	if n, ok := a.set.CardSizes[id]; ok && n >= 0 && n <= sizeMini {
 		return n
 	}
 	return a.cardSize
@@ -153,8 +154,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	if size == 0 {
 		inputs = nil
 	}
-	h := b.Height*s + float32(len(inputs))*44*s
 	ready := st.err == nil && !st.loading
+	// A card keeps the height its box gives it: a size is what the user chose.
+	hasChart := ready && st.res.Chart != nil
+	h := b.Height*s + float32(len(inputs))*44*s
 	accent := p.accent
 	if ready {
 		accent = accentOf(st.res, p.accent)
@@ -178,7 +181,24 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	}
 	title = fitText(title, max(titleW, 40), fsCaption)
 
-	el := card(c).Width(w).Height(h).Padding(16 * s).Gap(6 * s).Cursor(ui.CursorPointer).Children(func() {
+	base := card(c).Width(w)
+	if h > 0 {
+		base = base.Height(h)
+	}
+	el := base.Padding(16 * s).Gap(6 * s).Cursor(ui.CursorPointer).Children(func() {
+		if a.editing {
+			a.removeRow(c, sc)
+		}
+		if size == sizeMini {
+			// The smallest card: its number and nothing else. A click opens the
+			// full view and the right-click menu still picks a size.
+			ui.Spacer(c)
+			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
+			if a.editing {
+				a.resizeHandle(c, sc.ID, span, b)
+			}
+			return
+		}
 		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 			iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
 			// The title gives way, with an ellipsis, so the tag and the buttons
@@ -198,7 +218,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			}
 			a.refreshButton(c, sc)
 			if action.ActionIcon(c, icon("maximize-2"), action.ActionIconProps{Size: theme.Small, Title: tr("右键切换大小")}).Clicked() {
-				a.setSize(sc.ID, (size+1)%3)
+				next := (size + 1) % 3
+				if size >= 3 {
+					next = 0
+				}
+				a.setSize(sc.ID, next)
 			}
 		})
 		switch {
@@ -216,6 +240,12 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			}
 			switch size {
 			case 1:
+				if !hasChart {
+					for _, in := range inputs {
+						a.quickEntry(c, sc.ID, in)
+					}
+					break
+				}
 				ui.Spacer(c)
 				sparkH := max(54, b.Height-154) * s
 				if len(st.res.Stats) > 0 {
@@ -235,8 +265,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				if size == 3 {
 					chartH = 120 * s
 				}
-				Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
-				Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+				if hasChart {
+					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
+					Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+				}
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
@@ -333,4 +365,25 @@ func fitText(s string, width, fs float32) string {
 		used += w
 	}
 	return s
+}
+
+// removeRow is the × of a card in edit mode: it takes the card off the home
+// page. The script stays in 编辑, where it can be put back with 显示在首页.
+func (a *app) removeRow(c *ui.Context, sc store.Script) {
+	ui.Row(c).Shrink(0).AlignItems(ui.Center).Children(func() {
+		ui.Spacer(c)
+		if action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("从首页移除")}).Clicked() {
+			a.removeFromHome(sc)
+		}
+	})
+}
+
+// removeFromHome takes a script off the home page.
+func (a *app) removeFromHome(sc store.Script) {
+	sc.Home = false
+	if err := a.store.SaveScript(sc); err != nil {
+		a.status = tr("移除失败：") + err.Error()
+		return
+	}
+	a.status = tr("已从首页移除，在「编辑」里可以再显示")
 }

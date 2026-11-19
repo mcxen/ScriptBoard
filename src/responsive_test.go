@@ -30,8 +30,8 @@ func TestHomeCardsFollowWidth(t *testing.T) {
 	pt := ui.NewTester(phone.view, 390, 844)
 	settle(pt)
 	settle(pt)
-	if cols := colsFor(phone.contentW(), true); cols != 1 {
-		t.Errorf("%d columns on a phone, want 1", cols)
+	if cols := colsFor(phone.contentW(), true); cols != 2 {
+		t.Errorf("%d columns on a phone, want 2", cols)
 	}
 }
 

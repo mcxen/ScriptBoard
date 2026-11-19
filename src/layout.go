@@ -20,21 +20,25 @@ const gridCols = 12
 
 // gridSpans are the widths of the size menu's four sizes on the 12-column
 // grid: small, medium, large and wide.
-var gridSpans = [4]int{3, 4, 8, 12}
+var gridSpans = [5]int{3, 4, 8, 12, 2}
 
 // heightStep is the step a card's height snaps to when it is resized.
 const heightStep = 16
 
 // minCardHeight is the least a card can be resized to, in DIPs at scale 1.
-const minCardHeight = 128
+const minCardHeight = 96
 
 // sizeNames are the names of the size menu's sizes.
-func sizeNames() []string { return []string{tr("小"), tr("中"), tr("大"), tr("宽")} }
+func sizeNames() []string { return []string{tr("小"), tr("中"), tr("大"), tr("宽"), tr("迷你")} }
 
 // colsFor is how many columns the home page has at a width.
 func colsFor(width float32, compact bool) int {
 	switch {
-	case compact || width < 520:
+	case compact:
+		// A phone shows two columns: small, medium and mini cards take one each,
+		// large and wide cards the whole row.
+		return 2
+	case width < 520:
 		return 1
 	case width < 900:
 		return 6
@@ -68,10 +72,15 @@ func (a *app) boxOf(id string) store.CardBox {
 	return store.CardBox{Span: gridSpans[size], Height: cardSizes[size][1]}
 }
 
+// sizeMini is the smallest card: only its number, no title and no curve.
+const sizeMini = 4
+
 // classOf is what a card shows, by its box: the headline alone, a curve under
 // it, a chart, or a strip of chart across a wide card.
 func classOf(b store.CardBox) int {
 	switch {
+	case b.Height < 120:
+		return sizeMini
 	case b.Height < 170:
 		return 0
 	case b.Span >= gridCols && b.Height < 300:

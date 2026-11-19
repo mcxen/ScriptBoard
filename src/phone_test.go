@@ -17,7 +17,7 @@ func TestPhoneLayout(t *testing.T) {
 	if a.width >= compactWidth {
 		t.Fatalf("width %v, want a phone width", a.width)
 	}
-	requireTextStart(t, tt, "USD / CNY")
+	requireTextStart(t, tt, "USD /")
 	savePNG(t, tt, "4-phone-home")
 
 	click(t, tt, "编辑")
