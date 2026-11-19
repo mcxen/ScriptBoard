@@ -49,6 +49,10 @@ type Manifest struct {
 	// Size is the card's default size: mini, small, medium, large or wide. The
 	// user's own size, once chosen, wins.
 	Size string `json:"size,omitempty"`
+	// Menubar puts the card in the menu bar (or notification area) when the
+	// plugin first appears in the app. The script must ask for the bar with
+	// menubar: true in meta(); the user can take the card out, and put it back.
+	Menubar bool `json:"menubar,omitempty"`
 }
 
 // CardSizes are the sizes a plugin may name for its card.
@@ -99,8 +103,12 @@ func Save(dataDir string, m Manifest, source string) error {
 	if m.Icon != "" && !iconPattern.MatchString(m.Icon) {
 		return errors.New("图标名只能用小写字母、数字和连字符")
 	}
-	if _, err := CheckSource(m.ID+".js", source); err != nil {
+	meta, err := CheckSource(m.ID+".js", source)
+	if err != nil {
 		return fmt.Errorf("脚本无法运行：%w", err)
+	}
+	if m.Menubar && !meta.Menubar {
+		return errors.New("要放进菜单栏，脚本的 meta() 里要写 menubar: true")
 	}
 	dir := filepath.Join(PluginDir(dataDir), m.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

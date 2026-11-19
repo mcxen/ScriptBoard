@@ -214,6 +214,7 @@ func Tools() []Tool {
 				"home":        map[string]any{"type": "boolean", "description": "show as a home card"},
 				"position":    map[string]any{"type": "integer", "description": "where the home card sits: 1 is first; leave it out to put it last"},
 				"size":        str("default size of the home card: mini, small, medium, large or wide; leave it out for medium"),
+				"menubar":     map[string]any{"type": "boolean", "description": "show the card in the menu bar (notification area) when the plugin first appears; the script must say menubar: true in meta()"},
 				"source":      str("the script source"),
 			}, "id", "name", "source"),
 		},
@@ -296,6 +297,9 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			if p.Manifest.Size != "" {
 				fmt.Fprintf(&b, "  size=%s", p.Manifest.Size)
 			}
+			if p.Manifest.Menubar {
+				b.WriteString("  menubar=true")
+			}
 			if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil {
 				r := spec.Resolve(meta)
 				fmt.Fprintf(&b, "  platforms=%s  needs=%s", strings.Join(r.Platforms, ","), strings.Join(r.Needs, ","))
@@ -327,6 +331,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	case "plugin_save":
 		home, _ := a["home"].(bool)
 		position, _ := a["position"].(float64)
+		menubar, _ := a["menubar"].(bool)
 		m := plugins.Manifest{
 			ID:          str("id"),
 			Name:        str("name"),
@@ -335,6 +340,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			Home:        home,
 			Position:    int(position),
 			Size:        str("size"),
+			Menubar:     menubar,
 		}
 		if err := plugins.Save(dataDir, m, str("source")); err != nil {
 			return "", err
@@ -357,7 +363,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		out, _ := json.MarshalIndent(meta, "", "  ")
-		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir) + chartReport(str("source")), nil
+		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir) + chartReport(str("source")) + menubarReport(meta, str("source")), nil
 	case "icon_catalog":
 		return catalogText(str("category")), nil
 	case "icon_add":
@@ -445,4 +451,24 @@ func chartReport(source string) string {
 		return ""
 	}
 	return "警告：图表类型 " + res.Chart.Type + " 不认识，卡片不会画出图。可用的类型：" + strings.Join(engine.ChartTypes, ", ") + "\n"
+}
+
+// menubarReport runs the script once, with nothing to read, and warns about what
+// it gives the menu bar that the app cannot use: a menu on a card that did not
+// ask for the bar, a link that is not a web address, an action that does not
+// exist, a title that will be cut.
+func menubarReport(meta engine.Meta, source string) string {
+	s, err := engine.CompileLang("check.js", source, "zh")
+	if err != nil {
+		return ""
+	}
+	res, err := s.Run(context.Background(), engine.Input{Now: time.Now(), Lang: "zh"})
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range engine.MenuBarProblems(meta, res) {
+		b.WriteString("警告：" + p + "\n")
+	}
+	return b.String()
 }

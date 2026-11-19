@@ -25,9 +25,15 @@ func (a *app) syncPlugins() {
 		seen[id] = true
 		sc := store.Script{ID: id, Name: p.Manifest.Name, Source: p.Source, Home: p.Manifest.Home, Origin: store.OriginPlugin,
 			Position: p.Manifest.Position, Size: p.Manifest.Size}
-		if cur, ok := a.store.Script(id); !ok || cur != sc {
+		cur, known := a.store.Script(id)
+		if !known || cur != sc {
 			if err := a.store.SaveScript(sc); err == nil {
 				a.invalidate(id)
+				// A plugin that asks for the menu bar is put there when it first
+				// appears; after that the choice is the user's.
+				if !known && p.Manifest.Menubar {
+					a.addToMenuBar(id)
+				}
 			}
 		}
 	}

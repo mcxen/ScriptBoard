@@ -264,7 +264,9 @@ export function meta() {
 
 脚本在 `meta()` 里写 `menubar: true`，它的卡片就能放进菜单栏（macOS）或通知区（Windows、Linux）。放不放由用户在卡片的右键菜单里选，每张卡片一个图标。
 
-结果里可以给 `menubar: {title, tooltip}`：macOS 上 `title` 写在图标旁边，Windows 和 Linux 不显示标题，内容都在提示文字里。不写时，标题是卡片的大数字（最多 12 个字），提示是标题加摘要。`menu: [{label, url}, {separator: true}]` 是脚本自己的菜单项：带 `url` 的打开网页（只允许 http 和 https），不带的是一行字。菜单最后是「刷新」「打开盯盯板」和「退出」。
+结果里可以给 `menubar: {title, tooltip, mono, click}`：macOS 上 `title` 写在图标旁边，Windows 和 Linux 不显示标题，内容都在提示文字里。不写时，标题是卡片的大数字（最多 12 个字），提示是标题加摘要。`mono: true` 用等宽字体画标题（macOS），数字变化时图标宽度不会跳；`click: "open"` 让左键点击直接打开这张卡片，菜单改到右键。
+
+`menu` 是脚本自己的菜单项，每项是 `{separator: true}` 或 `{label, …}`，并且可以是：`items: […]`（子菜单，只显示一层）、`action: "refresh" | "open" | "window"`（刷新这张卡片、在窗口里打开它、把窗口带到前面）、`url`（打开网页，只允许 http 和 https）、`copy`（把文字复制到剪贴板）；都没有就是一行字。每项还可以有 `sub`（第二行小字）、`badge`（行尾的短文字，如计数）、`disabled`、`checked`（前面打勾）。菜单最后是「刷新」「打开盯盯板」和「退出」。
 
 关闭主窗口只是最小化，应用继续运行（菜单栏里的卡片也继续刷新）；点 Dock 或任务栏的图标就能回来。要退出：macOS 用 Cmd-Q 或菜单里的「退出」，Windows 和 Linux 用 Ctrl+Q 或「设置 → 关于 → 退出应用」，菜单栏的菜单里也有「退出」。每分钟刷新一次，缓存在一分钟内的直接用。
 
@@ -285,9 +287,9 @@ export function meta() {
 | --- | --- |
 | `plugin_list` | 列出本地插件，并报告有问题的插件 |
 | `plugin_get` | 读取一个插件的清单和源码 |
-| `plugin_save` | 创建或更新插件；脚本先编译检查，不能运行的不会保存。`position` 是首页位置（从 1 起，不写则排在最后），`size` 是默认尺寸（mini、small、medium、large、wide）；用户自己排过的位置和尺寸优先 |
+| `plugin_save` | 创建或更新插件；脚本先编译检查，不能运行的不会保存。`menubar: true` 让这个插件第一次出现时就放进菜单栏（脚本的 `meta()` 里也要写 `menubar: true`；之后放不放由用户决定）。`position` 是首页位置（从 1 起，不写则排在最后），`size` 是默认尺寸（mini、small、medium、large、wide）；用户自己排过的位置和尺寸优先 |
 | `plugin_delete` | 删除插件和它的图标 |
-| `script_check` | 只检查脚本能不能运行，并返回它的元信息；图标不存在、图表类型不认识都会给出警告 |
+| `script_check` | 只检查脚本能不能运行，并返回它的元信息；图标不存在、图表类型不认识、菜单栏的用法有问题（没写 `menubar: true` 就给了菜单、链接不是 http、动作不存在、标题会被截短）都会给出警告 |
 | `icon_add` | 保存 SVG 图标（可以指定属于哪个插件）；带脚本或事件属性的 SVG 会被拒绝 |
 | `icon_list` | 列出可用的图标 |
 

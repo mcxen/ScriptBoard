@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Menu bar, more to build with: a menu entry can be a submenu, run an action (`refresh`, `open` the card, `window`), open a web link or copy text, and can have a subtitle, a badge, a check mark, or be disabled. An item can draw its title in a monospaced font (`menubar.mono`), and open the card on a click with the menu on a right click (`menubar.click: "open"`).
+- MCP knows the menu bar: `plugin_save` takes `menubar` (the card is put in the bar when the plugin first appears; the user decides after that), `plugin_list` shows it, and `script_check` warns about a menu on a card that did not ask for the bar, a link that is not http, an unknown action and a title that will be cut.
 - Closing the main window minimizes it instead of quitting: the app keeps running, with its menu bar items and the runs of its cards, and the Dock or taskbar icon brings the window back. It quits with Cmd-Q or the menu's Quit on a Mac, Ctrl+Q elsewhere, the Quit of a menu bar item, or the new Quit in Settings → About. The settings window still closes as a window does.
 - Settings open in a window of their own on a computer, at a width that suits them; the main window stays where it was, and asking again brings the window forward. A phone keeps the page. The window has its title once, in its title row.
 - Settings, tidied: the daily reminder (it was only saved, never used), the tech stack row and the plugin group's two lines of explanation are gone; the language moved under appearance; the data file and the plugin folder moved into About, which now shows the real version (it said 0.1.0); the MCP server shows its port, keys and the buttons that copy its configuration only once it is on, and the four copy buttons are one row.

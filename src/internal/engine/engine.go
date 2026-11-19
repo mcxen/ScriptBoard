@@ -330,17 +330,42 @@ type Stat struct {
 	Sub   string `json:"sub"`
 }
 
-// MenuBar is a card's title and tooltip in the menu bar.
+// MenuBar is a card's item in the menu bar: its title and tooltip, and how the
+// item behaves.
 type MenuBar struct {
 	Title   string `json:"title"`
 	Tooltip string `json:"tooltip"`
+	// Mono draws the title in a monospaced font (macOS), so that a changing
+	// number keeps the item's width.
+	Mono bool `json:"mono,omitempty"`
+	// Click is what a click on the item does: "menu" (the default) opens its
+	// menu, "open" opens the card in the window, and the menu is on a right
+	// click.
+	Click string `json:"click,omitempty"`
 }
 
-// MenuEntry is one item of a card's menu in the menu bar.
+// MenuEntry is one item of a card's menu in the menu bar. What it does, first
+// that applies: Items makes it a submenu; Action runs one of MenuActions; URL
+// opens a web address; Copy puts text on the clipboard. With none of them it is
+// a line of text.
 type MenuEntry struct {
 	Label     string `json:"label"`
 	URL       string `json:"url,omitempty"`
 	Separator bool   `json:"separator,omitempty"`
+	// Copy is text to put on the clipboard when the item is chosen.
+	Copy string `json:"copy,omitempty"`
+	// Action is "refresh" (the card runs again), "open" (its full view, in the
+	// window) or "window" (the window comes forward).
+	Action string `json:"action,omitempty"`
+	// Sub is a second, smaller line under the label.
+	Sub string `json:"sub,omitempty"`
+	// Badge is short text at the end of the item, such as a count.
+	Badge    string `json:"badge,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
+	// Checked puts a check mark before the label.
+	Checked bool `json:"checked,omitempty"`
+	// Items are a submenu's items; one level of submenus is shown.
+	Items []MenuEntry `json:"items,omitempty"`
 }
 
 // Result is what render returns, plus the lines the script logged.

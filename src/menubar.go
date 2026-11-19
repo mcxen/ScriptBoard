@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"log"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -75,6 +76,20 @@ func (a *app) toggleMenuBar(id string) {
 	}
 }
 
+// addToMenuBar puts a card in the menu bar, if it is not there. The choice is
+// kept, and the bar is brought up to date.
+func (a *app) addToMenuBar(id string) {
+	if a.menuBarOn(id) {
+		return
+	}
+	a.set.MenuBar = append(a.set.MenuBar, id)
+	if err := a.store.SetSettings(a.set); err != nil {
+		a.set = a.store.Settings()
+		return
+	}
+	a.syncMenuBar()
+}
+
 // menuBarCard finds the card in the bar: its script, and the run that gives its
 // result, the one the home card shows. ok is false when the script is gone or
 // its script no longer asks for the bar.
@@ -129,34 +144,81 @@ func (a *app) syncMenuBar() {
 }
 
 // showInBar shows a card's icon with its title, tooltip and menu. An icon whose
-// title, tooltip and menu have not changed is left alone.
+// title, tooltip and menu have not changed is left alone. One whose click mode
+// or title font changed is made again: a tray's font and its click are fixed
+// when it is made.
 func (a *app) showInBar(sc store.Script, st *runState) {
 	title, tip := menuBarText(sc, st)
-	sig := fmt.Sprintf("%q|%q|%q|%q|%v", title, tip, st.res.Title, st.res.Sub, st.res.Menu)
+	click, mono := menuBarKind(st.res)
+	kind := fmt.Sprintf("%s|%v\x00", click, mono)
+	sig := kind + fmt.Sprintf("%q|%q|%q|%q|%v", title, tip, st.res.Title, st.res.Sub, st.res.Menu)
 	if t, ok := a.bars[sc.ID]; ok {
-		if a.barSig[sc.ID] == sig {
+		if !strings.HasPrefix(a.barSig[sc.ID], kind) {
+			t.Destroy()
+			delete(a.bars, sc.ID)
+			delete(a.barSig, sc.ID)
+		} else {
+			if a.barSig[sc.ID] == sig {
+				return
+			}
+			t.SetTitle(title)
+			t.SetToolTip(tip)
+			if click == "menu" {
+				t.SetMenu(a.menuBarMenu(sc, st))
+			}
+			a.barSig[sc.ID] = sig
 			return
 		}
-		t.SetTitle(title)
-		t.SetToolTip(tip)
-		t.SetMenu(a.menuBarMenu(sc, st))
-		a.barSig[sc.ID] = sig
-		return
 	}
-	t, err := mygo.NewTray(mygo.TrayOptions{
-		ID:             "card-" + sc.ID,
-		Icon:           menuBarIcon(),
-		IconIsTemplate: true,
-		Title:          title,
-		ToolTip:        tip,
-		Menu:           a.menuBarMenu(sc, st),
-	})
+	opts := mygo.TrayOptions{
+		ID:              "card-" + sc.ID,
+		Icon:            menuBarIcon(),
+		IconIsTemplate:  true,
+		Title:           title,
+		ToolTip:         tip,
+		MonospacedTitle: mono,
+	}
+	if click == "menu" {
+		opts.Menu = a.menuBarMenu(sc, st)
+	}
+	t, err := mygo.NewTray(opts)
 	if err != nil {
 		log.Printf("menu bar: %v", err)
 		return
 	}
+	if click == "open" {
+		// A click opens the card; the menu is on a right click.
+		id := sc.ID
+		t.OnClick(func() { a.openCard(id) })
+		t.OnRightClick(func() {
+			if card, run, ok := a.menuBarCard(id); ok {
+				t.SetMenu(a.menuBarMenu(card, run))
+				t.PopUpMenu()
+				t.SetMenu(nil)
+			}
+		})
+	}
 	a.bars[sc.ID] = t
 	a.barSig[sc.ID] = sig
+}
+
+// menuBarKind is how an item behaves, by what the script asked: what a click
+// does ("menu" or "open") and whether its title is monospaced.
+func menuBarKind(res engine.Result) (click string, mono bool) {
+	click = "menu"
+	if mb := res.MenuBar; mb != nil {
+		if mb.Click == "open" {
+			click = "open"
+		}
+		mono = mb.Mono
+	}
+	return click, mono
+}
+
+// openCard shows a card's full view in the window.
+func (a *app) openCard(id string) {
+	a.router.Push("/full/" + id)
+	a.showWindow()
 }
 
 // menuBarText is the title beside a card's icon and its tooltip. The script may
@@ -208,24 +270,7 @@ func (a *app) menuBarMenu(sc store.Script, st *runState) *mygo.Menu {
 		name = st.res.Title
 	}
 	items := []*mygo.MenuItem{{Label: name, Subtitle: st.res.Sub, Disabled: true}}
-	for _, e := range st.res.Menu {
-		switch {
-		case e.Separator:
-			items = append(items, mygo.Separator())
-		case e.URL != "" && safeURL(e.URL):
-			link, label := e.URL, e.Label
-			if label == "" {
-				label = link
-			}
-			items = append(items, &mygo.MenuItem{Label: label, Click: func(*mygo.MenuItem, *mygo.Window) {
-				if err := mygo.Shell.OpenExternal(link); err != nil {
-					log.Printf("menu bar: %v", err)
-				}
-			}})
-		default:
-			items = append(items, &mygo.MenuItem{Label: e.Label, Disabled: true})
-		}
-	}
+	items = append(items, a.menuEntryItems(sc, st.res.Menu, 0)...)
 	return mygo.NewMenu(append(items,
 		mygo.Separator(),
 		&mygo.MenuItem{Label: tr("刷新"), Click: func(*mygo.MenuItem, *mygo.Window) { a.refreshScript(sc) }},
@@ -233,6 +278,68 @@ func (a *app) menuBarMenu(sc store.Script, st *runState) *mygo.Menu {
 		mygo.Separator(),
 		&mygo.MenuItem{Role: mygo.RoleQuit},
 	))
+}
+
+// menuEntryItems are the items a script's entries make: a rule, a submenu (one
+// level), an action, a web link, text to copy, or a line of text. An item the
+// app will not act on (a link that is not a web address, an action it does not
+// know) is shown disabled.
+func (a *app) menuEntryItems(sc store.Script, entries []engine.MenuEntry, depth int) []*mygo.MenuItem {
+	var out []*mygo.MenuItem
+	for _, e := range entries {
+		if e.Separator {
+			out = append(out, mygo.Separator())
+			continue
+		}
+		it := &mygo.MenuItem{Label: e.Label, Subtitle: e.Sub, Badge: e.Badge, Disabled: e.Disabled}
+		if e.Checked {
+			it.Type = mygo.MenuItemCheckbox
+			it.Checked = true
+		}
+		switch {
+		case len(e.Items) > 0 && depth < 1:
+			it.Submenu = a.menuEntryItems(sc, e.Items, depth+1)
+		case e.Action != "":
+			if click := a.menuAction(sc, e.Action); click != nil {
+				it.Click = click
+			} else {
+				it.Disabled = true
+			}
+		case e.URL != "" && safeURL(e.URL):
+			link := e.URL
+			if it.Label == "" {
+				it.Label = link
+			}
+			it.Click = func(*mygo.MenuItem, *mygo.Window) {
+				if err := mygo.Shell.OpenExternal(link); err != nil {
+					log.Printf("menu bar: %v", err)
+				}
+			}
+		case e.Copy != "":
+			text := e.Copy
+			if it.Label == "" {
+				it.Label = text
+			}
+			it.Click = func(*mygo.MenuItem, *mygo.Window) { copyText(text) }
+		default:
+			it.Disabled = true
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// menuAction is what an entry's action does, or nil for one the app does not know.
+func (a *app) menuAction(sc store.Script, action string) func(*mygo.MenuItem, *mygo.Window) {
+	switch action {
+	case "refresh":
+		return func(*mygo.MenuItem, *mygo.Window) { a.refreshScript(sc) }
+	case "open":
+		return func(*mygo.MenuItem, *mygo.Window) { a.openCard(sc.ID) }
+	case "window":
+		return func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }
+	}
+	return nil
 }
 
 // safeURL says whether a script's link may open: web addresses only.
