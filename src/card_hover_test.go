@@ -218,3 +218,26 @@ export function render(ctx) { return { title: "` + title + `", big: "5", sub: ""
 		t.Error("hovered, the name paints nothing")
 	}
 }
+
+// A wide card with selectors and a value to type in is as tall as its content:
+// the row for typing ends inside it, above the next card, not over it.
+func TestWideCardWithQuickEntryDoesNotOverflow(t *testing.T) {
+	a := newTestApp(t)
+	for _, sc := range a.store.Scripts() {
+		sc.Home = sc.ID == "weight" || sc.ID == "goldk"
+		a.store.SaveScript(sc)
+	}
+	a.setSize("weight", 3)
+	a.setSize("goldk", 3)
+	tt := ui.NewTester(a.view, 1200, 1100)
+	settle(tt)
+	settle(tt)
+	entry, ok1 := tt.Access("体重（kg）") // the last row of the weight card
+	next, ok2 := tt.Access("643.01")  // the headline of the card under it
+	if !ok1 || !ok2 {
+		t.Fatalf("missing the entry row (%v) or the next card's headline (%v)", ok1, ok2)
+	}
+	if entry.Bounds.Y+entry.Bounds.H > next.Bounds.Y {
+		t.Errorf("the weight card's entry row ends at %v, under the next card's headline at %v", entry.Bounds.Y+entry.Bounds.H, next.Bounds.Y)
+	}
+}

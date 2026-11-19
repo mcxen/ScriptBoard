@@ -182,11 +182,44 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	}
 	title = fitText(title, max(titleW, 40), fsCaption)
 
+	lay := layoutOf(st.res)
+	showTitle := lay.Title == "show"
+	// A wide card is a strip with a chart in it: the chart takes what the rest
+	// of the content (the headline, the selectors, the detail line, the values to
+	// type in) leaves, and the card grows when that is under 96, rather than the
+	// content spilling out of it over the next card.
+	wideChart := 120 * s
+	if size == 3 && ready {
+		need := 32*s + 36*s // its padding, and the gaps between its parts
+		if showTitle {
+			need += 36 * s
+		}
+		if st.res.Big != "" {
+			need += bigSize * 1.3
+		}
+		if st.res.Sub != "" || hasChart {
+			need += 22 * s
+		}
+		if len(meta.Dims) > 0 {
+			need += 34 * s
+		}
+		if len(meta.Vars) > 0 {
+			need += 34 * s
+		}
+		if hasChart {
+			need += 22 * s // the detail line under the chart
+		}
+		if len(st.res.Stats) > 0 {
+			need += 60 * s
+		}
+		need += float32(len(inputs)) * 44 * s
+		wideChart = max(h-need, 96*s)
+		h = need + wideChart
+	}
 	base := card(c).Width(w)
 	if h > 0 {
 		base = base.Height(h)
 	}
-	lay := layoutOf(st.res)
 	// A card with a picture is the picture, edge to edge, unless its layout says
 	// inline: its text and buttons are over it while the pointer is on it.
 	cv := a.coverOf(sc, st.res, ready && size != sizeMini && !a.editing && lay.Image != "inline")
@@ -202,7 +235,6 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// A card is its content: its name is in a row of its own only when the layout
 	// asks (title: "show"), and shows over it, with the buttons, on hover. The
 	// height the row would take goes to the chart.
-	showTitle := lay.Title == "show"
 	lift := float32(0)
 	if !showTitle {
 		lift = 36 * s
@@ -335,7 +367,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				// A wide card is a strip: its chart is shorter than a large card's.
 				chartH := max(120, b.Height-210)*s + lift
 				if size == 3 {
-					chartH = 120*s + lift
+					chartH = wideChart
 				}
 				if hasChart {
 					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
