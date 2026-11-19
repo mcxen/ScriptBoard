@@ -129,6 +129,11 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 		if a.pluginNote != "" {
 			aboutRows = append(aboutRows, row{title: tr("有插件没能加载"), note: a.pluginNote})
 		}
+		aboutRows = append(aboutRows, row{title: tr("退出"), note: tr("关闭窗口只是最小化，应用继续在后台运行；从这里、菜单栏的「退出」或快捷键才会真的退出。"), control: func() {
+			if btn(c, tr("退出应用")).Clicked() {
+				quitApp()
+			}
+		}})
 		group(c, tr("关于"), compact, aboutRows...)
 	})
 }

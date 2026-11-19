@@ -241,29 +241,41 @@ func safeURL(s string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
-// showWindow brings the window back after keepInBar hid it.
+// showWindow brings the window back: out of the Dock or the taskbar, where
+// closing it put it, or from where the menu bar's item hid it.
 func (a *app) showWindow() {
 	if a.win == nil {
 		return
 	}
 	mygo.App.Focus()
+	if a.win.IsMinimized() {
+		a.win.Restore()
+	}
 	a.win.Show()
 	a.win.Focus()
 }
 
-// keepInBar hides the window instead of closing it while cards are in the menu
-// bar, so that the app keeps running and the bar can show the window again.
-// Quitting still closes it.
-func (a *app) keepInBar(w *mygo.Window) {
-	w.OnClose(func(e *mygo.CloseEvent) {
-		if a.quitting || !a.menuBarActive() {
-			return
-		}
-		e.PreventDefault()
-		w.Hide()
-	})
+// keepRunning makes closing the main window minimize it, so that the app keeps
+// running, with its menu bar items and its cards' runs. Only a quit ends it: the
+// menu's Quit, Cmd-Q, the Quit of the menu bar items or of the settings, which
+// all go through OnBeforeQuit.
+func (a *app) keepRunning(w *mygo.Window) {
+	w.OnClose(func(e *mygo.CloseEvent) { a.onMainClose(e, w.Minimize) })
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
 }
+
+// onMainClose is what closing the main window does: the close is cancelled and
+// the window minimized, unless the app is quitting, when the window closes.
+func (a *app) onMainClose(e *mygo.CloseEvent, minimize func()) {
+	if a.quitting {
+		return
+	}
+	e.PreventDefault()
+	minimize()
+}
+
+// quitApp ends the app: a variable, so that a test can stand in for it.
+var quitApp = func() { mygo.App.Quit() }
 
 // menuBarRan shows a card's new result in the bar, when the card is there.
 func (a *app) menuBarRan(id string) {

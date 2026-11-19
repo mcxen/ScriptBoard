@@ -69,6 +69,11 @@ func (a *app) view(c *ui.Context) {
 	if root.OverlayShortcut(0, ui.KeyEscape) {
 		a.router.Back()
 	}
+	// Closing the window only minimizes it, and Windows and Linux have no menu
+	// with a Quit: Ctrl+Q quits there, as Cmd-Q does on a Mac.
+	if ownControls && root.OverlayShortcut(ui.Ctrl, ui.KeyQ) {
+		quitApp()
+	}
 	root.Children(func() {
 		p := pal(c)
 		path := a.router.Path()

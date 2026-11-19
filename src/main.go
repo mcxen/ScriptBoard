@@ -59,7 +59,7 @@ func main() {
 			// The window shows the interface MyGo draws, not a web page.
 			Content: ui.View(a.view),
 		}))
-		a.keepInBar(w)
+		a.keepRunning(w)
 		a.attach(w)
 	})
 	if err := mygo.App.Run(); err != nil {
