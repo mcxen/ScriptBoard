@@ -100,14 +100,14 @@ func TestCardSizeButton(t *testing.T) {
 		t.Fatalf("default size %d", got)
 	}
 	a.setSize("weight", 2)
-	if got := a.sizeOf("weight"); got != 2 {
-		t.Errorf("size %d after setSize", got)
+	if got := a.boxOf("weight").Span; got != gridSpans[2] {
+		t.Errorf("span %d after setSize(2)", got)
 	}
-	if a.store.Settings().CardSizes["weight"] != 2 {
-		t.Error("the size was not saved")
+	if got := a.store.Settings().CardBoxes["weight"].Span; got != gridSpans[2] {
+		t.Errorf("the size was not saved: span %d", got)
 	}
 	a.setAllSizes(0)
-	if got := a.sizeOf("weight"); got != 0 {
+	if got := a.boxOf("weight").Span; got != gridSpans[0] {
 		t.Errorf("size %d after setAllSizes(0), want the override gone", got)
 	}
 }

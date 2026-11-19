@@ -180,6 +180,14 @@ func page(c *ui.Context, compact bool, body func()) ui.Element {
 	})
 }
 
+// pageFull is page without the reading width: the home page's grid takes the
+// whole window.
+func pageFull(c *ui.Context, compact bool, body func()) ui.Element {
+	return ui.Scroll(c).Grow(1).Padding(pad(compact)).Children(func() {
+		ui.Column(c).Gap(gapSection).Children(body)
+	})
+}
+
 // header is the top of a page: a title with a line of context under it, and
 // the page's actions at the right.
 func header(c *ui.Context, title, subtitle string, actions func()) {

@@ -48,20 +48,6 @@ func (a *app) contentW() float32 {
 	return w - 2*pad(a.compact)
 }
 
-// gridFor is the grid the home page lays its cards on, by the width it has: 12
-// columns on a wide window, 6 on a middling one, 2 on a phone; and how many
-// columns a small, a medium and a large card span in it. Cards of different
-// sizes share the grid, so a row can hold a large card beside a medium one.
-func gridFor(width float32) (cols int, spans [4]int) {
-	switch {
-	case width >= 900:
-		return 12, [4]int{3, 4, 8, 12}
-	case width >= 520:
-		return 6, [4]int{2, 3, 6, 6}
-	}
-	return 2, [4]int{1, 2, 2, 2}
-}
-
 // sizeOf is the size of a home card: its own when the user gave it one, else
 // the default.
 func (a *app) sizeOf(id string) int {
@@ -71,49 +57,14 @@ func (a *app) sizeOf(id string) int {
 	return a.cardSize
 }
 
-// setSize gives a card its own size.
-func (a *app) setSize(id string, size int) {
-	if a.set.CardSizes == nil {
-		a.set.CardSizes = map[string]int{}
-	}
-	a.set.CardSizes[id] = size
-	if err := a.store.SetSettings(a.set); err != nil {
-		a.set = a.store.Settings()
-	}
-	a.showSizeGuide(size)
-}
-
-// setAllSizes gives every card the same size again.
-func (a *app) setAllSizes(size int) {
-	a.cardSize = size
-	a.set.CardSizes = nil
-	if err := a.store.SetSettings(a.set); err != nil {
-		a.set = a.store.Settings()
-	}
-	a.showSizeGuide(size)
-}
-
-// cardLayout works out the size of a card of the given size from the width
-// the page has and the scale: its width is its columns of the grid, its height
-// the size's height times the scale. cols is how many such cards fit a row.
-func (a *app) cardLayout(size int) (w, h float32, cols int) {
-	s := a.scale()
-	n, spans := gridFor(a.contentW())
-	unit := (a.contentW() - cardGap*float32(n-1)) / float32(n)
-	span := spans[size]
-	w = unit*float32(span) + cardGap*float32(span-1)
-	h = cardSizes[size][1] * s
-	return w, h, max(1, n/span)
-}
-
-// home is the overview: how big the cards are, then one card per script marked
-// for it.
+// home is the overview: the cards on a grid, in the order the user arranged
+// them. In edit mode a card moves by its body and is resized by its corner.
 func (a *app) home(c *ui.Context, compact bool) {
 	p := pal(c)
 	now := a.now()
-	scripts := a.homeScripts()
+	scripts := a.orderedHome(a.homeScripts())
 	subtitle := fmt.Sprintf(tr("%d月%d日 %s · %d 个组件"), int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]), len(scripts))
-	page(c, compact, func() {
+	pageFull(c, compact, func() {
 		// A phone has room for the size switch under the title, not beside it;
 		// the scale slider is for a window with room to scale into.
 		sizeControls := func() {
@@ -132,6 +83,18 @@ func (a *app) home(c *ui.Context, compact bool) {
 				a.setAllSizes(a.cardSize)
 			}
 		}
+		editControls := func() {
+			if a.editing {
+				if primaryBtn(c, tr("完成")).Clicked() {
+					a.editing = false
+					a.rz = nil
+				}
+				return
+			}
+			if btn(c, tr("编辑布局")).Clicked() {
+				a.editing = true
+			}
+		}
 		if compact {
 			header(c, tr("总览"), subtitle, nil)
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
@@ -139,7 +102,10 @@ func (a *app) home(c *ui.Context, compact bool) {
 				sizeControls()
 			})
 		} else {
-			header(c, tr("总览"), subtitle, sizeControls)
+			header(c, tr("总览"), subtitle, func() {
+				sizeControls()
+				editControls()
+			})
 		}
 		if len(scripts) == 0 {
 			card(c).Children(func() {
@@ -147,35 +113,18 @@ func (a *app) home(c *ui.Context, compact bool) {
 			})
 			return
 		}
-		// Cards of different sizes line up at their tops.
-		a.sizeGuide(c)
-		ui.Row(c).Wrap().Gap(cardGap).AlignItems(ui.Start).Children(func() {
-			for _, sc := range scripts {
-				a.card(c, sc)
-			}
-		})
+		if a.editing {
+			hint(c, tr("拖动卡片换位置；拖右下角的角调整大小。右键卡片也能选大小。"))
+		}
+		a.homeIDs = a.homeIDs[:0]
+		items := make([]placed, 0, len(scripts))
+		for _, sc := range scripts {
+			a.homeIDs = append(a.homeIDs, sc.ID)
+			items = append(items, placed{sc: sc, box: a.boxOf(sc.ID)})
+		}
+		a.cols = colsFor(a.contentW(), compact)
+		a.homeGrid(c, items)
 	})
-}
-
-// inputRows is the most quick-entry rows any home card of this size shows, so
-// that the cards of a size stay as tall as each other.
-func (a *app) inputRows(size int) int {
-	if size == 0 {
-		return 0
-	}
-	most := 0
-	for _, sc := range a.homeScripts() {
-		if a.sizeOf(sc.ID) != size {
-			continue
-		}
-		meta, _ := a.metaOf(sc)
-		n := len(meta.Inputs)
-		if size == 1 {
-			n = min(n, 1)
-		}
-		most = max(most, n)
-	}
-	return most
 }
 
 // fmtScale shows a scale as a percentage, such as 120%.
@@ -183,8 +132,9 @@ func fmtScale(s float32) string {
 	return fmt.Sprintf("%d%%", int(math.Round(float64(s)*100)))
 }
 
-// card draws one script as a widget, sized by cardLayout.
-func (a *app) card(c *ui.Context, sc store.Script) {
+// card draws one script as a widget in its box: span is its columns on the
+// page, w its width in DIPs.
+func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w float32) {
 	p := pal(c)
 	s := a.scale()
 	meta, metaErr := a.metaOf(sc)
@@ -194,8 +144,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 		st = a.ensure(runKey(sc.ID, meta.Dims, vals), sc, vals)
 	}
 
-	size := a.sizeOf(sc.ID)
-	w, h, _ := a.cardLayout(size)
+	size := classOf(b)
 	// A card with values to type in has room for them.
 	inputs := meta.Inputs
 	if size == 1 && len(inputs) > 1 {
@@ -204,9 +153,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 	if size == 0 {
 		inputs = nil
 	}
-	// Every card in the grid is as tall as the one with the most rows, so the
-	// rows of cards stay even.
-	h += float32(a.inputRows(size)) * 44 * s
+	h := b.Height*s + float32(len(inputs))*44*s
 	ready := st.err == nil && !st.loading
 	accent := p.accent
 	if ready {
@@ -267,7 +214,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 			switch size {
 			case 1:
 				ui.Spacer(c)
-				SparkStyled(c, st.res.Chart, a.styles[sc.ID], 54*s)
+				SparkStyled(c, st.res.Chart, a.styles[sc.ID], max(54, b.Height-154)*s)
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
@@ -275,7 +222,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 				ui.Spacer(c)
 				a.dimRow(c, idx, meta.Dims)
 				// A wide card is a strip: its chart is shorter than a large card's.
-				chartH := 190 * s
+				chartH := max(120, b.Height-210) * s
 				if size == 3 {
 					chartH = 120 * s
 				}
@@ -285,6 +232,12 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 					a.quickEntry(c, sc.ID, in)
 				}
 			}
+		}
+		if a.editing {
+			ui.Row(c).Shrink(0).AlignItems(ui.End).Children(func() {
+				ui.Spacer(c)
+				a.resizeHandle(c, sc.ID, span, b)
+			})
 		}
 	})
 	// Right click on this card: a menu in the window with its four sizes. It
@@ -301,10 +254,17 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 			}
 		})
 	})
+	if a.editing {
+		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
+		el.Border(1, accent.Alpha(0.55))
+		if ref, ok := ui.Drop[cardRef](el); ok && ref.id != sc.ID {
+			a.moveCard(ref.id, sc.ID)
+		}
+	}
 	if el.Hovered() {
 		el.Border(1, accent.Alpha(0.55))
 	}
-	if el.Clicked() {
+	if el.Clicked() && !a.editing {
 		a.router.Push("/full/" + sc.ID)
 	}
 }

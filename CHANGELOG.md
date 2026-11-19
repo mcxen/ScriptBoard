@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Home layout: an edit mode (「编辑布局」). Drag a card to move it, drag its bottom-right corner to resize it (width snaps to columns, height in steps of 16). The layout is saved. The size guide strip above the cards is gone; the right-click menu stays.
+- The home grid uses the whole window: a wide window no longer leaves a blank strip on the right, and a row's last card fills what the row has left.
+
+## 0.1.4
+
+- Dark mode: series colors are lifted on dark cards, and the connecting line of dot charts is clearer.
+- Offline messages follow the app language.
+- Mac OS 9 on a phone: the desktop menu bar and window buttons are no longer shown.
+- Sources can send headers, so a login-protected source gets its cookie: `sourceHeaders: { name: { Cookie: "…" } }` in `meta()`.
+
 ## 0.1.3
 
 - Look: a calmer palette (cool neutrals, a steadier blue), one type scale (11, 12, 14, 16, 20, 24), settings on the same white surface as the cards, and chart colors that are the same everywhere. Built-in scripts that were never edited take the new colors on start.

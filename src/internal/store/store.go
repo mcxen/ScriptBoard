@@ -129,8 +129,22 @@ type Settings struct {
 	// CardSizes is the size of each home card that is not the default: 0
 	// small, 1 medium, 2 large, by script ID.
 	CardSizes map[string]int `json:"cardSizes"`
+	// CardBoxes is where each home card sits and how big it is, by script ID:
+	// set by dragging in edit mode or by the size menu. A card without one
+	// takes the size of CardSizes.
+	CardBoxes map[string]CardBox `json:"cardBoxes"`
+	// CardOrder is the order the home cards were arranged in; cards not in it
+	// follow in the order of the scripts.
+	CardOrder []string `json:"cardOrder"`
 	// CardScale scales the home cards and their icons, from about 0.7 to 1.6.
 	CardScale float64 `json:"cardScale"`
+}
+
+// CardBox is a home card's place on the grid: its width in columns of a
+// 12-column grid, and its height in DIPs at the default scale.
+type CardBox struct {
+	Span   int     `json:"span"`
+	Height float32 `json:"height"`
 }
 
 // UsageConfig is what the user tells the app about one AI usage provider.

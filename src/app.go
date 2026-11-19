@@ -80,13 +80,17 @@ type app struct {
 	unitIdx int
 	langIdx int // the language row of the settings: 0 auto, 1 中文, 2 English
 	skinIdx int // the appearance row of the settings: 0 default, 1 Mac OS 9
-	// The size guide: the size just chosen, until when it shows, and its SVGs.
-	guideSize  int
-	guideUntil time.Time
-	guideSVG   [4]*ui.SVG
 	// cardMenus are the open states of the cards' right-click menus, by script.
 	cardMenus map[string]*bool
 	themeIdx  int // the light and dark row of the settings: 0 system, 1 light, 2 dark
+
+	// The home page in edit mode: whether it is on, the card being resized, the
+	// columns and the width of one column, and the cards in the order shown.
+	editing bool
+	rz      *resize
+	cols    int
+	unit    float32
+	homeIDs []string
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).

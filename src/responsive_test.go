@@ -4,39 +4,55 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+
+	"scriptboard/src/internal/store"
 )
 
-// Cards fill each row and the row holds as many as the window allows, so a
-// wide window shows several columns and a phone one.
+// Cards fill each row and the row holds as many as the window allows, so a wide
+// window shows several columns and a phone one.
 func TestHomeCardsFollowWidth(t *testing.T) {
 	a := newTestApp(t)
 	tt := ui.NewTester(a.view, 960, 640)
 	settle(tt)
 	settle(tt)
-	_, _, wide := a.cardLayout(1)
-	if wide < 2 {
-		t.Errorf("%d column(s) at width %v, want at least 2", wide, a.width)
+	if cols := colsFor(a.contentW(), false); cols < 6 {
+		t.Errorf("%d columns at width %v, want at least 6", cols, a.width)
 	}
 	savePNG(t, tt, "6-home-wide")
 
-	// Make the cards bigger with the scale control: fewer columns fit.
-	a.set.CardScale = 1.4
-	if err := a.store.SetSettings(a.set); err != nil {
-		t.Fatal(err)
+	// Large cards are two thirds of the grid: one to a row.
+	large := []placed{{box: store.CardBox{Span: gridSpans[2]}}, {box: store.CardBox{Span: gridSpans[2]}}}
+	if rows := packRows(large, gridCols); len(rows) != 2 {
+		t.Errorf("%d rows for two large cards on 12 columns, want 2", len(rows))
 	}
-	click(t, tt, "大")
-	_, _, large := a.cardLayout(2)
-	if large != 1 {
-		t.Errorf("%d columns for large cards at scale 1.4, want 1", large)
-	}
-	savePNG(t, tt, "6-home-large-scale")
-
+	// A phone is one column, and every card is a row of its own.
 	phone := newTestApp(t)
 	pt := ui.NewTester(phone.view, 390, 844)
 	settle(pt)
 	settle(pt)
-	if _, _, cols := phone.cardLayout(1); cols != 1 {
+	if cols := colsFor(phone.contentW(), true); cols != 1 {
 		t.Errorf("%d columns on a phone, want 1", cols)
+	}
+}
+
+// A row's last card takes the columns the row has left, so no row has a gap at
+// its right end.
+func TestRowsHaveNoGap(t *testing.T) {
+	items := []placed{
+		{box: store.CardBox{Span: gridSpans[1]}},
+		{box: store.CardBox{Span: gridSpans[1]}},
+		{box: store.CardBox{Span: gridSpans[0]}},
+		{box: store.CardBox{Span: gridSpans[1]}},
+	}
+	rows := packRows(items, gridCols)
+	for i, r := range rows {
+		sum := 0
+		for _, it := range r {
+			sum += it.span
+		}
+		if sum != gridCols {
+			t.Errorf("row %d spans %d of %d columns", i, sum, gridCols)
+		}
 	}
 }
 
