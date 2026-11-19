@@ -37,6 +37,21 @@ func updateLine() string {
 // updateGroup is the settings group for updates: the version, a check now,
 // where updates come from, and the daily check.
 func (a *app) updateGroup(c *ui.Context, compact bool) {
+	if isAndroid() {
+		// A phone has no updater of its own: it finds the newest APK, and the
+		// user installs it.
+		group(c, tr("更新"), compact, row{title: tr("检查更新"),
+			note: a.androidUpdateLine() + " · " + tr("当前版本 ") + versionString(),
+			control: func() {
+				if btn(c, tr("立即检查")).Clicked() {
+					a.checkAPK()
+				}
+				if a.apkNewer() != nil && primaryBtn(c, tr("下载 APK")).Clicked() {
+					a.androidRelease()
+				}
+			}})
+		return
+	}
 	rows := []row{
 		{title: tr("检查更新"), note: updateLine() + " · " + tr("当前版本 ") + versionString(), control: func() {
 			if btn(c, tr("立即检查")).Clicked() {

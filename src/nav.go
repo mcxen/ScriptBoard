@@ -57,6 +57,10 @@ func (a *app) view(c *ui.Context) {
 		compact = caps.Platform() == caps.Mobile
 	}
 	a.compact = compact
+	// Android has no updater: the app looks for a newer APK once, when it starts.
+	if isAndroid() && a.win != nil && !a.apkChecked && !a.apkBusy {
+		a.checkAPK()
+	}
 
 	root := skinBackground(c, ui.Column(c).Fill())
 	// Escape goes back one page, as in notes; a dialog that is open takes it

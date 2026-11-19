@@ -97,6 +97,11 @@ type app struct {
 	confirmReset string
 	// aboutOpen is whether the full view shows a script's details.
 	aboutOpen bool
+	// The newest Android release, as found by the last check (apk_update.go).
+	apkRel     *apkRelease
+	apkBusy    bool
+	apkChecked bool
+	apkErr     string
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
