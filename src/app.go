@@ -625,6 +625,35 @@ func refreshBuiltin(id, source string) bool {
 // before the chart colors changed). A stored copy with one of them was never
 // edited, so it takes the new script on start; an edited copy is kept.
 var previousBuiltins = map[string][]string{
+	"ai-claude": {
+		"01d43a22fa4a5468002ae210e564ca9478e71d3b0c30b904e5e26323ef7dcc3e",
+		"b6dce9d3d583d884c8010e5c480dafd8bab228d7954ae5356789abc65289a6dc",
+	},
+	"ai-deepseek": {
+		"f5f55d13f2a56ee57f03f35a5cd648fb925b988960744a7da992177c8ad3e0fa",
+	},
+	"ai-openrouter": {
+		"d8471910d8aa99cd3d12526009842700b568b3fe9b0b5ce0e81cc9de4a6d1eb3",
+	},
+	"gold": {
+		"5f7e420061fd66e6450d66cc0332f2da22fa747d7f356653996bd536c50f510e",
+		"4b0ed00df43b50c9128e73e8e0a38c47883b96e1527f807fc4173fd307da8f48",
+	},
+	"goldacc": {
+		"69995db57cbee0af1ef11c4a3265862385cf775f0bdc6920fd5f2751c1820755",
+		"59d9d236c5a0df22d1a36ebebbcff871e9c1c9de27763d996cad451915f72f90",
+	},
+	"goldk": {
+		"f680c5fe268f5fefd8f75094611dbfceedeb557302800fc8446327ab480abb0e",
+	},
+	"weight": {
+		"e8d2bcaa0e5f41badc0fe7b8f0f230df2bd5a090547fecd157a26f05f3e90578",
+		"0f43a5ce93da26669fb0c5b462257d093695fa31d9558afb9a2ad7062d3617af",
+	},
+	"fxcny": {
+		"deaf30589c4cbdb5f65446f58f319cfae4c8e3aea697f50b74aa04f3163766b7",
+		"4efe2a6d4d67206c4b8b92d5d7eae023d9560e70bab67684fbbc6b6d8c03c35e",
+	},
 	"fx": {
 		"bef1d20129a0faa4d8ee06c34319bdc80746996bc2b52b9fba60794b11b9fed6",
 		"e1c51dfb3ea10b04344eafd0327876f56b5f0465e9d581a3db9849c06e1a6907",

@@ -10,7 +10,7 @@ export function meta(a) {
   return {
     name: t("门市金价", "Store gold"),
     description: t("各金店和银行金条的当日金价", "Today's gold price at stores and for bank bars"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "coins",

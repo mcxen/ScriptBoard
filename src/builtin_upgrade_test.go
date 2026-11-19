@@ -9,10 +9,13 @@ import (
 	"scriptboard/src/internal/store"
 )
 
+// variableBuiltins are the built-ins that switch a variable (city, currency...).
+var variableBuiltins = map[string]bool{"fx": true, "weather": true, "aqi": true, "btc": true, "hs300": true}
+
 // The built-in scripts that took switchable variables: an unedited copy of the
 // version before takes the new script on start, and an edited copy is kept.
 func TestUnchangedBuiltinsUpgradeToVariables(t *testing.T) {
-	for _, id := range []string{"fx", "weather", "aqi", "btc", "hs300"} {
+	for _, id := range []string{"fx", "weather", "aqi", "btc", "hs300", "ai-claude", "ai-deepseek", "ai-openrouter", "gold", "goldacc", "goldk", "weight", "fxcny"} {
 		old, err := os.ReadFile("testdata/legacy/" + id + ".js")
 		if err != nil {
 			t.Fatal(err)
@@ -35,8 +38,11 @@ func TestUnchangedBuiltinsUpgradeToVariables(t *testing.T) {
 			t.Errorf("%s: unedited copy not upgraded", id)
 		}
 		m, err := a.metaOf(got)
-		if err != nil || len(m.Vars) == 0 {
-			t.Errorf("%s: upgraded script has no vars (%v)", id, err)
+		if err != nil {
+			t.Errorf("%s: upgraded script does not compile: %v", id, err)
+		}
+		if variableBuiltins[id] && len(m.Vars) == 0 {
+			t.Errorf("%s: upgraded script has no vars", id)
 		}
 
 		// An edited copy is kept.

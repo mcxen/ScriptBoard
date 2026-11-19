@@ -9,7 +9,7 @@ export function meta(a) {
   return {
     name: t("体重记录", "Weight log"),
     description: t("记录体重并画出变化", "Log your weight and chart it"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: [],
     icon: "scale",

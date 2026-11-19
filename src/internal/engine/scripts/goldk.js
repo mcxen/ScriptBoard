@@ -20,7 +20,7 @@ export function meta(a) {
   return {
     name: t("金价 K 线", "Gold candles"),
     description: t("把你录入的金价按周期聚合成 K 线", "Candles of the gold prices you record, by period"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: [],
     icon: "candlestick-chart",

@@ -10,7 +10,7 @@ export function meta(a) {
   return {
     name: t("DeepSeek 余额", "DeepSeek balance"),
     description: t("DeepSeek 账户余额", "DeepSeek account balance"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network", "key"],
     icon: "wallet",

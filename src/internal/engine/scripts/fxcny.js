@@ -18,7 +18,7 @@ export function meta(a) {
   return {
     name: t("兑人民币", "vs CNY"),
     description: t("美元、欧元、日元、英镑、港币兑人民币", "Dollar, euro, yen, pound and Hong Kong dollar in yuan"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "globe",

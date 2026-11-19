@@ -10,7 +10,7 @@ export function meta(a) {
   return {
     name: t("OpenRouter 余额", "OpenRouter balance"),
     description: t("OpenRouter 额度", "OpenRouter credits"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network", "key"],
     icon: "wallet",

@@ -20,7 +20,7 @@ export function meta(a) {
   return {
     name: t("积存金", "Bank gold"),
     description: t("银行积存金的实时价", "Live prices of banks' gold accumulation plans"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "hand-coins",
