@@ -115,7 +115,7 @@ func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 // scale maps ch onto the plot. Every series shares one value range, padded a
 // little so the lines do not touch the edges.
-func scale(ch *engine.Chart, fallback ui.Color) scaled {
+func scale(ch *engine.Chart, fallback ui.Color, dark bool) scaled {
 	var s scaled
 	s.n = count(ch)
 	if isCombo(ch) {
@@ -173,6 +173,11 @@ func scale(ch *engine.Chart, fallback ui.Color) scaled {
 			continue
 		}
 		color := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
+		if dark {
+			// On a dark card a series color reads darker than it is; lifting it
+			// toward white keeps the line as clear as it is on a light one.
+			color = color.Mix(ui.Hex("#FFFFFF"), 0.28)
+		}
 		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points, dashed: sr.Dashed}
 		ln.xs = fractions(n)
 		if ch.Type == "combo" && sr.Offset >= 0 && sr.Offset+n <= len(s.xs) {
@@ -267,7 +272,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 		return barhView(c, ch, h)
 	}
 	t := c.Theme()
-	s := scale(ch, t.Accent)
+	s := scale(ch, t.Accent, pal(c).dark)
 	if s.empty {
 		return ui.Text(c, tr("暂无曲线数据")).TextColor(t.TextMuted).Height(h)
 	}
@@ -340,7 +345,7 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 		return barhView(c, ch, h)
 	}
 	t := c.Theme()
-	s := scale(ch, t.Accent)
+	s := scale(ch, t.Accent, pal(c).dark)
 	return ui.Box(c).Height(h).Draw(func(p *ui.Painter, r ui.Rect) {
 		if s.empty {
 			return
@@ -500,7 +505,7 @@ func drawLines(p *ui.Painter, r ui.Rect, lines []seriesLine, fill bool, curve ch
 func drawDots(p *ui.Painter, r ui.Rect, lines []seriesLine) {
 	for _, ln := range lines {
 		if len(ln.xs) > 1 {
-			p.StrokePath(chart.Line(r, ln.xs, ln.ys, chart.CurveMonotone), 1.5, ln.color.Alpha(0.28))
+			p.StrokePath(chart.Line(r, ln.xs, ln.ys, chart.CurveMonotone), 1.5, ln.color.Alpha(0.45))
 		}
 		for j := range ln.xs {
 			x, y := chart.X(r, ln.xs[j]), chart.Y(r, ln.ys[j])
