@@ -189,7 +189,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			if g := st.res.Chart; ready && g != nil && g.Type == "gauge" && g.Gauge != nil {
 				_, frac := remaining(g.Gauge)
 				display.Tag(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100), display.TagProps{Color: tagFor(frac), Size: theme.Small}).Shrink(0)
-			} else if ready && size > 0 {
+			} else if ready && size > 0 && len(st.res.Stats) == 0 {
+				// A live result has no change to show as a percentage: its curve
+				// is a day of readings, not a series to compare.
 				if cs := summarize(st.res.Chart); cs.ok {
 					deltaChip(c, cs.pct).Shrink(0)
 				}
@@ -210,11 +212,17 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 			if size > 0 {
 				a.freshness(c, st, size)
+				statStrip(c, st.res.Stats)
 			}
 			switch size {
 			case 1:
 				ui.Spacer(c)
-				SparkStyled(c, st.res.Chart, a.styles[sc.ID], max(54, b.Height-154)*s)
+				sparkH := max(54, b.Height-154) * s
+				if len(st.res.Stats) > 0 {
+					// The stat strip takes the room a curve would have had.
+					sparkH = max(28, b.Height-210) * s
+				}
+				SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}

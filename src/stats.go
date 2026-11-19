@@ -141,3 +141,39 @@ func (a *app) tileRow(c *ui.Context, cols int, tiles []tileData) {
 		}
 	})
 }
+
+// statStrip is a result's figures in a row under its headline: each a small
+// name over a bold value, with its line under that. A card shows the strip;
+// the full view shows the same figures as tiles (statsTiles).
+func statStrip(c *ui.Context, stats []engine.Stat) {
+	if len(stats) == 0 {
+		return
+	}
+	p := pal(c)
+	ui.Row(c).Wrap().Gap(18).AlignItems(ui.Start).Children(func() {
+		for _, st := range stats {
+			ui.Column(c).Gap(1).Children(func() {
+				ui.Text(c, st.Label).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				ui.Text(c, st.Value).FontSize(fsBody).FontWeight(650).NoWrap()
+				if st.Sub != "" {
+					ui.Text(c, st.Sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+				}
+			})
+		}
+	})
+}
+
+// statsTiles is a result's figures as tiles of equal width, two across on a
+// phone and four on a window: the full view's statistics for a live result.
+func (a *app) statsTiles(c *ui.Context, stats []engine.Stat) {
+	cols := 4
+	if a.compact {
+		cols = 2
+	}
+	tiles := make([]tileData, 0, len(stats))
+	p := pal(c)
+	for _, st := range stats {
+		tiles = append(tiles, tileData{name: st.Label, value: st.Value, sub: st.Sub, color: p.text})
+	}
+	a.tileRow(c, cols, tiles)
+}

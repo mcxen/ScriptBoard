@@ -79,7 +79,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				ui.Column(c).Gap(2).Children(func() {
 					ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(res, sel))).FontSize(36).Bold().NoWrap()
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						if cs := summarize(res.Chart); cs.ok {
+						if cs := summarize(res.Chart); cs.ok && len(res.Stats) == 0 {
 							deltaChip(c, cs.pct)
 						}
 						if i := hoveredIndex(res.Chart, sel); i >= 0 {
@@ -129,7 +129,10 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			Detail(c, res.Chart, sel)
 		})
 
-		if !a.kindTiles(c, res.Chart) {
+		switch {
+		case len(res.Stats) > 0:
+			a.statsTiles(c, res.Stats)
+		case !a.kindTiles(c, res.Chart):
 			a.statTiles(c, summarize(res.Chart))
 		}
 

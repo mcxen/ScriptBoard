@@ -205,6 +205,7 @@ var enText = map[string]string{
 	"空气质量":  "Air quality",
 	"指数日 K": "Index daily candles",
 	"加密货币":  "Crypto",
+	"国内实况":  "China now",
 	"本地缓存":  "Local cache",
 	"脚本请求过的数据、历史和上次的结果，保存在本机，离线时也能打开；占用 %s": "What scripts requested, its history and the last results are kept on this device, so cards open offline; uses %s",
 	"清除缓存":    "Clear cache",

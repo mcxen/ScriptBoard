@@ -197,6 +197,13 @@ type Chart struct {
 	Panels []Panel `json:"panels"`
 }
 
+// Stat is one figure of a result: its name, its value, and a line under it.
+type Stat struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Sub   string `json:"sub"`
+}
+
 // Result is what render returns, plus the lines the script logged.
 type Result struct {
 	Title string   `json:"title"`
@@ -205,6 +212,9 @@ type Result struct {
 	Sub   string   `json:"sub"`
 	Lines []string `json:"lines"`
 	Chart *Chart   `json:"chart"`
+	// Stats are short figures a result shows as a row under its headline, and
+	// as tiles in the full view: a live weather's feels-like, humidity, wind.
+	Stats []Stat   `json:"stats"`
 	Logs  []string `json:"-"`
 	// DataAt and Stale are filled by the host, not the script: when the oldest
 	// data behind the result was fetched (Unix milliseconds), and whether any

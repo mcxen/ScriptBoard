@@ -84,7 +84,7 @@ func Guide() string {
 	w("")
 	w("## 5. render(ctx)")
 	w("")
-	w("Return `{title, icon, big, sub, lines, chart}`. `big` is the headline figure (a number in it moves when it changes); `chart` is `null` or `{type, ...}` with `type`: `line`, `dot`, `candle`, `gauge`, `barh`, `combo`, `heat`, `panels`.")
+	w("Return `{title, icon, big, sub, lines, chart, stats}`. `stats` is an optional list of `{label, value, sub}` figures: a card shows them in a row under the headline, and the full view as tiles (a live weather uses it for feels-like, humidity and wind). `big` is the headline figure (a number in it moves when it changes); `chart` is `null` or `{type, ...}` with `type`: `line`, `dot`, `candle`, `gauge`, `barh`, `combo`, `heat`, `panels`.")
 	w("")
 	w("- `candle`: give `candles: [{o,h,l,c}]` and `labels`, or `ticks: [{t,v}]` with `period` in seconds (`-1` is a calendar month); the host groups them.")
 	w("- Series are `{name, color, points}`; a dashed `series` has `dashed: true`.")

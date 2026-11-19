@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Results can carry `stats` (label, value, sub): a card shows them as a row under the headline, the full view as tiles. A live result's chart shows no percentage change.
+
 ## 0.1.5
 
 - New built-in: 汇率 · CNY（fxcny），外币兑人民币的汇率走势。
