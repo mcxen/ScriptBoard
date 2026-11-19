@@ -23,7 +23,8 @@ func (a *app) syncPlugins() {
 	for _, p := range list {
 		id := pluginPrefix + p.Manifest.ID
 		seen[id] = true
-		sc := store.Script{ID: id, Name: p.Manifest.Name, Source: p.Source, Home: p.Manifest.Home, Origin: store.OriginPlugin}
+		sc := store.Script{ID: id, Name: p.Manifest.Name, Source: p.Source, Home: p.Manifest.Home, Origin: store.OriginPlugin,
+			Position: p.Manifest.Position, Size: p.Manifest.Size}
 		if cur, ok := a.store.Script(id); !ok || cur != sc {
 			if err := a.store.SaveScript(sc); err == nil {
 				a.invalidate(id)

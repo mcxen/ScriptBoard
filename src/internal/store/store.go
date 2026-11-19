@@ -40,6 +40,11 @@ type Script struct {
 	// CommunityID is the id the script has in the community, for one that was
 	// downloaded from it.
 	CommunityID string `json:"communityID,omitempty"`
+	// Position is where a plugin's card sits on the home page (1 is first), and
+	// Size its default size (mini, small, medium, large, wide); both come from the
+	// plugin's manifest.
+	Position int    `json:"position,omitempty"`
+	Size     string `json:"size,omitempty"`
 	// Kind is what the plugin is: "" a script, KindTable a data table.
 	Kind string `json:"kind,omitempty"`
 	// Table is the data of a data table, which has no source.
@@ -136,6 +141,8 @@ type Settings struct {
 	// CardOrder is the order the home cards were arranged in; cards not in it
 	// follow in the order of the scripts.
 	CardOrder []string `json:"cardOrder"`
+	// LegendHidden are the home cards whose legend the user hid, by script ID.
+	LegendHidden map[string]bool `json:"legendHidden"`
 	// ScriptVars are the values the user chose for a script's variables, by
 	// script ID and then variable key.
 	ScriptVars map[string]map[string]string `json:"scriptVars"`

@@ -68,6 +68,12 @@ func (a *app) boxOf(id string) store.CardBox {
 	if b, ok := a.set.CardBoxes[id]; ok && b.Span >= 1 && b.Height > 0 {
 		return b
 	}
+	// A plugin's default size, when the user has not chosen one.
+	if sc, ok := a.store.Script(id); ok && sc.Size != "" {
+		if i := sizeIndex(sc.Size); i >= 0 {
+			return store.CardBox{Span: gridSpans[i], Height: cardSizes[i][1]}
+		}
+	}
 	size := a.sizeOf(id)
 	return store.CardBox{Span: gridSpans[size], Height: cardSizes[size][1]}
 }
@@ -89,6 +95,16 @@ func classOf(b store.CardBox) int {
 		return 2
 	}
 	return 1
+}
+
+// sizeIndex is the size menu's index of a size name, or -1 for an unknown name.
+func sizeIndex(name string) int {
+	for i, n := range []string{"small", "medium", "large", "wide", "mini"} {
+		if n == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // setSize gives a card one of the size menu's sizes.
@@ -136,6 +152,25 @@ func (a *app) orderedHome(scripts []store.Script) []store.Script {
 	out := make([]store.Script, len(ks))
 	for i := range ks {
 		out[i] = ks[i].sc
+	}
+	// A plugin that names a home position, and that the user has not arranged,
+	// goes to that place: the first of them first.
+	var placed []store.Script
+	for _, sc := range out {
+		if _, arranged := pos[sc.ID]; !arranged && sc.Position > 0 {
+			placed = append(placed, sc)
+		}
+	}
+	sort.SliceStable(placed, func(i, j int) bool { return placed[i].Position < placed[j].Position })
+	for _, sc := range placed {
+		rest := out[:0:0]
+		for _, o := range out {
+			if o.ID != sc.ID {
+				rest = append(rest, o)
+			}
+		}
+		at := min(sc.Position-1, len(rest))
+		out = append(rest[:at:at], append([]store.Script{sc}, rest[at:]...)...)
 	}
 	return out
 }

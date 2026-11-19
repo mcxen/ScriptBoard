@@ -43,7 +43,16 @@ type Manifest struct {
 	Description string `json:"description,omitempty"`
 	Home        bool   `json:"home"`
 	Version     string `json:"version,omitempty"`
+	// Position is where the card sits on the home page, from 1 (first); 0
+	// leaves it after the cards the user arranged.
+	Position int `json:"position,omitempty"`
+	// Size is the card's default size: mini, small, medium, large or wide. The
+	// user's own size, once chosen, wins.
+	Size string `json:"size,omitempty"`
 }
+
+// CardSizes are the sizes a plugin may name for its card.
+var CardSizes = []string{"mini", "small", "medium", "large", "wide"}
 
 // Plugin is a plugin read from its folder.
 type Plugin struct {
@@ -77,6 +86,12 @@ func CheckSource(name, source string) (engine.Meta, error) {
 func Save(dataDir string, m Manifest, source string) error {
 	if !idPattern.MatchString(m.ID) {
 		return errors.New("插件 id 只能用小写字母、数字和连字符，2 到 40 个字符")
+	}
+	if m.Position < 0 || m.Position > 200 {
+		return errors.New("首页位置是 1 到 200 的数字，1 是第一张；不写就排在最后")
+	}
+	if m.Size != "" && !containsWord(CardSizes, m.Size) {
+		return fmt.Errorf("默认尺寸要是 %s 之一", strings.Join(CardSizes, "、"))
 	}
 	if strings.TrimSpace(m.Name) == "" || len([]rune(m.Name)) > 60 {
 		return errors.New("插件名称为 1 到 60 个字")
@@ -314,4 +329,14 @@ func DefaultDataDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(cfg, "ScriptBoard"), nil
+}
+
+// containsWord reports whether word is one of list.
+func containsWord(list []string, word string) bool {
+	for _, w := range list {
+		if w == word {
+			return true
+		}
+	}
+	return false
 }

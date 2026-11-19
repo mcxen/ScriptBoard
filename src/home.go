@@ -232,11 +232,14 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 		default:
+			lay := layoutOf(st.res)
 			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
-			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			if lay.Summary != "hide" {
+				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			}
+			showLegend := a.legendShown(sc.ID, lay)
 			if size > 0 {
 				a.freshness(c, st, size)
-				statStrip(c, st.res.Stats)
 				if len(st.res.Images) > 0 {
 					a.imageCarousel(c, sc, st.res.Images, w-32*s, 120*s)
 				}
@@ -250,12 +253,18 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					break
 				}
 				ui.Spacer(c)
-				sparkH := max(54, b.Height-154) * s
-				if len(st.res.Stats) > 0 {
-					// The stat strip takes the room a curve would have had.
-					sparkH = max(28, b.Height-210) * s
+				if st.res.Chart.Type == "progress" {
+					// A completion chart is bars, not a curve: a medium card draws
+					// two of them, and the full view or a large card shows all.
+					progressView(c, st.res.Chart.Progress, 2)
+				} else {
+					sparkH := max(54, b.Height-154) * s
+					if len(st.res.Stats) > 0 {
+						// The stat strip takes the room a curve would have had.
+						sparkH = max(28, b.Height-210) * s
+					}
+					SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
 				}
-				SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
@@ -271,10 +280,20 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				if hasChart {
 					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
 					Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+					if showLegend {
+						legendRow(c, st.res.Chart)
+					}
 				}
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
+			}
+			// The stats are their own block at the foot of the card, when the
+			// layout keeps them. A medium card with bars has no room for them;
+			// its full view has them.
+			barsOnMedium := size == 1 && hasChart && st.res.Chart.Type == "progress"
+			if size > 0 && lay.Stats != "hide" && !barsOnMedium {
+				cardStats(c, st.res.Stats)
 			}
 		}
 		if a.editing {
@@ -295,6 +314,15 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					a.setSize(sc.ID, i)
 					*open = false
 				}
+			}
+			// The legend of this card: shown or hidden, the user's choice.
+			legend := tr("隐藏图例")
+			if a.set.LegendHidden[sc.ID] {
+				legend = tr("显示图例")
+			}
+			if btn(c, legend).Clicked() {
+				a.toggleLegend(sc.ID)
+				*open = false
 			}
 		})
 	})

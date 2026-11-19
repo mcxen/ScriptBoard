@@ -84,3 +84,26 @@ func TestIconLookupFromPlugins(t *testing.T) {
 		t.Errorf("ListIcons = %s", names)
 	}
 }
+
+// A plugin names its home position (1 to 200) and its default size, and both
+// come back from the list; a position or size outside those is refused.
+func TestSavePositionAndSize(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, Manifest{ID: "ok-one", Name: "x", Position: 2, Size: "small"}, src); err != nil {
+		t.Fatal(err)
+	}
+	list, err := List(dir)
+	if err != nil || len(list) != 1 || list[0].Manifest.Position != 2 || list[0].Manifest.Size != "small" {
+		t.Fatalf("list %+v, %v", list, err)
+	}
+	bad := map[string]Manifest{
+		"negative position": {ID: "ok-two", Name: "x", Position: -1},
+		"position too big":  {ID: "ok-two", Name: "x", Position: 201},
+		"unknown size":      {ID: "ok-two", Name: "x", Size: "huge"},
+	}
+	for name, m := range bad {
+		if err := Save(dir, m, src); err == nil {
+			t.Errorf("%s: saved", name)
+		}
+	}
+}

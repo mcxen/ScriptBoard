@@ -227,6 +227,7 @@ var enText = map[string]string{
 	"已清除":     "Cleared",
 	"刚刚":      "just now",
 	"%d 分钟前":  "%d min ago",
+	"另外 %d 项": "%d more",
 	"%d 小时前":  "%d h ago",
 	"%d 天前":   "%d d ago",
 	"缓存 · %s": "cached · %s",

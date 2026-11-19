@@ -256,6 +256,9 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 }
 
 func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+	if ch != nil && ch.Type == "progress" {
+		return progressView(c, ch.Progress, 0)
+	}
 	if isCombo(ch) {
 		return comboView(c, ch, style, h, sel, full)
 	}

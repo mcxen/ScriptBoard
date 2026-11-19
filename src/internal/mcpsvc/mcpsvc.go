@@ -7,6 +7,7 @@ package mcpsvc
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -211,6 +212,8 @@ func Tools() []Tool {
 				"icon":        str("icon name, such as coins (optional)"),
 				"description": str("one line about the plugin (optional)"),
 				"home":        map[string]any{"type": "boolean", "description": "show as a home card"},
+				"position":    map[string]any{"type": "integer", "description": "where the home card sits: 1 is first; leave it out to put it last"},
+				"size":        str("default size of the home card: mini, small, medium, large or wide; leave it out for medium"),
 				"source":      str("the script source"),
 			}, "id", "name", "source"),
 		},
@@ -287,6 +290,12 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		var b strings.Builder
 		for _, p := range list {
 			fmt.Fprintf(&b, "%s  %s  icon=%s  home=%v", p.Manifest.ID, p.Manifest.Name, p.Manifest.Icon, p.Manifest.Home)
+			if p.Manifest.Position > 0 {
+				fmt.Fprintf(&b, "  position=%d", p.Manifest.Position)
+			}
+			if p.Manifest.Size != "" {
+				fmt.Fprintf(&b, "  size=%s", p.Manifest.Size)
+			}
 			if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil {
 				r := spec.Resolve(meta)
 				fmt.Fprintf(&b, "  platforms=%s  needs=%s", strings.Join(r.Platforms, ","), strings.Join(r.Needs, ","))
@@ -317,12 +326,15 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("没有插件 %q", str("id"))
 	case "plugin_save":
 		home, _ := a["home"].(bool)
+		position, _ := a["position"].(float64)
 		m := plugins.Manifest{
 			ID:          str("id"),
 			Name:        str("name"),
 			Icon:        str("icon"),
 			Description: str("description"),
 			Home:        home,
+			Position:    int(position),
+			Size:        str("size"),
 		}
 		if err := plugins.Save(dataDir, m, str("source")); err != nil {
 			return "", err
@@ -345,7 +357,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		out, _ := json.MarshalIndent(meta, "", "  ")
-		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir), nil
+		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir) + chartReport(str("source")), nil
 	case "icon_catalog":
 		return catalogText(str("category")), nil
 	case "icon_add":
@@ -419,4 +431,18 @@ func iconReport(meta engine.Meta, dataDir string) string {
 		}
 	}
 	return "警告：图标 " + meta.Icon + " 不存在，会显示默认图标。用 icon_catalog 查看可选的图标。\n"
+}
+
+// chartReport runs the script once, with nothing to read, and warns when the
+// chart it draws has a type the app does not know: such a chart shows nothing.
+func chartReport(source string) string {
+	s, err := engine.CompileLang("check.js", source, "zh")
+	if err != nil {
+		return ""
+	}
+	res, err := s.Run(context.Background(), engine.Input{Now: time.Now(), Lang: "zh"})
+	if err != nil || res.Chart == nil || !engine.UnknownChartType(res.Chart.Type) {
+		return ""
+	}
+	return "警告：图表类型 " + res.Chart.Type + " 不认识，卡片不会画出图。可用的类型：" + strings.Join(engine.ChartTypes, ", ") + "\n"
 }

@@ -132,10 +132,13 @@ Chart(c, ChartProps{
 | `heat` | **热力表**：一张表，每格是 0–100 的数字，颜色随数字加深（留存矩阵、活跃日历）。点一格选中它，底部显示那一格的详情。`grid: {columns, rows: [{label, note, cells}], average, footer}`，空格写 `-1` | `grid` |
 | `panels` | **面板叠放**：价格和指标各占一块，共用一根时间轴，悬浮时十字线同时出现在每个面板上。参考线是虚线的常数序列 | `panels: [{title, style, weight, series}]` |
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
+| `progress` | **完成度条**：每项一根条，标出「已完成 / 总数 · 百分比」；没有上限时数值就是百分比。中等卡片画前两项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
 
 K 线的周期由宿主统一聚合（`internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
 多条折线时只给第一条填充面积，避免两层半透明色叠出不属于任何一条线的颜色。
+
+**版面：`layout`。** 结果可以带 `layout: {legend, summary, stats}`，分别控制图例（多条线的名字，`show` 或 `hide`）、摘要（标题下的那行字，`top` 或 `hide`）和统计块（图表下面独立的一块，`bottom` 或 `hide`）。不写就是图例显示、摘要在上、统计在下。用户也能在卡片的右键菜单里隐藏某张卡片的图例，这个选择会保留。
 
 ## 点击刷新
 
@@ -261,9 +264,9 @@ export function meta() {
 | --- | --- |
 | `plugin_list` | 列出本地插件，并报告有问题的插件 |
 | `plugin_get` | 读取一个插件的清单和源码 |
-| `plugin_save` | 创建或更新插件；脚本先编译检查，不能运行的不会保存 |
+| `plugin_save` | 创建或更新插件；脚本先编译检查，不能运行的不会保存。`position` 是首页位置（从 1 起，不写则排在最后），`size` 是默认尺寸（mini、small、medium、large、wide）；用户自己排过的位置和尺寸优先 |
 | `plugin_delete` | 删除插件和它的图标 |
-| `script_check` | 只检查脚本能不能运行，并返回它的元信息 |
+| `script_check` | 只检查脚本能不能运行，并返回它的元信息；图标不存在、图表类型不认识都会给出警告 |
 | `icon_add` | 保存 SVG 图标（可以指定属于哪个插件）；带脚本或事件属性的 SVG 会被拒绝 |
 | `icon_list` | 列出可用的图标 |
 
@@ -362,7 +365,7 @@ export function meta() {
 
 **缓存、历史和离线也是宿主的事。** `sources` 的每个响应都存在本机：一分钟内的直接用，请求失败就用上一次的（`ctx.sourceInfo[name].stale`），离线模式不发请求、只读缓存；卡片打开时先显示上次的结果，再在后台更新，刷新按钮则一定重新请求。`meta()` 里写 `history: ["名字"]`（可加 `historyLimit`，默认 120）就能在 `ctx.history[名字]` 拿到这个来源过去的响应 `[{t, v}]`，用来画接口只给最新值的数据。设置里能看到缓存占用并清除。
 
-**实况与统计：`stats`。** 结果里可以带 `stats: [{label, value, sub}]`，卡片标题下面排一行小字数字，全屏页排成卡片。实况类的脚本（例如「国内实况」）用它显示体感、湿度、风速和气压。
+**实况与统计：`stats`。** 结果里可以带 `stats: [{label, value, sub}]`。卡片上它自成一块，在图表下面；迷你卡片不显示，中等卡片画进度条时也不显示（全屏页都有）。全屏页排成卡片。实况类的脚本（例如「国内实况」）用它显示体感、湿度、风速和气压。
 
 **数据源的完整请求。** `sources` 的一项可以是地址字符串，也可以是对象 `{url, method, headers, query, body, paging}`：`method` 默认 GET，可以是 POST 并带 `body`；`headers` 里写 `Cookie` 就能带登录；`query` 会拼到地址后面。`paging: {param, start, step, pages, items}` 声明分页：页码放进 `param`，逐页读取后把列表拼成一个；`items` 是每页里列表的路径（如 `data.list`），为空表示响应本身就是列表；遇到没有数据的页就停下。
 

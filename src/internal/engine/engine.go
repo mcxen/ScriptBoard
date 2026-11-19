@@ -196,6 +196,60 @@ type Chart struct {
 	Grid *Grid `json:"grid"`
 	// Panels are the stacked charts of a "panels" chart.
 	Panels []Panel `json:"panels"`
+	// Progress are the bars of a "progress" chart: each a value against its
+	// maximum (a completion), shown as a percentage bar.
+	Progress []Progress `json:"progress"`
+}
+
+// Progress is one bar of a "progress" chart: Value out of Max. A Max of 0
+// means Value is already a percentage (0 to 100).
+type Progress struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Max   float64 `json:"max"`
+	Unit  string  `json:"unit,omitempty"`
+}
+
+// Percent is how far the bar is full, 0 to 100.
+func (p Progress) Percent() float64 {
+	pct := p.Value
+	if p.Max > 0 {
+		pct = p.Value / p.Max * 100
+	}
+	if pct != pct || pct < 0 {
+		return 0
+	}
+	return min(pct, 100)
+}
+
+// ChartTypes are the chart types a result can draw. A script that names another
+// draws nothing useful, so script_check reports it.
+var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress"}
+
+// UnknownChartType reports whether t is not one of ChartTypes (an empty type is
+// a line).
+func UnknownChartType(t string) bool {
+	if t == "" {
+		return false
+	}
+	for _, k := range ChartTypes {
+		if k == t {
+			return false
+		}
+	}
+	return true
+}
+
+// Layout says how a result's card is laid out: whether its legend shows, where
+// its summary and its stats go. The zero value is the default layout.
+type Layout struct {
+	// Legend is "show" (the default) or "hide": the names of a chart's series.
+	Legend string `json:"legend,omitempty"`
+	// Summary is "top" (the default) or "hide": the line under the headline.
+	Summary string `json:"summary,omitempty"`
+	// Stats is "bottom" (the default) or "hide": the figures, in their own
+	// block under the chart.
+	Stats string `json:"stats,omitempty"`
 }
 
 // Image is a picture of a result: its address, a caption under it, and, once the
@@ -229,7 +283,9 @@ type Result struct {
 	// Images are pictures a result shows as a carousel (inspiration, wallpapers).
 	// The host keeps a copy of each, as Local, and the history of the script's
 	// pictures; the carousel shows that history.
-	Images []Image  `json:"images"`
+	Images []Image `json:"images"`
+	// Layout says how the card of this result is laid out (see Layout).
+	Layout *Layout  `json:"layout,omitempty"`
 	Logs   []string `json:"-"`
 	// DataAt and Stale are filled by the host, not the script: when the oldest
 	// data behind the result was fetched (Unix milliseconds), and whether any
