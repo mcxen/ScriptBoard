@@ -104,6 +104,10 @@ type Settings struct {
 	// ThemeMode is the appearance: "" or "system" follows the system, "light"
 	// and "dark" force one.
 	ThemeMode string `json:"themeMode"`
+	// ContentWidth is how wide a page's content may be: "" (auto: data pages fill
+	// the window, text pages keep a reading width), "comfortable", "wide" or
+	// "full".
+	ContentWidth string `json:"contentWidth"`
 	// SidebarCollapsed folds the sidebar into a narrow rail of icons.
 	SidebarCollapsed bool `json:"sidebarCollapsed"`
 	// Grants are the sensitive features (files, exec, key) the user allowed,

@@ -62,6 +62,7 @@ func (a *app) view(c *ui.Context) {
 		a.checkAPK()
 	}
 
+	setPageWidth(a.set.ContentWidth)
 	root := skinBackground(c, ui.Column(c).Fill())
 	// Escape goes back one page, as in notes; a dialog that is open takes it
 	// first, since it is built after the page.

@@ -46,7 +46,12 @@ func (a *app) contentW() float32 {
 	if !a.compact {
 		w -= a.sidebarW()
 	}
-	return w - 2*pad(a.compact)
+	w -= 2 * pad(a.compact)
+	// What the page itself is capped at (pagewidth.go).
+	if capNow > 0 && w > capNow {
+		w = capNow
+	}
+	return w
 }
 
 // sizeOf is the size of a home card: its own when the user gave it one, else

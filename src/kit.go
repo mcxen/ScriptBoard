@@ -172,20 +172,17 @@ func pad(compact bool) float32 {
 	return padPage
 }
 
-// page is the scrolling body of a page: padded, with its blocks a section
-// apart, and no wider than a line of text stays readable.
+// page is the scrolling body of a page of text or forms: padded, with its
+// blocks a section apart, and no wider than a line of text stays readable,
+// unless the user chose otherwise (pagewidth.go).
 func page(c *ui.Context, compact bool, body func()) ui.Element {
-	return ui.Scroll(c).Grow(1).Padding(pad(compact)).Children(func() {
-		ui.Column(c).MaxWidth(1120).Gap(gapSection).Children(body)
-	})
+	return pageIn(c, compact, false, body)
 }
 
-// pageFull is page without the reading width: the home page's grid takes the
-// whole window.
+// pageFull is the body of a page of data, the home page's grid and the detail
+// page: it fills the window, unless the user chose a width.
 func pageFull(c *ui.Context, compact bool, body func()) ui.Element {
-	return ui.Scroll(c).Grow(1).Padding(pad(compact)).Children(func() {
-		ui.Column(c).Gap(gapSection).Children(body)
-	})
+	return pageIn(c, compact, true, body)
 }
 
 // header is the top of a page: a title with a line of context under it, and

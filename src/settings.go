@@ -40,6 +40,13 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					a.saveSettings()
 				}
 			}},
+			row{stack: true, title: tr("内容宽度"), note: tr("自动：首页和详情页铺满窗口，设置等文字页保持易读的宽度；也可以固定为舒适、宽，或始终铺满。"), control: func() {
+				idx := widthIndex(a.set.ContentWidth)
+				if choose(c, &idx, tr("自动"), tr("舒适"), tr("宽"), tr("铺满")) {
+					a.set.ContentWidth = widthModes[idx]
+					a.saveSettings()
+				}
+			}},
 			row{stack: true, title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
 				if choose(c, &a.themeIdx, tr("跟随系统"), tr("浅色"), tr("深色")) {
 					a.set.ThemeMode = themeModes[a.themeIdx]
