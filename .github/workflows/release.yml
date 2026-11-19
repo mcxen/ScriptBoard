@@ -14,20 +14,18 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: write # the draft release, and the uploads to it
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  # CI vets every push to main, so this repeats only what must hold before a
+  # release is published: the version, the tests (a broken build is never
+  # released), and then the draft that the builds upload to.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -37,20 +35,10 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Check the release version
-        if: github.ref_type == 'tag'
         run: |
           test "$GITHUB_REF_NAME" = "v$(jq -r .version mygo.json)"
           grep -q "^## $(jq -r .version mygo.json)\b" CHANGELOG.md
-      - run: go vet ./...
       - run: CGO_ENABLED=0 go test -count=1 ./...
-      - run: GOOS=windows CGO_ENABLED=0 go vet ./...
-
-  draft-release:
-    name: Draft release
-    if: github.ref_type == 'tag'
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,7 +59,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.platform }}
-    needs: draft-release
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -98,7 +86,7 @@ jobs:
 
   android:
     name: Build Android
-    needs: draft-release
+    needs: test
     runs-on: ubuntu-latest
     # The APK is a bonus: a failure here does not stop the desktop release.
     continue-on-error: true
@@ -128,18 +116,21 @@ jobs:
           version="$(jq -r .version mygo.json)"
           gh release upload "$GITHUB_REF_NAME" "build/android/scriptboard-$version.apk" --clobber --repo "$GITHUB_REPOSITORY"
 
+  # The APK is a bonus, but the release waits for it (a failed Android build
+  # does not stop the release), so that the page's mirror links list it.
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, android]
+    # Whatever the Android build did, as long as the desktop builds worked.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - name: Check the draft and publish it
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          version="$(jq -r .version mygo.json)"
+          version="${GITHUB_REF_NAME#v}" # the test job made sure it is mygo.json's
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort > assets.txt
           cat assets.txt
           # The installers, and a manifest for each platform that installed
@@ -152,14 +143,9 @@ jobs:
           done
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
 
-  # The release page also lists tvv.tw links for the installers, for readers
-  # who cannot reach GitHub's downloads directly. The app's own updates reach
-  # the mirror through update.go and fall back to GitHub.
-  mirror-links:
-    name: Add mirror links
-    needs: publish
-    runs-on: ubuntu-latest
-    steps:
+      # The release page also lists tvv.tw links for the installers, for readers
+      # who cannot reach GitHub's downloads directly. The app's own updates reach
+      # the mirror through update.go and fall back to GitHub.
       - name: Append the tvv.tw links to the release notes
         env:
           GH_TOKEN: ${{ github.token }}
