@@ -32,9 +32,11 @@ type app struct {
 	barSig map[string]string
 	// quitting is set once the app quits, so that the window really closes.
 	quitting bool
-	router   *ui.Router
-	store    *store.Store
-	dataDir  string // the folder of data.json; plugins and icons live under it
+	// live is the state of the cards whose sources are asked for again (live_app.go).
+	live    liveState
+	router  *ui.Router
+	store   *store.Store
+	dataDir string // the folder of data.json; plugins and icons live under it
 	// cache keeps the responses of the sources, their history and the last
 	// result of each card, for offline use and for opening quickly.
 	cache *cache.Store
@@ -293,6 +295,7 @@ func (a *app) attach(w *mygo.Window) {
 	go a.watchPlugins()
 	go a.feedLoop()
 	go a.menuBarLoop()
+	go a.liveLoop()
 	a.applyMCP()
 	a.syncMenuBar()
 }
@@ -495,6 +498,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	_, tz := now.Zone()
 	set := a.store.Settings()
 	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force, Lang: curLang(), Headers: s.Meta.SourceHeaders}
+	opt.LiveTTL = s.Meta.LiveTTL()
 	if a.cache != nil {
 		opt.Cache = cacheAdapter{a.cache}
 	}
@@ -677,7 +681,7 @@ var previousBuiltins = map[string][]string{
 		"df88f52041b64e51c335b67c86de9818178d13c4acde824ce6b799dc5b1abd84",
 	},
 	"aqi":   {"8577e85043f4d9529b62ecb2abe1a28ec4de9d213a8afe77e4912ae671f84289"},
-	"btc":   {"8a04a645d916fe443f0b450518db27a4fcbeec5324122bae51da2c97cf117f6e"},
+	"btc":   {"8a04a645d916fe443f0b450518db27a4fcbeec5324122bae51da2c97cf117f6e", "abe59a2b07c31ef986f3af058828b88865afc623fcafb003519a3ccdaba5ec4d"},
 	"hs300": {"30482a41f0ffca6f1becda31e97abd690ea0bc2963910c5370218ae0be6b9adb"},
 }
 

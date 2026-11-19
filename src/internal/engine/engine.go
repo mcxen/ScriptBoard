@@ -78,6 +78,9 @@ type Meta struct {
 	// area: the user chooses whether it does. What it shows there is the
 	// result's MenuBar and Menu.
 	Menubar bool `json:"menubar"`
+	// Live names the sources that are asked for again every few seconds while
+	// the card is on screen (see live.go). Their history is kept for the script.
+	Live *Live `json:"live"`
 }
 
 // ManualInput is a value typed in by hand.

@@ -143,6 +143,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	st := &runState{err: metaErr}
 	if metaErr == nil {
 		st = a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
+		a.watchLive(sc.ID, meta)
 	}
 
 	size := classOf(b)

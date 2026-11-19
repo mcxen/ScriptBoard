@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,14 +46,23 @@ func (c cacheAdapter) History(url string, limit int) []engine.CachedBody {
 // historyWanted is the sources a script wants the history of, and how many
 // responses of each.
 func historyWanted(m engine.Meta) ([]string, int) {
-	if len(m.History) == 0 {
+	names := append([]string(nil), m.History...)
+	if m.Live != nil {
+		// A live source's history is what its line is drawn from.
+		for _, name := range m.Live.Sources {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	if len(names) == 0 {
 		return nil, 0
 	}
 	n := m.HistoryLimit
 	if n <= 0 {
 		n = defaultHistory
 	}
-	return m.History, min(n, cache.MaxHistoryEntries)
+	return names, min(n, cache.MaxHistoryEntries)
 }
 
 // dataTimes says how old the data of a run is: when the oldest source was

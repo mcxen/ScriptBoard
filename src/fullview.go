@@ -29,6 +29,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	st := &runState{err: metaErr}
 	if metaErr == nil {
 		st = a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
+		a.watchLive(sc.ID, meta)
 	}
 	sel := a.selOf("full:" + sc.ID)
 

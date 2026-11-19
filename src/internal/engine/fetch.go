@@ -147,6 +147,9 @@ type FetchOptions struct {
 	// Headers are the request headers of each source, by name (a script's
 	// sourceHeaders).
 	Headers map[string]map[string]string
+	// LiveTTL replaces TTL for the named sources: a live source counts as fresh
+	// for less than its interval, so that each run asks it again (Meta.LiveTTL).
+	LiveTTL map[string]time.Duration
 	// Lang is the language of the messages a source's error carries: "zh" or
 	// "en"; anything else is English.
 	Lang string
@@ -206,11 +209,15 @@ func FetchRequests(ctx context.Context, client *http.Client, reqs map[string]Req
 			}
 			r.Headers = merged
 		}
+		o := opt
+		if ttl, ok := opt.LiveTTL[names[i]]; ok {
+			o.TTL = ttl
+		}
 		wg.Add(1)
-		go func(i int, r Request) {
+		go func(i int, r Request, o FetchOptions) {
 			defer wg.Done()
-			raw[i], info[i] = fetchOne(ctx, client, r, now, opt)
-		}(i, r)
+			raw[i], info[i] = fetchOne(ctx, client, r, now, o)
+		}(i, r, o)
 	}
 	wg.Wait()
 	bodies := make(map[string]json.RawMessage, len(names))
