@@ -238,6 +238,8 @@ func (a *app) newTable() {
 func (a *app) afterOpenTable() {
 	a.tablePage = 0
 	a.tableAppend = 0
+	a.tableCols = false
+	a.editTab = 0
 	if a.draft.Table != nil && a.draft.Table.Metric != "" {
 		a.tableAppend = 1 // what is imported joins the records
 	}
@@ -457,7 +459,6 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 		return
 	}
 	bound := t.Metric != ""
-	desktop := caps.Platform() == caps.Desktop
 
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
@@ -495,7 +496,17 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 	}
 	a.specInfo(c, a.draft)
 
-	// Import and export.
+	a.importBar(c, t)
+	a.pastePanel(c)
+
+	a.tableGrid(c, t, bound, gridW)
+}
+
+// importBar is the buttons that import and export a table, and how an import
+// joins the rows.
+func (a *app) importBar(c *ui.Context, t *store.Table) {
+	p := pal(c)
+	desktop := caps.Platform() == caps.Desktop
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 		if desktop {
 			if btn(c, tr("导入 Excel / CSV")).Clicked() {
@@ -524,6 +535,11 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 			segmented(c, &a.tableAppend, tr("替换"), tr("追加"))
 		}
 	})
+}
+
+// pastePanel is the box that imports pasted cells, when it is open.
+func (a *app) pastePanel(c *ui.Context) {
+	p := pal(c)
 	if a.panel == "paste" {
 		ui.Column(c).Padding(14).Gap(10).Radius(radControl + 2).Background(p.chip).Children(func() {
 			hint(c, tr("从 Excel 复制一块单元格，或粘贴 CSV；第一行是表头"))
@@ -549,8 +565,6 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 			})
 		})
 	}
-
-	a.tableGrid(c, t, bound, gridW)
 }
 
 func metricName(metric string) string {
@@ -569,7 +583,8 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 	}
 	n := max(len(cols), 1)
 	colW := clampF((gridW-92)/float32(n), 96, 240)
-	pages := max(1, (len(t.Rows)+tablePageSize-1)/tablePageSize)
+	size := a.pageSize()
+	pages := max(1, (len(t.Rows)+size-1)/size)
 	a.tablePage = min(max(a.tablePage, 0), pages-1)
 	changed := false
 
@@ -588,8 +603,8 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 			}
 			ui.Spacer(c).Width(28)
 		})
-		from := a.tablePage * tablePageSize
-		to := min(len(t.Rows), from+tablePageSize)
+		from := a.tablePage * size
+		to := min(len(t.Rows), from+size)
 		for i := from; i < to; i++ {
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Text(c, fmt.Sprintf("%d", i+1)).FontSize(fsTiny).TextColor(p.muted).Width(34)
@@ -618,7 +633,7 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 				row[0] = a.now().Format(boundTimeFormat)
 			}
 			t.Rows = append(t.Rows, row)
-			a.tablePage = (len(t.Rows) - 1) / tablePageSize
+			a.tablePage = (len(t.Rows) - 1) / size
 			changed = true
 		}
 		if !bound {
@@ -685,4 +700,13 @@ func (a *app) ensureBuiltinTables() error {
 		}
 	}
 	return nil
+}
+
+// pageSize is how many rows of a table show at once: fewer on a phone, where
+// each row is a card.
+func (a *app) pageSize() int {
+	if a.compact {
+		return 8
+	}
+	return tablePageSize
 }

@@ -59,6 +59,8 @@ type app struct {
 	draft         store.Script
 	tablePage     int    // the page of rows the table editor shows
 	tableAppend   int    // an import: 0 replaces the rows, 1 joins them
+	tableCols     bool   // the phone editor shows the columns to edit
+	editTab       int    // the phone editor: 0 the editor, 1 the preview
 	status        string // one line of feedback: saved, recorded, errors
 
 	// Quick entry on the home cards: the value typed for each input, and the

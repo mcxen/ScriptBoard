@@ -195,6 +195,13 @@ func (a *app) deleteDraft() {
 	}
 	a.invalidate(id)
 	a.editorID = ""
+	if a.compact {
+		// Back to the list: nothing is open.
+		a.draft = store.Script{}
+		a.router.Replace("/edit")
+		a.status = ""
+		return
+	}
 	if list := a.store.Scripts(); len(list) > 0 {
 		a.openEditor(list[0].ID)
 	} else {

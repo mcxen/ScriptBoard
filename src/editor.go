@@ -33,8 +33,7 @@ func (a *app) newScript() {
 	a.editorID = id
 	a.draft = store.Script{ID: id, Name: tr("新脚本"), Source: engine.DefaultSourceFor(curLang()), Origin: store.OriginUser}
 	a.status = tr("未保存")
-	delete(a.dims, draftKey)
-	a.invalidate(draftKey)
+	a.afterOpenTable()
 }
 
 // duplicateDraft saves a copy of the draft as a new script, on the home page,
@@ -56,8 +55,7 @@ func (a *app) duplicateDraft() {
 	}
 	a.editorID = sc.ID
 	a.draft = sc
-	delete(a.dims, draftKey)
-	a.invalidate(draftKey)
+	a.afterOpenTable()
 	a.invalidate(sc.ID)
 	a.status = tr("已复制，可以修改后保存")
 }
@@ -106,6 +104,11 @@ func (a *app) shownValue(key string, v float64) float64 {
 // blocks stack in one column.
 func (a *app) editor(c *ui.Context, compact bool) {
 	p := pal(c)
+	// On a phone the list and the thing are two screens: /edit is the list.
+	if compact && a.router.Path() == "/edit" {
+		a.phoneList(c)
+		return
+	}
 	if a.editorID == "" {
 		if list := a.store.Scripts(); len(list) > 0 {
 			a.openEditor(list[0].ID)
@@ -292,12 +295,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	}
 
 	if compact {
-		page(c, compact, func() {
-			header(c, tr("编辑"), "", nil)
-			card(c).Padding(14).Gap(10).Children(scripts)
-			card(c).Padding(16).Gap(gapItem).Children(form)
-			card(c).Padding(16).Gap(10).Children(preview)
-		})
+		a.phoneEditor(c, preview)
 		return
 	}
 	if !wide {

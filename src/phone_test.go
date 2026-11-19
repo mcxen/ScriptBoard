@@ -21,8 +21,11 @@ func TestPhoneLayout(t *testing.T) {
 	savePNG(t, tt, "4-phone-home")
 
 	click(t, tt, "编辑")
-	requireText(t, tt, "体重 · kg")
+	requireText(t, tt, "脚本与数据表") // the list comes first
 	savePNG(t, tt, "4-phone-editor")
+	click(t, tt, "体重记录")
+	click(t, tt, "预览")
+	requireText(t, tt, "体重 · kg")
 
 	click(t, tt, "社区")
 	requireText(t, tt, "登录后可以上传脚本（下载不需要登录）")

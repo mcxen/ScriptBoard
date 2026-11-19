@@ -86,6 +86,9 @@ func (a *app) importScript(text, origin, communityID string) error {
 	a.editorID = ""
 	a.openEditor(sc.ID)
 	a.status = tr("已导入")
+	if a.compact {
+		a.router.Push("/edit/" + sc.ID)
+	}
 	return nil
 }
 
