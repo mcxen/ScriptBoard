@@ -82,7 +82,7 @@ export function render(ctx) {
     lines: note ? [note] : [],
     chart: {
       type: "line",
-      series: [{ name: "USD/CNY", color: "#81C784", points: v }],
+      series: [{ name: "USD/CNY", color: "#10B981", points: v }],
       labels: data.dates,
       xLabels: [String(data.dates[0]), String(data.dates[data.dates.length - 1])],
     },

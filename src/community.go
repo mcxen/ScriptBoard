@@ -204,12 +204,13 @@ func (a *app) community(c *ui.Context, compact bool) {
 				})
 			})
 			if a.set.Token == "" {
-				ui.Row(c).Gap(gapItem).Wrap().Children(func() {
+				// Fields of a form are one width, as wide as the form allows.
+				ui.Column(c).Gap(gapItem).MaxWidth(formMaxW).Children(func() {
 					field(c, tr("用户名"), "", func() {
-						textInput(c, &a.authUser, tr("3 到 20 位字母、数字或下划线")).Width(250)
+						textInput(c, &a.authUser, tr("3 到 20 位字母、数字或下划线"))
 					})
 					field(c, tr("密码"), "", func() {
-						passwordInput(c, &a.authPass, tr("至少 8 位")).Width(250)
+						passwordInput(c, &a.authPass, tr("至少 8 位"))
 					})
 				})
 				ui.Row(c).Gap(8).Children(func() {
@@ -221,8 +222,10 @@ func (a *app) community(c *ui.Context, compact bool) {
 					}
 				})
 			} else {
-				field(c, tr("简介"), "", func() {
-					textInput(c, &a.uploadDesc, tr("一句话说明这个脚本做什么（可选）")).Width(360)
+				ui.Column(c).MaxWidth(formMaxW).Children(func() {
+					field(c, tr("简介"), "", func() {
+						textInput(c, &a.uploadDesc, tr("一句话说明这个脚本做什么（可选）"))
+					})
 				})
 				ui.Row(c).Gap(8).Children(func() {
 					if primaryBtn(c, tr("上传编辑中的脚本")).Clicked() {
@@ -240,7 +243,7 @@ func (a *app) community(c *ui.Context, compact bool) {
 
 		// The scripts.
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, tr("已通过审核的脚本")).FontSize(fsHeading).Bold()
+			sectionTitle(c, tr("已通过审核的脚本"))
 			if a.comm.loading {
 				ui.Text(c, tr("加载中…")).FontSize(fsSmall).TextColor(p.muted)
 			}

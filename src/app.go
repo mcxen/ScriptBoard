@@ -559,16 +559,41 @@ func (a *app) ensureBuiltins() error {
 	return nil
 }
 
-// refreshBuiltin is true when a stored builtin is the old gold script (hand
-// records, no Tmini) or the old gold K-line (sample candles).
+// refreshBuiltin is true when a stored builtin is an old version of the one
+// that ships, and was never edited: the old gold script (hand records, no
+// Tmini), the old gold K-line (sample candles), or a script with the chart
+// colors of before the palette was refined.
 func refreshBuiltin(id, source string) bool {
 	switch id {
 	case "gold":
-		return !strings.Contains(source, "tmini.net/api/gold-price")
+		if !strings.Contains(source, "tmini.net/api/gold-price") {
+			return true
+		}
 	case "goldk":
-		return strings.Contains(source, "示例数据：还没有金价录入")
+		if strings.Contains(source, "示例数据：还没有金价录入") {
+			return true
+		}
+	}
+	for _, b := range engine.Builtins() {
+		if b.ID == id {
+			old := legacyColors(b.Source)
+			return old != b.Source && source == old
+		}
 	}
 	return false
+}
+
+// legacyColors writes a built-in script with the pastel chart colors it had
+// before 0.1.3, to tell a stored copy that is just the old version from one the
+// user changed.
+func legacyColors(src string) string {
+	for _, c := range [][2]string{
+		{"#3B82F6", "#4FC3F7"}, {"#F97316", "#FF8A65"}, {"#10B981", "#81C784"},
+		{"#EAB308", "#FFD54F"}, {"#F59E0B", "#FFB74D"}, {"#8B5CF6", "#BA68C8"},
+	} {
+		src = strings.ReplaceAll(src, c[0], c[1])
+	}
+	return src
 }
 
 // builtinIDs are the ids of the scripts that ship with the app.

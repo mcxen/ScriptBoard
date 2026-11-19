@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/action"
+	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/spec"
@@ -31,6 +34,15 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 
 	page(c, compact, func() {
 		subheader(c, a, tr(sc.Name), st.res.Title, func() {
+			if compact {
+				// A phone has room for icons, not for a row of buttons; 大图 gives
+				// the chart the window's height, which a phone has none to spare.
+				a.refreshButton(c, sc)
+				if action.ActionIcon(c, icon("pencil-line"), action.ActionIconProps{Size: theme.Small, Title: tr("编辑")}).Clicked() {
+					a.router.Push("/edit/" + sc.ID)
+				}
+				return
+			}
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 				if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
 					a.big = !a.big
@@ -91,7 +103,11 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				if !isGaugeOrBars(res.Chart) {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
-						if choose(c, &cur, labels...) {
+						pick := choose
+						if compact && len(labels) > 3 {
+							pick = dropdown
+						}
+						if pick(c, &cur, labels...) {
 							a.styles[sc.ID] = opts[cur].key
 						}
 					})

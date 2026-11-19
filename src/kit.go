@@ -27,6 +27,7 @@ const (
 	gapSection = 20 // between the blocks of a page
 	gapItem    = 12 // between items inside a block
 	radCard    = 14
+	formMaxW   = 440 // the widest a form of fields grows
 	radControl = 8
 )
 
@@ -111,6 +112,27 @@ func sw(c *ui.Context, on *bool) ui.Element {
 	return choice.Switch(c, on, choice.SwitchProps{})
 }
 
+// dropdown is a select that shows the chosen label and opens the others below
+// it: for a long list of choices, which a row of segments cannot hold on a
+// phone. It reports whether the choice changed.
+func dropdown(c *ui.Context, sel *int, labels ...string) bool {
+	if isMac() {
+		return choose(c, sel, labels...)
+	}
+	opts := make([]lfield.SelectOption, len(labels))
+	for i, l := range labels {
+		opts[i] = lfield.SelectOption{Value: strconv.Itoa(i), Label: l}
+	}
+	v := strconv.Itoa(*sel)
+	lfield.Select(c, &v, lfield.SelectProps{Options: opts, Size: theme.Small})
+	n, err := strconv.Atoi(v)
+	if err != nil || n == *sel {
+		return false
+	}
+	*sel = n
+	return true
+}
+
 func slider(c *ui.Context, v *float64, lo, hi float64) ui.Element {
 	return choice.Slider(c, v, choice.SliderProps{Min: lo, Max: hi})
 }
@@ -161,14 +183,37 @@ func page(c *ui.Context, compact bool, body func()) ui.Element {
 // header is the top of a page: a title with a line of context under it, and
 // the page's actions at the right.
 func header(c *ui.Context, title, subtitle string, actions func()) {
+	pageHead(c, nil, fsTitle, title, subtitle, actions)
+}
+
+// subheader is a page header with a back button, for pages inside a page.
+func subheader(c *ui.Context, a *app, title, subtitle string, actions func()) {
+	pageHead(c, a, fsSubtitle, title, subtitle, actions)
+}
+
+// pageHead draws both: the back button when a is given, and the title in the
+// size it is passed.
+func pageHead(c *ui.Context, a *app, titleSize float32, title, subtitle string, actions func()) {
 	if isMac() {
-		macHeader(c, title, subtitle, actions)
+		if a == nil {
+			macHeader(c, title, subtitle, actions)
+			return
+		}
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.BackButton(c, a.router)
+			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+				macHeader(c, title, subtitle, actions)
+			})
+		})
 		return
 	}
 	p := pal(c)
 	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
+		if a != nil {
+			ui.BackButton(c, a.router)
+		}
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(fsTitle).FontWeight(650)
+			ui.Text(c, title).FontSize(titleSize).FontWeight(650)
 			if subtitle != "" {
 				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
 			}
@@ -180,30 +225,16 @@ func header(c *ui.Context, title, subtitle string, actions func()) {
 	})
 }
 
-// subheader is a page header with a back button, for pages inside a page.
-func subheader(c *ui.Context, a *app, title, subtitle string, actions func()) {
-	if isMac() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.BackButton(c, a.router)
-			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-				macHeader(c, title, subtitle, actions)
-			})
-		})
-		return
-	}
-	p := pal(c)
-	ui.Row(c).AlignItems(ui.Center).Gap(gapItem).Wrap().Children(func() {
-		ui.BackButton(c, a.router)
-		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(fsSubtitle).FontWeight(650)
-			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
-			}
-		})
-		ui.Spacer(c)
-		if actions != nil {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(actions)
-		}
+// sectionTitle is the heading of a block on a page, such as "预览".
+func sectionTitle(c *ui.Context, text string) ui.Element {
+	return ui.Text(c, text).FontSize(fsHeading).FontWeight(650)
+}
+
+// homeSwitch is the switch that puts a script or table on the home page.
+func homeSwitch(c *ui.Context, on *bool) {
+	ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+		ui.Text(c, tr("显示在首页")).FontSize(fsBody).Grow(1)
+		sw(c, on)
 	})
 }
 
@@ -233,6 +264,9 @@ func field(c *ui.Context, name, note string, control func()) {
 type row struct {
 	title, note string
 	control     func()
+	// stack puts the control under the title on a phone, for a control too wide
+	// to sit beside a line of explanation (a row of segments).
+	stack bool
 }
 
 // group draws a small heading and a soft panel of rows with hairlines between
@@ -245,7 +279,8 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 		} else if title != "" {
 			ui.Text(c, title).FontSize(fsSmall).FontWeight(600).TextColor(p.muted).Padding(0, 4)
 		}
-		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(2, 16)
+		// Settings sit on the same white surface as the cards of the home page.
+		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined}).Padding(2, 16)
 		if isMac() {
 			panel = macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel).Padding(2, 16), false)
 		}
@@ -253,19 +288,27 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 			for i, r := range rows {
 				r := r
 				if i > 0 {
-					ui.Box(c).Height(1).Shrink(0).Background(p.text.Alpha(0.07))
+					ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
 				}
-				ui.Row(c).AlignItems(ui.Center).Gap(16).Padding(11, 0).Children(func() {
+				body := func() {
 					ui.Column(c).Gap(3).Grow(1).MinWidth(0).Children(func() {
 						ui.Text(c, r.title).FontSize(fsBody)
 						if r.note != "" {
 							ui.Text(c, r.note).FontSize(fsSmall).TextColor(p.muted).LineHeight(1.35)
 						}
 					})
-					if r.control != nil {
+					if r.control != nil && !(compact && r.stack) {
 						ui.Row(c).Shrink(0).Gap(8).AlignItems(ui.Center).Children(r.control)
 					}
-				})
+				}
+				if compact && r.stack && r.control != nil {
+					ui.Column(c).Gap(10).Padding(11, 0).Children(func() {
+						ui.Row(c).Children(body)
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(r.control)
+					})
+					continue
+				}
+				ui.Row(c).AlignItems(ui.Center).Gap(16).Padding(11, 0).Children(body)
 			}
 		})
 	})

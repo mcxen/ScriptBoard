@@ -114,20 +114,33 @@ func (a *app) home(c *ui.Context, compact bool) {
 	scripts := a.homeScripts()
 	subtitle := fmt.Sprintf(tr("%d月%d日 %s · %d 个组件"), int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]), len(scripts))
 	page(c, compact, func() {
-		header(c, tr("总览"), subtitle, func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Icon(c, icon("sparkles")).FontSize(15).TextColor(p.muted)
-				if slider(c, &a.set.CardScale, 0.7, 1.6).Width(104).Tooltip(tr("图标与卡片大小 ") + fmtScale(a.scale())).Changed() {
-					a.set.CardScale = float64(a.scale())
-					if err := a.store.SetSettings(a.set); err != nil {
-						a.set = a.store.Settings()
+		// A phone has room for the size switch under the title, not beside it;
+		// the scale slider is for a window with room to scale into.
+		sizeControls := func() {
+			if !compact {
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Icon(c, icon("sparkles")).FontSize(15).TextColor(p.muted)
+					if slider(c, &a.set.CardScale, 0.7, 1.6).Width(104).Tooltip(tr("图标与卡片大小 ") + fmtScale(a.scale())).Changed() {
+						a.set.CardScale = float64(a.scale())
+						if err := a.store.SetSettings(a.set); err != nil {
+							a.set = a.store.Settings()
+						}
 					}
-				}
-			})
+				})
+			}
 			if choose(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
 				a.setAllSizes(a.cardSize)
 			}
-		})
+		}
+		if compact {
+			header(c, tr("总览"), subtitle, nil)
+			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+				label(c, tr("卡片大小"))
+				sizeControls()
+			})
+		} else {
+			header(c, tr("总览"), subtitle, sizeControls)
+		}
 		if len(scripts) == 0 {
 			card(c).Children(func() {
 				empty(c, "layout-grid", tr("还没有组件"), tr("在「编辑」里新建脚本，或到「社区」下载别人写好的。"))

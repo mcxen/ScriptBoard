@@ -62,7 +62,7 @@ export function render(ctx) {
     chart: {
       type: "line",
       series: [
-        { name: t("最高", "High"), color: "#FF8A65", points: days.max },
+        { name: t("最高", "High"), color: "#F97316", points: days.max },
         { name: t("最低", "Low"), color: "#64B5F6", points: days.min },
       ],
       labels: days.time,

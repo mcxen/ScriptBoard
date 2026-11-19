@@ -198,7 +198,7 @@ export function render(ctx) {
       lines: lines,
       chart: {
         type: "line",
-        series: [{ name: t("工行", "ICBC"), color: "#FFD54F", points: pts.map((p) => p.p) }],
+        series: [{ name: t("工行", "ICBC"), color: "#EAB308", points: pts.map((p) => p.p) }],
         labels: labels,
         xLabels: [labels[0], labels[labels.length - 1]],
       },
@@ -224,7 +224,7 @@ export function render(ctx) {
     lines: lines,
     chart: {
       type: "barh",
-      series: [{ name: t("积存金", "Bank gold"), color: "#FFD54F", points: rows.map((r) => r.price) }],
+      series: [{ name: t("积存金", "Bank gold"), color: "#EAB308", points: rows.map((r) => r.price) }],
       labels: rows.map((r) => r.label),
     },
   };

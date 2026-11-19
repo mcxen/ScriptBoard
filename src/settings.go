@@ -33,14 +33,14 @@ func (a *app) settings(c *ui.Context, compact bool) {
 		header(c, tr("设置"), "", nil)
 
 		group(c, tr("外观"), compact,
-			row{title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
+			row{stack: true, title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
 				if choose(c, &a.skinIdx, tr("默认"), "Mac OS 9") {
 					a.set.Skin = skinNames[a.skinIdx]
 					setSkin(a.set.Skin)
 					a.saveSettings()
 				}
 			}},
-			row{title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
+			row{stack: true, title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
 				if choose(c, &a.themeIdx, tr("跟随系统"), tr("浅色"), tr("深色")) {
 					a.set.ThemeMode = themeModes[a.themeIdx]
 					setThemeMode(a.set.ThemeMode)
@@ -56,7 +56,7 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					a.saveSettings()
 				}
 			}},
-			row{title: tr("语言"), control: func() {
+			row{stack: true, title: tr("语言"), control: func() {
 				if choose(c, &a.langIdx, tr("自动"), "中文", "English") {
 					a.set.Lang = []string{"", langZH, langEN}[a.langIdx]
 					setLang(a.set.Lang)

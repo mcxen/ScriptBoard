@@ -5,6 +5,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
+
+	"scriptboard/src/internal/caps"
 )
 
 // navItem is one place the app can go to.
@@ -43,7 +45,17 @@ func (n navItem) active(path string) bool {
 // narrow one, the phone layout, has a bar of tabs under it.
 func (a *app) view(c *ui.Context) {
 	applySkin(c)
-	compact := a.width > 0 && a.width < compactWidth
+	// The page's own size in DIPs, read first so that the very first frame is
+	// laid out for it. (The root's bounds are not the window's on Android, where
+	// they came out as a landscape rectangle.) Before any size is known, a
+	// phone is assumed to be a phone: it must not flash the desktop layout.
+	if w, h := c.Size(); w > 0 {
+		a.width, a.height = float32(w), float32(h)
+	}
+	compact := a.width < compactWidth
+	if a.width == 0 {
+		compact = caps.Platform() == caps.Mobile
+	}
 	a.compact = compact
 
 	root := skinBackground(c, ui.Column(c).Fill())
@@ -105,11 +117,6 @@ func (a *app) view(c *ui.Context) {
 			pages()
 		})
 	})
-	// The page's own size in DIPs. The root's bounds are not the window's on
-	// Android, where they came out as a landscape rectangle.
-	if w, h := c.Size(); w > 0 {
-		a.width, a.height = float32(w), float32(h)
-	}
 }
 
 // sidebar is the brand, the places to go and the state of the network. Like

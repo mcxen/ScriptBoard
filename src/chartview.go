@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/chart"
 
+	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
 )
 
@@ -63,7 +64,7 @@ var (
 )
 
 var seriesPalette = []ui.Color{
-	ui.Hex("#4FC3F7"), ui.Hex("#FF8A65"), ui.Hex("#81C784"), ui.Hex("#FFD54F"),
+	ui.Hex("#3B82F6"), ui.Hex("#F97316"), ui.Hex("#10B981"), ui.Hex("#EAB308"),
 }
 
 // parseColor reads a "#RRGGBB" color from a script, or returns fallback.
@@ -494,12 +495,16 @@ func drawLines(p *ui.Painter, r ui.Rect, lines []seriesLine, fill bool, curve ch
 	}
 }
 
-// drawDots paints one dot per point.
+// drawDots paints one dot per point, with a faint line through them so that
+// a few points still read as a trend.
 func drawDots(p *ui.Painter, r ui.Rect, lines []seriesLine) {
 	for _, ln := range lines {
+		if len(ln.xs) > 1 {
+			p.StrokePath(chart.Line(r, ln.xs, ln.ys, chart.CurveMonotone), 1.5, ln.color.Alpha(0.28))
+		}
 		for j := range ln.xs {
 			x, y := chart.X(r, ln.xs[j]), chart.Y(r, ln.ys[j])
-			p.Fill(ui.Rect{X: x - 3.5, Y: y - 3.5, W: 7, H: 7}, ln.color, 3.5)
+			p.Fill(ui.Rect{X: x - 4, Y: y - 4, W: 8, H: 8}, ln.color, 4)
 		}
 	}
 }
@@ -653,7 +658,11 @@ func readout(ch *engine.Chart, i int) string {
 // one while nothing is chosen.
 func Detail(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
 	i := count(ch) - 1
+	// A touch screen has no hovering: it is a touch on the chart.
 	hint := tr("悬浮图表查看详情")
+	if caps.Platform() == caps.Mobile {
+		hint = tr("点按图表查看详情")
+	}
 	if sel != nil && *sel >= 0 {
 		i = *sel
 		hint = ""

@@ -77,7 +77,7 @@ export function render(ctx) {
     }
     head.chart = {
       type: "line",
-      series: [{ name: "tokens", color: "#4FC3F7", points: daily.map((d) => d.value) }],
+      series: [{ name: "tokens", color: "#3B82F6", points: daily.map((d) => d.value) }],
       labels: daily.map((d) => d.name),
       xLabels: [daily[0].name, daily[daily.length - 1].name],
     };
@@ -93,7 +93,7 @@ export function render(ctx) {
   if (view === 0 && limit === 0) head.lines.push(t("在「设置 → AI 用量」填写额度即可看到剩余量", "Set a budget in Settings → AI usage to see what is left"));
   head.chart = {
     type: "barh",
-    series: [{ name: "tokens", color: "#4FC3F7", points: models.map((m) => m.value) }],
+    series: [{ name: "tokens", color: "#3B82F6", points: models.map((m) => m.value) }],
     labels: models.map((m) => m.name.replace("claude-", "")),
   };
   return head;

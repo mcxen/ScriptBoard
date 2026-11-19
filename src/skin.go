@@ -40,13 +40,25 @@ func setSkin(name string) {
 	skin.Store(skinDefault)
 }
 
-// brandDefault is the app's own look: Lobe's tokens with a blue primary.
+// brandDefault is the app's own look: Lobe's tokens with a calm blue primary
+// and cool neutrals, so that the surfaces, lines and text step down evenly:
+// canvas, card, hairline; text, secondary, tertiary.
 var brandDefault = func() *theme.Config {
 	light, dark := *theme.Light(), *theme.Dark()
 	// The whole primary family is set together, as Lobe's docs advise.
-	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#0559FF"), ui.Hex("#044EE0"), ui.Hex("#0343C2")
-	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#3D7BFF"), ui.Hex("#5C8FFF"), ui.Hex("#2F66E0")
+	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#2563EB"), ui.Hex("#1D4FD8"), ui.Hex("#1E40AF")
+	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#5B8CFF"), ui.Hex("#7BA3FF"), ui.Hex("#4A78E8")
 	light.PrimaryForeground, dark.PrimaryForeground = light.TextLightSolid, dark.TextLightSolid
+
+	light.BgLayout, light.BgContainer = ui.Hex("#F4F5F8"), ui.Hex("#FFFFFF")
+	light.BorderSecondary, light.Border = ui.Hex("#E7E9EF"), ui.Hex("#D9DCE4")
+	light.Text, light.TextSecondary, light.TextTertiary = ui.Hex("#151922"), ui.Hex("#596071"), ui.Hex("#8B92A1")
+	light.FillTertiary, light.FillQuaternary = ui.Hex("#EDEFF4"), ui.Hex("#F3F4F8")
+
+	dark.BgLayout, dark.BgContainer = ui.Hex("#0D0F14"), ui.Hex("#161920")
+	dark.BorderSecondary, dark.Border = ui.Hex("#252932"), ui.Hex("#333845")
+	dark.Text, dark.TextSecondary, dark.TextTertiary = ui.Hex("#ECEEF4"), ui.Hex("#A3AAB8"), ui.Hex("#6E7586")
+	dark.FillTertiary, dark.FillQuaternary = ui.Hex("#232731"), ui.Hex("#1B1E26")
 	return theme.NewConfig(light, dark)
 }()
 
@@ -168,8 +180,10 @@ func setTypeScale(mac bool) {
 		fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 12, 12, 12, 24
 		return
 	}
-	fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 22, 15, 13.5, 12, 11
-	fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 13, 14, 20, 17, 14.5, 20
+	// One scale: 11 / 12 / 14 / 16 / 20 / 24. Names that mean the same size
+	// share the value, so that the same kind of text is the same everywhere.
+	fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 24, 16, 14, 12, 11
+	fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 20, 16, 14, 20
 }
 
 func init() { setTypeScale(false) }

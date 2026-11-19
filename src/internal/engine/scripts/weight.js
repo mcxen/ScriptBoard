@@ -90,7 +90,7 @@ export function render(ctx) {
     lines: [EN ? `${pts.length} in range · ${all.length} records in all` : `范围内 ${pts.length} 次 · 共 ${all.length} 次记录`],
     chart: {
       type: "dot",
-      series: [{ name: t("体重", "Weight"), color: "#4FC3F7", points: v }],
+      series: [{ name: t("体重", "Weight"), color: "#3B82F6", points: v }],
       labels: labels,
       xLabels: [mmdd(dayIndex(recent[0].t, off)), mmdd(dayIndex(recent[recent.length - 1].t, off))],
     },

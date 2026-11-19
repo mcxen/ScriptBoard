@@ -120,7 +120,7 @@ export function render(ctx) {
     lines: lines,
     chart: {
       type: "barh",
-      series: [{ name: t("金价", "Gold"), color: "#FFD54F", points: rows.map((r) => r.v) }],
+      series: [{ name: t("金价", "Gold"), color: "#EAB308", points: rows.map((r) => r.v) }],
       labels: rows.map((r) => r.name),
     },
   };

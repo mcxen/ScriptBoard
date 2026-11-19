@@ -102,27 +102,42 @@ func (a *app) statTiles(c *ui.Context, st stats) {
 	if a.compact {
 		cols = 2
 	}
-	const gap = 12
-	w := (a.contentW() - gap*float32(cols-1)) / float32(cols)
-	tile := func(name, value, sub string, color ui.Color) {
-		card(c).Width(w).Padding(14).Gap(3).Children(func() {
-			ui.Text(c, name).FontSize(fsTiny).TextColor(p.muted)
-			ui.Text(c, value).FontSize(19).Bold().TextColor(color).NoWrap()
-			ui.Text(c, sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-		})
-	}
 	trend := p.text
 	if st.change > 0 {
 		trend = p.up
 	} else if st.change < 0 {
 		trend = p.down
 	}
+	a.tileRow(c, cols, []tileData{
+		{tr("最新"), fmt.Sprintf("%.*f", prec, st.last), st.lastLabel, p.text},
+		{tr("涨跌"), fmt.Sprintf("%+.*f", prec, st.change), fmt.Sprintf(tr("%+.2f%% · 自 %s"), st.pct, st.firstLabel), trend},
+		{tr("最高"), fmt.Sprintf("%.*f", prec, st.max), st.maxLabel, p.text},
+		{tr("最低"), fmt.Sprintf("%.*f", prec, st.min), st.minLabel, p.text},
+		{tr("平均"), fmt.Sprintf("%.*f", prec, st.avg), fmt.Sprintf(tr("共 %d 个点"), st.count), p.text},
+		{tr("振幅"), fmt.Sprintf("%.*f", prec, st.max-st.min), tr("最高减最低"), p.text},
+	})
+}
+
+// tileData is one tile of a row of statistics: a name, its value, a line under
+// it, and the color of the value.
+type tileData struct {
+	name, value, sub string
+	color            ui.Color
+}
+
+// tileRow draws tiles of equal width, cols across, wrapping to more rows. The
+// statistics of a line chart and those of a gauge or bars are drawn by it.
+func (a *app) tileRow(c *ui.Context, cols int, tiles []tileData) {
+	p := pal(c)
+	const gap = 12
+	w := (a.contentW() - gap*float32(cols-1)) / float32(cols)
 	ui.Row(c).Wrap().Gap(gap).Children(func() {
-		tile(tr("最新"), fmt.Sprintf("%.*f", prec, st.last), st.lastLabel, p.text)
-		tile(tr("涨跌"), fmt.Sprintf("%+.*f", prec, st.change), fmt.Sprintf(tr("%+.2f%% · 自 %s"), st.pct, st.firstLabel), trend)
-		tile(tr("最高"), fmt.Sprintf("%.*f", prec, st.max), st.maxLabel, p.text)
-		tile(tr("最低"), fmt.Sprintf("%.*f", prec, st.min), st.minLabel, p.text)
-		tile(tr("平均"), fmt.Sprintf("%.*f", prec, st.avg), fmt.Sprintf(tr("共 %d 个点"), st.count), p.text)
-		tile(tr("振幅"), fmt.Sprintf("%.*f", prec, st.max-st.min), tr("最高减最低"), p.text)
+		for _, t := range tiles {
+			card(c).Width(w).Padding(14).Gap(3).Children(func() {
+				ui.Text(c, t.name).FontSize(fsTiny).TextColor(p.muted)
+				ui.Text(c, t.value).FontSize(fsCount).FontWeight(650).TextColor(t.color).NoWrap()
+				ui.Text(c, t.sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			})
+		}
 	})
 }

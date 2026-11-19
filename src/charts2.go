@@ -152,47 +152,41 @@ func (a *app) kindTiles(c *ui.Context, ch *engine.Chart) bool {
 		return false
 	}
 	p := pal(c)
-	const gap = 12
 	cols := 4
 	if a.compact {
 		cols = 2
 	}
-	w := (a.contentW() - gap*float32(cols-1)) / float32(cols)
-	tile := func(name, value, sub string, color ui.Color) {
-		card(c).Width(w).Padding(14).Gap(3).Children(func() {
-			ui.Text(c, name).FontSize(fsTiny).TextColor(p.muted)
-			ui.Text(c, value).FontSize(19).FontWeight(650).TextColor(color).NoWrap()
-			ui.Text(c, sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-		})
+	var tiles []tileData
+	switch {
+	case ch.Type == "gauge" && ch.Gauge != nil:
+		g := ch.Gauge
+		left, frac := remaining(g)
+		tiles = []tileData{
+			{tr("剩余"), formatAmount(left) + " " + g.Unit, fmt.Sprintf("%.1f%%", frac*100), gaugeColor(p, frac)},
+			{tr("已用"), formatAmount(g.Used) + " " + g.Unit, fmt.Sprintf("%.1f%%", 100-frac*100), p.text},
+			{tr("上限"), formatAmount(g.Limit) + " " + g.Unit, g.Label, p.text},
+		}
+		if g.Reset != "" {
+			tiles = append(tiles, tileData{tr("重置"), g.Reset, "", p.text})
+		}
+	case len(ch.Series) > 0:
+		sum, top, topI := 0.0, math.Inf(-1), 0
+		for i, v := range ch.Series[0].Points {
+			sum += v
+			if v > top {
+				top, topI = v, i
+			}
+		}
+		topName := ""
+		if topI < len(ch.Labels) {
+			topName = ch.Labels[topI]
+		}
+		tiles = []tileData{
+			{tr("合计"), formatAmount(sum), fmt.Sprintf(tr("%d 项"), len(ch.Series[0].Points)), p.text},
+			{tr("最大项"), formatAmount(top), topName, p.text},
+		}
 	}
-	ui.Row(c).Wrap().Gap(gap).Children(func() {
-		if ch.Type == "gauge" && ch.Gauge != nil {
-			g := ch.Gauge
-			left, frac := remaining(g)
-			tile(tr("剩余"), formatAmount(left)+" "+g.Unit, fmt.Sprintf("%.1f%%", frac*100), gaugeColor(p, frac))
-			tile(tr("已用"), formatAmount(g.Used)+" "+g.Unit, fmt.Sprintf("%.1f%%", 100-frac*100), p.text)
-			tile(tr("上限"), formatAmount(g.Limit)+" "+g.Unit, g.Label, p.text)
-			if g.Reset != "" {
-				tile(tr("重置"), g.Reset, "", p.text)
-			}
-			return
-		}
-		if len(ch.Series) > 0 {
-			sum, top, topI := 0.0, math.Inf(-1), 0
-			for i, v := range ch.Series[0].Points {
-				sum += v
-				if v > top {
-					top, topI = v, i
-				}
-			}
-			topName := ""
-			if topI < len(ch.Labels) {
-				topName = ch.Labels[topI]
-			}
-			tile(tr("合计"), formatAmount(sum), fmt.Sprintf(tr("%d 项"), len(ch.Series[0].Points)), p.text)
-			tile(tr("最大项"), formatAmount(top), topName, p.text)
-		}
-	})
+	a.tileRow(c, cols, tiles)
 	return true
 }
 

@@ -312,7 +312,7 @@ func (a *app) feedAddForm(c *ui.Context, compact bool) {
 	if compact {
 		w = 300
 	}
-	ui.Text(c, tr("添加数据源")).FontSize(fsHeading).Bold()
+	sectionTitle(c, tr("添加数据源"))
 	card(c).Padding(18).Gap(14).Children(func() {
 		field(c, tr("名称"), "", func() {
 			textInput(c, &f.name, tr("例如 金价实时")).Width(w)

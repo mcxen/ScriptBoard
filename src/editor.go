@@ -196,7 +196,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	draft := func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
-				ui.Text(c, tr("编辑脚本")).FontSize(fsEmphasis).Bold()
+				sectionTitle(c, tr("编辑脚本"))
 				if a.status != "" {
 					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
 				}
@@ -233,10 +233,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		field(c, tr("名称"), "", func() {
 			textInput(c, &a.draft.Name, tr("脚本名称"))
 		})
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			sw(c, &a.draft.Home)
-			ui.Text(c, tr("显示在首页")).FontSize(fsBody)
-		})
+		homeSwitch(c, &a.draft.Home)
 		a.specInfo(c, a.draft)
 		field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
 			textArea(c, &a.draft.Source, "", int(sourceH/17)).Font("monospace").FontSize(fsSmall)
@@ -246,7 +243,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	preview := func() {
 		meta, err := a.metaOf(a.draft)
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, tr("预览")).FontSize(fsHeading).Bold()
+			sectionTitle(c, tr("预览"))
 			ui.Spacer(c)
 		})
 		if err != nil {

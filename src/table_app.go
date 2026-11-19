@@ -32,7 +32,7 @@ const (
 )
 
 // tableColors are the lines of a table's chart.
-var tableColors = []string{"#4FC3F7", "#FFB74D", "#81C784", "#BA68C8"}
+var tableColors = []string{"#3B82F6", "#F59E0B", "#10B981", "#8B5CF6"}
 
 // boundInfo is what a metric-bound table shows: its icon and the label of its
 // value column.
@@ -462,7 +462,7 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, tr("编辑数据表")).FontSize(fsEmphasis).Bold()
+			sectionTitle(c, tr("编辑数据表"))
 			if a.status != "" {
 				ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
 			}
@@ -483,16 +483,10 @@ func (a *app) tableForm(c *ui.Context, compact bool, gridW float32) {
 	})
 	if !bound {
 		field(c, tr("名称"), "", func() { textInput(c, &a.draft.Name, tr("数据表名称")) })
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			sw(c, &a.draft.Home)
-			ui.Text(c, tr("显示在首页")).FontSize(fsBody)
-		})
+		homeSwitch(c, &a.draft.Home)
 	} else {
 		hint(c, fmt.Sprintf(tr("这张表就是「%s」的记录：保存后，首页的卡片和图表都用这里的数据。"), tr(metricName(t.Metric))))
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			sw(c, &a.draft.Home)
-			ui.Text(c, tr("显示在首页")).FontSize(fsBody)
-		})
+		homeSwitch(c, &a.draft.Home)
 	}
 	a.specInfo(c, a.draft)
 

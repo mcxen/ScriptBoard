@@ -151,14 +151,6 @@ func (a *app) phoneScript(c *ui.Context) {
 	a.transferPanel(c)
 }
 
-// homeSwitch is the switch that puts a script or table on the home page.
-func homeSwitch(c *ui.Context, on *bool) {
-	ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-		ui.Text(c, tr("显示在首页")).FontSize(fsBody).Grow(1)
-		sw(c, on)
-	})
-}
-
 // deleteButton is Delete, which asks for a second click, when the draft can be
 // deleted.
 func (a *app) deleteButton(c *ui.Context) {
