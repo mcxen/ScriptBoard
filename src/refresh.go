@@ -35,6 +35,7 @@ func (a *app) refreshScript(sc store.Script) {
 			}
 		}
 		a.post(func() {
+			a.forced[sc.ID] = true
 			delete(a.refreshing, sc.ID)
 			if len(meta.Usage) > 0 {
 				a.usage.mu.Lock()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -66,9 +67,18 @@ func (a *app) settings(c *ui.Context, compact bool) {
 					}
 				}
 			}},
-			row{title: tr("离线模式"), note: tr("不请求网络，卡片显示示例数据"), control: func() {
+			row{title: tr("离线模式"), note: tr("不请求网络，用缓存的数据，没有缓存就显示示例"), control: func() {
 				if toggle(c, &a.set.Offline) {
 					a.saveSettings()
+				}
+			}},
+			row{title: tr("本地缓存"), note: fmt.Sprintf(tr("脚本请求过的数据、历史和上次的结果，保存在本机，离线时也能打开；占用 %s"), a.cacheSize()), control: func() {
+				if btn(c, tr("清除缓存")).Clicked() {
+					if err := a.clearCache(); err != nil {
+						a.status = err.Error()
+					} else {
+						a.status = tr("已清除")
+					}
 				}
 			}},
 			row{title: tr("数据文件"), note: a.store.Path()},

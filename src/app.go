@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/cache"
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/feed"
@@ -26,6 +27,11 @@ type app struct {
 	router  *ui.Router
 	store   *store.Store
 	dataDir string // the folder of data.json; plugins and icons live under it
+	// cache keeps the responses of the sources, their history and the last
+	// result of each card, for offline use and for opening quickly.
+	cache *cache.Store
+	// forced holds the scripts whose next run must ask the network again.
+	forced map[string]bool
 	// pluginNote says what could not be loaded from the plugin folder.
 	pluginNote string
 	client     *http.Client
@@ -107,8 +113,13 @@ type app struct {
 
 type runState struct {
 	loading bool
-	res     engine.Result
-	err     error
+	// old: res is the result saved from an earlier run, shown until the
+	// run that is under way gives a new one.
+	old bool
+	// updating: the run that gives the new result has not finished.
+	updating bool
+	res      engine.Result
+	err      error
 }
 
 type metaEntry struct {
@@ -160,6 +171,8 @@ func newApp(dir string, offline bool) (*app, error) {
 		cardSize:   1, // medium cards to start with
 	}
 	a.dataDir = filepath.Dir(st.Path())
+	a.cache = cache.Open(filepath.Join(a.dataDir, "cache"))
+	a.forced = map[string]bool{}
 	a.samples = feed.NewStore(filepath.Join(a.dataDir, "feeds"))
 	a.runner = feed.NewRunner(feed.Mux{
 		HTTP:      feed.HTTPFetcher{Client: a.client},
@@ -318,19 +331,39 @@ func (a *app) selOf(key string) *int {
 }
 
 // ensure returns the run under key for sc, starting one if there is none yet.
+// A script that reads the network shows its last result at once, then the new
+// one when the run is done; if the run fails, the last result stays, marked as
+// old.
 func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runState {
 	if st, ok := a.runs[key]; ok {
 		return st
 	}
 	st := &runState{loading: true}
 	a.runs[key] = st
+	force := a.forced[sc.ID]
+	delete(a.forced, sc.ID)
+	meta, _ := a.metaOf(sc)
+	if !force {
+		if res, ok := a.savedResult(sc, key, meta); ok {
+			st.loading, st.old, st.updating, st.res = false, true, true, res
+		}
+	}
+	saved := st.res
 	run := func() {
-		res, err := a.execute(sc, vals)
+		res, err := a.executeOpt(sc, vals, force)
+		if err == nil {
+			a.saveResult(sc, key, meta, res)
+		}
 		a.post(func() {
 			if a.runs[key] != st {
 				return // superseded by a newer run
 			}
-			st.loading = false
+			st.loading, st.updating = false, false
+			if err != nil && st.old {
+				st.res, st.res.Stale = saved, true
+				return
+			}
+			st.old = false
 			st.res = res
 			st.err = err
 		})
@@ -399,6 +432,12 @@ func (a *app) invalidateAll() { a.runs = map[string]*runState{} }
 // execute compiles sc, fetches its sources and renders it with the values
 // of its dimensions. It does not touch the UI, so it may run on any goroutine.
 func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, error) {
+	return a.executeOpt(sc, vals, false)
+}
+
+// executeOpt is execute; force asks the network for every source, whatever the
+// cache holds (the user pressed refresh).
+func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (engine.Result, error) {
 	// The system first, then the user's permission: a script that cannot run
 	// here, or that uses what it was not allowed, does not start.
 	if r := a.specOf(sc); !r.SupportsOS(caps.OS()) {
@@ -414,11 +453,16 @@ func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, 
 	now := a.now()
 	_, tz := now.Zone()
 	set := a.store.Settings()
-	sources := engine.Offline(s.Meta.Sources)
-	if !set.Offline {
-		sources = engine.Fetch(context.Background(), a.client, s.Meta.Sources, now)
+	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force}
+	if a.cache != nil {
+		opt.Cache = cacheAdapter{a.cache}
 	}
-	return s.Run(context.Background(), engine.Input{
+	sources, info := engine.FetchCached(context.Background(), a.client, s.Meta.Sources, now, opt)
+	var history map[string][]engine.HistoryPoint
+	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
+		history = engine.HistoryOf(opt.Cache, s.Meta.Sources, names, n, now)
+	}
+	res, err := s.Run(context.Background(), engine.Input{
 		Now:      now,
 		Lang:     curLang(),
 		TZOffset: tz,
@@ -433,8 +477,14 @@ func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, 
 			"weightUnit": set.WeightUnit,
 			"offline":    set.Offline,
 		},
-		Sources: sources,
+		Sources:    sources,
+		SourceInfo: info,
+		History:    history,
 	})
+	if err == nil {
+		res.DataAt, res.Stale = dataTimes(info)
+	}
+	return res, err
 }
 
 // saveSettings writes the working copy and drops every run, since the

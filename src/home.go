@@ -248,6 +248,9 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 		default:
 			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			if size > 0 {
+				a.freshness(c, st, size)
+			}
 			switch size {
 			case 1:
 				ui.Spacer(c)

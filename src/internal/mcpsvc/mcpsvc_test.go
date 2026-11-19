@@ -233,6 +233,7 @@ func TestGuideSaysWhatTheHostAccepts(t *testing.T) {
 	for _, want := range []string{
 		`platforms: ["windows"]`,      // a one-system script is not offered elsewhere
 		"ctx.platform", "ctx.granted", // what the host gives
+		"ctx.sourceInfo", "ctx.history", "Caching and offline belong to the host",
 		"allows it in the editor", // the permission rule
 		"System differences belong to the host",
 		"script_check", "plugin_save",

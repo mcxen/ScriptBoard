@@ -60,6 +60,12 @@ type Meta struct {
 	// Sources maps a name to a URL. {start} and {end} expand to the dates of
 	// the last 30 days, as yyyy-mm-dd.
 	Sources map[string]string `json:"sources"`
+	// History names the sources whose past responses the script wants, as
+	// ctx.history[name]: the host keeps them on disk, so a script can draw a
+	// curve from an API that only says what the price is now.
+	History []string `json:"history"`
+	// HistoryLimit is how many of the newest it wants; 0 is 120.
+	HistoryLimit int `json:"historyLimit"`
 }
 
 // ManualInput is a value typed in by hand.
@@ -193,6 +199,11 @@ type Result struct {
 	Lines []string `json:"lines"`
 	Chart *Chart   `json:"chart"`
 	Logs  []string `json:"-"`
+	// DataAt and Stale are filled by the host, not the script: when the oldest
+	// data behind the result was fetched (Unix milliseconds), and whether any
+	// of it came from the cache because a request failed or the app is offline.
+	DataAt int64 `json:"dataAt"`
+	Stale  bool  `json:"stale"`
 }
 
 // FeedBuckets is the samples of one data source grouped by hour or by day.
@@ -244,6 +255,11 @@ type Input struct {
 	Metrics  map[string][]Point
 	Settings map[string]any
 	Sources  map[string]json.RawMessage
+	// SourceInfo says where each source's data came from (ctx.sourceInfo), and
+	// History holds the past responses of the sources the script asked for
+	// (ctx.history).
+	SourceInfo map[string]SourceInfo
+	History    map[string][]HistoryPoint
 }
 
 // Script is a compiled script. Runs share the compiled module but each gets a
@@ -285,17 +301,19 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, RunTimeout)
 	defer cancel()
 	arg, err := json.Marshal(map[string]any{
-		"now":      in.Now.UnixMilli(),
-		"lang":     langOr(in.Lang),
-		"platform": map[string]string{"os": in.OS, "kind": in.Kind},
-		"granted":  grantedSet(in.Granted),
-		"tzOffset": in.TZOffset,
-		"view":     nonNilView(in.View),
-		"feeds":    nonNilFeeds(in.Feeds),
-		"usage":    nonNilUsage(in.Usage),
-		"metrics":  nonNilMetrics(in.Metrics),
-		"settings": nonNilSettings(in.Settings),
-		"sources":  nonNilSources(in.Sources),
+		"now":        in.Now.UnixMilli(),
+		"lang":       langOr(in.Lang),
+		"platform":   map[string]string{"os": in.OS, "kind": in.Kind},
+		"granted":    grantedSet(in.Granted),
+		"tzOffset":   in.TZOffset,
+		"view":       nonNilView(in.View),
+		"feeds":      nonNilFeeds(in.Feeds),
+		"usage":      nonNilUsage(in.Usage),
+		"metrics":    nonNilMetrics(in.Metrics),
+		"settings":   nonNilSettings(in.Settings),
+		"sources":    nonNilSources(in.Sources),
+		"sourceInfo": nonNilInfo(in.SourceInfo),
+		"history":    nonNilHistory(in.History),
 	})
 	if err != nil {
 		return Result{}, err
@@ -416,4 +434,18 @@ func grantedSet(list []string) map[string]bool {
 		out[n] = true
 	}
 	return out
+}
+
+func nonNilInfo(m map[string]SourceInfo) map[string]SourceInfo {
+	if m == nil {
+		return map[string]SourceInfo{}
+	}
+	return m
+}
+
+func nonNilHistory(m map[string][]HistoryPoint) map[string][]HistoryPoint {
+	if m == nil {
+		return map[string][]HistoryPoint{}
+	}
+	return m
 }

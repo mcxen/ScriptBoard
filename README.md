@@ -352,7 +352,9 @@ export function meta() {
 
 **在当前系统上不能用的脚本**：首页不显示它的卡片，运行时说明原因（「这个组件只能在这些系统上使用：Windows」「这个组件只能在电脑上使用：它要读电脑上的文件」）。
 
-**平台提供接口，脚本不处理系统差异。** 脚本不自己开文件、起程序或发请求，只在 `meta()` 里说要什么，宿主去做，再通过 `ctx` 交给 `render`：`ctx.sources`（联网取数）、`ctx.feeds`（curl、tcp、文件、exec 数据源）、`ctx.usage`（AI 用量）、`ctx.metrics`（用户录入的值）、`ctx.platform`（`{os, kind}`）、`ctx.granted`（允许它用的敏感能力）。Claude Code 的日志在 Windows、macOS、Linux 上各在哪、`CLAUDE_CONFIG_DIR` 怎么设，都是宿主的事，脚本只读 `ctx.usage["claude-code"]`。
+**缓存、历史和离线也是宿主的事。** `sources` 的每个响应都存在本机：一分钟内的直接用，请求失败就用上一次的（`ctx.sourceInfo[name].stale`），离线模式不发请求、只读缓存；卡片打开时先显示上次的结果，再在后台更新，刷新按钮则一定重新请求。`meta()` 里写 `history: ["名字"]`（可加 `historyLimit`，默认 120）就能在 `ctx.history[名字]` 拿到这个来源过去的响应 `[{t, v}]`，用来画接口只给最新值的数据。设置里能看到缓存占用并清除。
+
+**平台提供接口，脚本不处理系统差异。** 脚本不自己开文件、起程序或发请求，只在 `meta()` 里说要什么，宿主去做，再通过 `ctx` 交给 `render`：`ctx.sources`（联网取数，带本地缓存）、`ctx.sourceInfo`（数据是新取的还是缓存的）、`ctx.history`（`meta.history` 里要的历史响应）、`ctx.feeds`（curl、tcp、文件、exec 数据源）、`ctx.usage`（AI 用量）、`ctx.metrics`（用户录入的值）、`ctx.platform`（`{os, kind}`）、`ctx.granted`（允许它用的敏感能力）。Claude Code 的日志在 Windows、macOS、Linux 上各在哪、`CLAUDE_CONFIG_DIR` 怎么设，都是宿主的事，脚本只读 `ctx.usage["claude-code"]`。
 
 **权限。** `files`、`exec`、`key` 是敏感能力：不是内置的脚本（社区的、本地插件、自建的），要用它们必须由用户在编辑页的说明块里「授权」，一个脚本、一项能力一授权，可以随时「撤销」。没授权就不运行，卡片上写明缺哪一项。读文件或运行程序的数据源（`file://`、`exec:`）也算：读它的脚本同样要授权，没声明也一样。内置脚本在源码和发布时一致的情况下默认受信任，改过之后就和别的脚本一样了。
 

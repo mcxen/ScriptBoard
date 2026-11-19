@@ -95,3 +95,146 @@ func errorJSON(err error) json.RawMessage {
 	b, _ := json.Marshal(map[string]string{"error": err.Error()})
 	return b
 }
+
+// SourceCache is the cache the host keeps of sources' responses: the latest of
+// each URL, and a history of them.
+type SourceCache interface {
+	Get(url string) (CachedBody, bool)
+	Put(url string, body []byte, at time.Time)
+	History(url string, limit int) []CachedBody
+}
+
+// CachedBody is a response, and when it was fetched.
+type CachedBody struct {
+	At   time.Time
+	Body []byte
+}
+
+// SourceInfo says where a source's data came from, so that a script can show
+// that it is old: ctx.sourceInfo[name].
+type SourceInfo struct {
+	// At is when the data was fetched, in Unix milliseconds.
+	At int64 `json:"t"`
+	// Cached: the data is from the cache, not from a request made now.
+	Cached bool `json:"cached"`
+	// Stale: the cache stood in for a request that failed or was not allowed
+	// (offline mode), so the data may be old.
+	Stale bool `json:"stale"`
+	// Error is why the request failed or was not made.
+	Error string `json:"error,omitempty"`
+}
+
+// HistoryPoint is one response a source gave, and when: ctx.history[name].
+type HistoryPoint struct {
+	T int64           `json:"t"`
+	V json.RawMessage `json:"v"`
+}
+
+// FetchOptions say how sources are loaded.
+type FetchOptions struct {
+	// Cache keeps the responses; nil is no cache.
+	Cache SourceCache
+	// TTL: a cached response younger than this is used without a request, so
+	// that opening a card again does not ask the network again. 0 always asks.
+	TTL time.Duration
+	// Offline: no request is made; the cache answers, or the source has an error.
+	Offline bool
+	// Force asks the network whatever the TTL: the user pressed refresh.
+	Force bool
+}
+
+// FetchCached loads every source at the same time, through the cache. For each:
+//
+//   - offline, the cached response, or an error when there is none;
+//   - a cached response younger than the TTL, as it is;
+//   - otherwise a request, cached when it works; when it fails, the cached
+//     response if there is one, marked stale, and the error if not.
+//
+// A source that fails with nothing cached becomes {"error": "..."}, as in Fetch.
+func FetchCached(ctx context.Context, client *http.Client, sources map[string]string, now time.Time, opt FetchOptions) (map[string]json.RawMessage, map[string]SourceInfo) {
+	names := make([]string, 0, len(sources))
+	urls := make([]string, 0, len(sources))
+	for name, tmpl := range sources {
+		names = append(names, name)
+		urls = append(urls, Expand(tmpl, now))
+	}
+	raw := make([]json.RawMessage, len(names))
+	info := make([]SourceInfo, len(names))
+	var wg sync.WaitGroup
+	for i := range names {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			raw[i], info[i] = fetchOne(ctx, client, urls[i], now, opt)
+		}(i)
+	}
+	wg.Wait()
+	bodies := make(map[string]json.RawMessage, len(names))
+	infos := make(map[string]SourceInfo, len(names))
+	for i, name := range names {
+		bodies[name], infos[name] = raw[i], info[i]
+	}
+	return bodies, infos
+}
+
+func fetchOne(ctx context.Context, client *http.Client, url string, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
+	var cached CachedBody
+	var have bool
+	if opt.Cache != nil {
+		cached, have = opt.Cache.Get(url)
+	}
+	fromCache := func(stale bool, why error) (json.RawMessage, SourceInfo) {
+		in := SourceInfo{At: cached.At.UnixMilli(), Cached: true, Stale: stale}
+		if why != nil {
+			in.Error = why.Error()
+		}
+		return cached.Body, in
+	}
+	if opt.Offline {
+		if have {
+			return fromCache(true, errors.New("offline mode"))
+		}
+		err := errors.New("offline mode: nothing cached")
+		return errorJSON(err), SourceInfo{Error: err.Error()}
+	}
+	if have && !opt.Force && opt.TTL > 0 && now.Sub(cached.At) < opt.TTL {
+		return fromCache(false, nil)
+	}
+	body, err := get(ctx, client, url)
+	if err == nil && !json.Valid(body) {
+		err = errors.New("response is not JSON")
+	}
+	if err != nil {
+		if have {
+			return fromCache(true, err)
+		}
+		return errorJSON(err), SourceInfo{Error: err.Error()}
+	}
+	if opt.Cache != nil {
+		opt.Cache.Put(url, body, now)
+	}
+	return body, SourceInfo{At: now.UnixMilli()}
+}
+
+// HistoryOf is the history of the sources a script asked for (the names in
+// want), each as its responses with their times, the oldest first, at most
+// limit of the newest. A name that is not one of the script's sources is
+// ignored.
+func HistoryOf(cache SourceCache, sources map[string]string, want []string, limit int, now time.Time) map[string][]HistoryPoint {
+	out := map[string][]HistoryPoint{}
+	if cache == nil {
+		return out
+	}
+	for _, name := range want {
+		tmpl, ok := sources[name]
+		if !ok {
+			continue
+		}
+		var pts []HistoryPoint
+		for _, e := range cache.History(Expand(tmpl, now), limit) {
+			pts = append(pts, HistoryPoint{T: e.At.UnixMilli(), V: e.Body})
+		}
+		out[name] = pts
+	}
+	return out
+}
