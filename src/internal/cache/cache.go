@@ -256,15 +256,65 @@ func (s *Store) Forget(url string) error {
 	return nil
 }
 
-// ForgetOwner drops every saved result of owner.
+// ForgetOwner drops every saved result and picture of owner.
 func (s *Store) ForgetOwner(owner string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if owner == "" {
 		return nil
 	}
-	return os.RemoveAll(filepath.Join(s.dir, "res", name(owner)))
+	if err := os.RemoveAll(filepath.Join(s.dir, "res", name(owner))); err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(s.dir, "img", name(owner)))
 }
+
+// blobPath is where the picture under key of owner is kept.
+func (s *Store) blobPath(owner, key string) string {
+	return filepath.Join(s.dir, "img", name(owner), name(key)+".img")
+}
+
+// PutBlob keeps a picture (or any file) under key for owner, and returns its
+// path. It is limited to MaxBlobBytes.
+func (s *Store) PutBlob(owner, key string, data []byte) (string, error) {
+	if owner == "" {
+		return "", errors.New("cache: a picture needs an owner")
+	}
+	if len(data) > MaxBlobBytes {
+		return "", errors.New("cache: the picture is too big")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path := s.blobPath(owner, key)
+	if err := write(path, data); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// BlobPath is the path of the picture under key of owner, if one is kept.
+func (s *Store) BlobPath(owner, key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path := s.blobPath(owner, key)
+	if _, err := os.Stat(path); err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+// ForgetBlob drops the picture under key of owner.
+func (s *Store) ForgetBlob(owner, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Remove(s.blobPath(owner, key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// MaxBlobBytes bounds one kept picture.
+const MaxBlobBytes = 8 << 20
 
 // Size is the bytes the cache takes.
 func (s *Store) Size() int64 {

@@ -129,6 +129,20 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			Detail(c, res.Chart, sel)
 		})
 
+		// The pictures of the script, as a carousel, with the history cleared by the
+		// button under them.
+		if shown := shownImages(res.Images); len(shown) > 0 {
+			card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
+				a.imageCarousel(c, sc, res.Images, a.contentW()-2*compactPad(compact), 360)
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Spacer(c)
+					if btn(c, tr("清空图片历史")).Clicked() {
+						a.clearImages(sc)
+					}
+				})
+			})
+		}
+
 		switch {
 		case len(res.Stats) > 0:
 			a.statsTiles(c, res.Stats)

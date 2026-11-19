@@ -102,6 +102,10 @@ type app struct {
 	apkBusy    bool
 	apkChecked bool
 	apkErr     string
+	// The decoded pictures, by their copy's path, and the carousel's place per
+	// script (images_ui.go).
+	bitmaps     map[string]*ui.Bitmap
+	carouselIdx map[string]int
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
@@ -525,6 +529,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	})
 	if err == nil {
 		res.DataAt, res.Stale = dataTimes(info)
+		res.Images = a.keepImages(sc, res.Images, now)
 	}
 	return res, err
 }

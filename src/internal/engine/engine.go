@@ -198,6 +198,14 @@ type Chart struct {
 	Panels []Panel `json:"panels"`
 }
 
+// Image is a picture of a result: its address, a caption under it, and, once the
+// host has kept a copy, the copy's path on this computer.
+type Image struct {
+	URL     string `json:"url"`
+	Caption string `json:"caption,omitempty"`
+	Local   string `json:"local,omitempty"`
+}
+
 // Stat is one figure of a result: its name, its value, and a line under it.
 type Stat struct {
 	Label string `json:"label"`
@@ -215,8 +223,12 @@ type Result struct {
 	Chart *Chart   `json:"chart"`
 	// Stats are short figures a result shows as a row under its headline, and
 	// as tiles in the full view: a live weather's feels-like, humidity, wind.
-	Stats []Stat   `json:"stats"`
-	Logs  []string `json:"-"`
+	Stats []Stat `json:"stats"`
+	// Images are pictures a result shows as a carousel (inspiration, wallpapers).
+	// The host keeps a copy of each, as Local, and the history of the script's
+	// pictures; the carousel shows that history.
+	Images []Image  `json:"images"`
+	Logs   []string `json:"-"`
 	// DataAt and Stale are filled by the host, not the script: when the oldest
 	// data behind the result was fetched (Unix milliseconds), and whether any
 	// of it came from the cache because a request failed or the app is offline.

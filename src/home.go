@@ -237,6 +237,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			if size > 0 {
 				a.freshness(c, st, size)
 				statStrip(c, st.res.Stats)
+				if len(st.res.Images) > 0 {
+					a.imageCarousel(c, sc, st.res.Images, w-32*s, 120*s)
+				}
 			}
 			switch size {
 			case 1:
