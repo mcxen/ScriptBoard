@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.7
 
+- Refresh keeps what a card showed: while a card's run is asked again (refresh, a feed's poll, a metric recorded, a table edit, an AI usage update) the card keeps its last result, pictures and figures, marked as updating, instead of going blank. The editor's previews are not kept.
 - Live lines: a script can ask for a source every few seconds while its card is on screen (`meta()` `live: {sources, every}`, 5 seconds at least) and draw the source's history as a line that moves. The built-in crypto card's view is live by default (the ticker every 5 seconds, the last 15 minutes); the daily candles are one choice away. Built-in crypto is 1.2.0.
 - Menu bar: a script that asks for it (`meta()` `menubar: true`) can show a card in the menu bar (macOS) or notification area, as an icon of its own. The user picks the cards from the card's right-click menu. The icon shows the headline beside it on macOS (the script can give its own title and tooltip), and the card's menu has the script's items (web links only), refresh, the window and quit. With a card in the bar, closing the window hides it and the app keeps running.
 - Charts: a `progress` chart shows completion as bars (`progress: [{name, value, max, unit}]`): each bar says "3 / 10 · 30%", or its percentage when there is no maximum. It draws on every card size with a chart; a medium card has room for two bars and says how many more it leaves out, while large cards and the full view show them all.
