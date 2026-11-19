@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8
 
 - Content width is a setting (设置 → 外观 → 内容宽度): auto (pages of data, the home cards and the detail page, fill the window; text pages such as settings keep a reading width), comfortable, wide, or full. A page that is capped sits in the middle of the window, and what is sized from the page (the card grid, the statistics tiles, a picture) follows the same cap. Before, the detail page stopped at a fixed width with blank space on its right, and its tiles wrapped.
 - A wide card with selectors and a value to type in no longer spills over the next card: its chart takes what the rest of the content leaves, and the card grows when that is too little.
