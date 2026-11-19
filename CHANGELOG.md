@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The detail page uses the whole window, as the home page does: on a wide window it no longer stops at a reading width with blank space on the right, and the six statistics tiles fit in one row.
 - A wide card with selectors and a value to type in no longer spills over the next card: its chart takes what the rest of the content leaves, and the card grows when that is too little.
 - Cards are their content: no title row at rest. The name shows with the buttons in a small panel at the top right while the pointer is on the card, and the change chip sits on the summary line. A script can ask for the row back: `layout: {title: "show"}`.
 - Cards show their buttons (refresh, size) only while the pointer is on them; a touch screen has no pointer and shows them all the time. A script can ask for them to stay: `layout: {actions: "always"}`.

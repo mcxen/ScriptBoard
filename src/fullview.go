@@ -33,7 +33,8 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	}
 	sel := a.selOf("full:" + sc.ID)
 
-	page(c, compact, func() {
+	// The whole window, as the home page: the tiles and the chart are sized to it.
+	pageFull(c, compact, func() {
 		subheader(c, a, tr(sc.Name), st.res.Title, func() {
 			if compact {
 				// A phone has room for icons, not for a row of buttons; 大图 gives
