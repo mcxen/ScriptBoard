@@ -218,6 +218,7 @@ var enText = map[string]string{
 	"图片不能显示":  "Picture not shown",
 	"清空图片历史":  "Clear picture history",
 	"已清空图片历史": "Picture history cleared",
+	"必应壁纸":    "Bing wallpapers",
 	"本地缓存":    "Local cache",
 	"脚本请求过的数据、历史和上次的结果，保存在本机，离线时也能打开；占用 %s": "What scripts requested, its history and the last results are kept on this device, so cards open offline; uses %s",
 	"清除缓存":    "Clear cache",
