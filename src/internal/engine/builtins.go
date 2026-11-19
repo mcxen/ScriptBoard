@@ -17,7 +17,7 @@ type Builtin struct {
 
 // Builtins returns the scripts that ship with the app, in a fixed order.
 func Builtins() []Builtin {
-	order := []string{"weight", "fx", "weather", "aqi", "gold", "goldacc", "goldk", "hs300", "btc", "ai-claude", "ai-deepseek", "ai-openrouter"}
+	order := []string{"weight", "fx", "fxcny", "weather", "aqi", "gold", "goldacc", "goldk", "hs300", "btc", "ai-claude", "ai-deepseek", "ai-openrouter"}
 	out := make([]Builtin, 0, len(order))
 	for _, id := range order {
 		b, err := builtinFS.ReadFile("scripts/" + id + ".js")

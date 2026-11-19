@@ -79,7 +79,7 @@ func TestClaudeCodeScriptIsDesktopAndFiles(t *testing.T) {
 func TestBuiltinNeedsMatchTheirUse(t *testing.T) {
 	want := map[string]bool{ // needs the network
 		"weight": false, "goldk": false,
-		"fx": true, "weather": true, "aqi": true, "gold": true, "goldacc": true, "hs300": true, "btc": true,
+		"fx": true, "fxcny": true, "weather": true, "aqi": true, "gold": true, "goldacc": true, "hs300": true, "btc": true,
 		"ai-deepseek": true, "ai-openrouter": true, "ai-claude": false,
 	}
 	for _, b := range engine.Builtins() {
