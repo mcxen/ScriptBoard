@@ -312,7 +312,7 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 				if compact && r.stack && r.control != nil {
 					ui.Column(c).Gap(10).Padding(11, 0).Children(func() {
 						ui.Row(c).Children(body)
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(r.control)
+						ui.Row(c).Gap(8).Wrap().AlignItems(ui.Center).Children(r.control)
 					})
 					continue
 				}

@@ -142,7 +142,7 @@ func (a *app) usageGroups(c *ui.Context, compact bool) {
 		if p.NeedsKey() {
 			note = tr("填密钥后读取余额；填「充值总额」可以看到剩余比例。密钥只保存在这台电脑上。")
 		}
-		rows = append(rows, row{title: tr(p.Name()), note: note, control: func() {
+		rows = append(rows, row{title: tr(p.Name()), note: note, stack: true, control: func() {
 			if p.NeedsKey() {
 				if passwordInput(c, &f.key, tr("API 密钥")).Width(180).Changed() {
 					save()
