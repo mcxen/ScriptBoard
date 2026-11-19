@@ -114,6 +114,9 @@ func needLabel(need string) string {
 func (a *app) scriptNote(sc store.Script) string {
 	r := a.specOf(sc)
 	parts := []string{originLabel(a.originOf(sc))}
+	if sc.IsTable() {
+		return tr("数据表") + " · " + parts[0]
+	}
 	if p := platformLabel(r); p != "" {
 		parts = append(parts, p)
 	}

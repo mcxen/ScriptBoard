@@ -120,12 +120,10 @@ func TestEditorPage(t *testing.T) {
 	requireText(t, tt, "体重 · kg") // the first script opens in the editor
 	savePNG(t, tt, "2-editor")
 
-	before := len(a.store.Series("weight"))
-	click(t, tt, "记录")
-	if got := len(a.store.Series("weight")); got != before+1 {
-		t.Errorf("weight records %d after 记录, want %d", got, before+1)
+	// A script is edited as a script: no table of values beside its source.
+	if _, ok := tt.Access("录入数据"); ok {
+		t.Error("the script editor still has the data-entry panel")
 	}
-	requireText(t, tt, "已记录 体重")
 
 	click(t, tt, "保存")
 	requireText(t, tt, "已保存")

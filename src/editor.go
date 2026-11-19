@@ -10,16 +10,6 @@ import (
 	"scriptboard/src/internal/store"
 )
 
-var metricLabels = []string{"体重", "金价"}
-
-// metricKey is the name the selected metric is stored and read under.
-func (a *app) metricKey() string {
-	if a.metricIdx == 1 {
-		return "gold"
-	}
-	return "weight"
-}
-
 // openEditor selects script id in the editor. It does nothing when id is
 // already selected, so the view may call it every frame.
 func (a *app) openEditor(id string) {
@@ -33,8 +23,8 @@ func (a *app) openEditor(id string) {
 	a.editorID = id
 	a.draft = sc
 	a.status = ""
-	delete(a.dims, draftKey)
-	a.invalidate(draftKey)
+	a.loadBound(&a.draft)
+	a.afterOpenTable()
 }
 
 // newScript starts a new script in the editor. It is stored on Save.
@@ -57,6 +47,8 @@ func (a *app) duplicateDraft() {
 		Home:   true,
 		// A copy is the user's own, whatever it was copied from.
 		Origin: store.OriginUser,
+		Kind:   a.draft.Kind,
+		Table:  a.draft.Table.Clone(),
 	}
 	if err := a.store.SaveScript(sc); err != nil {
 		a.status = tr("复制失败：") + err.Error()
@@ -86,16 +78,6 @@ func (a *app) saveDraft() {
 	a.status = tr("已保存")
 }
 
-// record stores the value typed in the editor for the selected metric. Weight
-// is typed in the unit of the settings and stored in kg.
-func (a *app) record() {
-	if err := a.recordMetric(a.metricKey(), a.entry); err != nil {
-		a.status = tr("记录失败：") + err.Error()
-		return
-	}
-	a.status = tr("已记录 ") + tr(metricLabels[a.metricIdx])
-}
-
 // recordMetric stores a value typed in by hand under metric, now, and drops
 // every run so that cards show it. Weight is typed in the unit of the
 // settings and stored in kg.
@@ -120,7 +102,7 @@ func (a *app) shownValue(key string, v float64) float64 {
 }
 
 // editor is the editing page: the scripts, the draft with its source, a
-// preview of its output and the form that records values. On a phone the
+// preview of its output. On a phone the
 // blocks stack in one column.
 func (a *app) editor(c *ui.Context, compact bool) {
 	p := pal(c)
@@ -136,12 +118,6 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		})
 		return
 	}
-	if a.entry == 0 {
-		if pts := a.store.Series(a.metricKey()); len(pts) > 0 {
-			a.entry = a.shownValue(a.metricKey(), pts[len(pts)-1].V)
-		}
-	}
-
 	// Three columns need room; on a narrower window the scripts become a row of
 	// chips above two columns, and on a phone everything stacks.
 	avail := a.width - a.sidebarW() - 32
@@ -149,14 +125,16 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	listRow := !wide
 
 	scripts := func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-			label(c, tr("脚本"))
-			ui.Spacer(c)
-			if btn(c, tr("导入")).Clicked() {
-				a.panel, a.transferText, a.transferErr = "import", "", ""
-			}
-			if btn(c, tr("+ 新建")).Clicked() {
+		label(c, tr("脚本与数据表"))
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
+			if btn(c, tr("+ 脚本")).Clicked() {
 				a.newScript()
+			}
+			if btn(c, tr("+ 数据表")).Clicked() {
+				a.newTable()
+			}
+			if btn(c, tr("导入脚本")).Clicked() {
+				a.panel, a.transferText, a.transferErr = "import", "", ""
 			}
 		})
 		if !listRow {
@@ -300,31 +278,25 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		}
 	}
 
-	record := func() {
-		ui.Text(c, tr("录入数据")).FontSize(fsHeading).Bold()
-		segmented(c, &a.metricIdx, trAll(metricLabels)...)
-		name := tr("数值（元/克）")
-		if a.metricKey() == "weight" {
-			name = tr("数值（") + a.store.Settings().WeightUnit + "）"
+	// A data table is edited as a table; a script, as source. They are not mixed.
+	form := draft
+	if a.draft.IsTable() {
+		gridW := a.width - a.sidebarW() - 32 - 248 - 372 - 32 - 40
+		switch {
+		case compact:
+			gridW = a.width - 32 - 32 - 32
+		case !wide:
+			gridW = avail - 330 - 16 - 40
 		}
-		field(c, name, "", func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				numberInput(c, &a.entry, 0, 100000, 0.1).Width(170)
-				if primaryBtn(c, tr("记录")).Clicked() {
-					a.record()
-				}
-			})
-		})
-		a.recent(c)
+		form = func() { a.tableForm(c, compact, gridW) }
 	}
 
 	if compact {
 		page(c, compact, func() {
 			header(c, tr("编辑"), "", nil)
 			card(c).Padding(14).Gap(10).Children(scripts)
-			card(c).Padding(16).Gap(gapItem).Children(draft)
+			card(c).Padding(16).Gap(gapItem).Children(form)
 			card(c).Padding(16).Gap(10).Children(preview)
-			card(c).Padding(16).Gap(10).Children(record)
 		})
 		return
 	}
@@ -333,12 +305,11 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			card(c).Padding(14).Gap(10).Children(scripts)
 			ui.Row(c).Grow(1).AlignItems(ui.Stretch).Gap(16).Children(func() {
 				ui.Scroll(c).Grow(1).Children(func() {
-					card(c).Padding(20).Gap(gapItem).Children(draft)
+					card(c).Padding(20).Gap(gapItem).Children(form)
 				})
 				ui.Scroll(c).Width(330).Children(func() {
 					ui.Column(c).Gap(16).Children(func() {
 						card(c).Padding(18).Gap(10).Children(preview)
-						card(c).Padding(18).Gap(10).Children(record)
 					})
 				})
 			})
@@ -348,40 +319,12 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(16).Gap(16).Children(func() {
 		card(c).Width(248).Padding(14).Gap(10).Children(scripts)
 		ui.Scroll(c).Grow(1).Children(func() {
-			card(c).Padding(20).Gap(gapItem).Children(draft)
+			card(c).Padding(20).Gap(gapItem).Children(form)
 		})
 		ui.Scroll(c).Width(372).Children(func() {
 			ui.Column(c).Gap(16).Children(func() {
 				card(c).Padding(18).Gap(10).Children(preview)
-				card(c).Padding(18).Gap(10).Children(record)
 			})
 		})
 	})
-}
-
-// recent lists the latest records of the selected metric.
-func (a *app) recent(c *ui.Context) {
-	p := pal(c)
-	key := a.metricKey()
-	pts := a.store.Series(key)
-	if len(pts) == 0 {
-		ui.Text(c, tr("还没有记录")).FontSize(fsSmall).TextColor(p.muted)
-		return
-	}
-	label(c, tr("最近记录"))
-	from := max(0, len(pts)-4)
-	for i := len(pts) - 1; i >= from; i-- {
-		pt := pts[i]
-		pt.V = a.shownValue(key, pt.V)
-		ui.Row(c).AlignItems(ui.Center).Padding(6, 0).BorderWidth(0, 0, 1, 0).BorderColor(p.hairline).Children(func() {
-			ui.Text(c, fmtTime(pt.T)).FontSize(fsSmall).TextColor(p.muted)
-			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("%.2f", pt.V)).FontSize(fsBody).Bold()
-		})
-	}
-}
-
-// valueText is a short label of a recorded value, for the record list.
-func valueText(p engine.Point) string {
-	return fmtTime(p.T) + "  " + fmt.Sprintf("%.2f", p.V)
 }

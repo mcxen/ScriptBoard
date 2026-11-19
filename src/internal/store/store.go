@@ -40,6 +40,52 @@ type Script struct {
 	// CommunityID is the id the script has in the community, for one that was
 	// downloaded from it.
 	CommunityID string `json:"communityID,omitempty"`
+	// Kind is what the plugin is: "" a script, KindTable a data table.
+	Kind string `json:"kind,omitempty"`
+	// Table is the data of a data table, which has no source.
+	Table *Table `json:"table,omitempty"`
+}
+
+// KindTable is the Kind of a data-table plugin: rows the user types in or
+// imports, shown as a table, a chart and a card.
+const KindTable = "table"
+
+// Table is the rows of a data table. A table with a Metric is a view of a
+// recorded series (weight, gold) and keeps its rows there, not here.
+type Table struct {
+	Columns []string   `json:"columns"`
+	Rows    [][]string `json:"rows"`
+	// Metric binds the table to the series recorded under that name, so that
+	// what is typed here is what the cards of that metric show.
+	Metric string `json:"metric,omitempty"`
+}
+
+// IsTable reports whether the plugin is a data table.
+func (s Script) IsTable() bool { return s.Kind == KindTable }
+
+// Clone copies the table, so that editing the copy leaves the original alone.
+func (t *Table) Clone() *Table {
+	if t == nil {
+		return nil
+	}
+	c := &Table{Metric: t.Metric}
+	if t.Columns != nil {
+		c.Columns = append([]string{}, t.Columns...)
+	}
+	if t.Rows != nil {
+		c.Rows = make([][]string, len(t.Rows))
+		for i, r := range t.Rows {
+			c.Rows[i] = append([]string(nil), r...)
+		}
+	}
+	return c
+}
+
+// own returns the script with a table of its own, so that what a caller does
+// to it does not reach the store.
+func (s Script) own() Script {
+	s.Table = s.Table.Clone()
+	return s
 }
 
 // Settings are the app's settings.
@@ -193,7 +239,11 @@ func (s *Store) Seed(scripts []Script, metrics map[string][]engine.Point) error 
 func (s *Store) Scripts() []Script {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Script(nil), s.f.Scripts...)
+	out := make([]Script, len(s.f.Scripts))
+	for i, sc := range s.f.Scripts {
+		out[i] = sc.own()
+	}
+	return out
 }
 
 // Script returns the script with id.
@@ -202,7 +252,7 @@ func (s *Store) Script(id string) (Script, bool) {
 	defer s.mu.Unlock()
 	for _, sc := range s.f.Scripts {
 		if sc.ID == id {
-			return sc, true
+			return sc.own(), true
 		}
 	}
 	return Script{}, false
@@ -212,6 +262,7 @@ func (s *Store) Script(id string) (Script, bool) {
 func (s *Store) SaveScript(sc Script) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	sc = sc.own()
 	for i := range s.f.Scripts {
 		if s.f.Scripts[i].ID == sc.ID {
 			s.f.Scripts[i] = sc
@@ -299,6 +350,14 @@ func (s *Store) Series(metric string) []engine.Point {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]engine.Point(nil), s.f.Metrics[metric]...)
+}
+
+// SetSeries replaces the values of metric, oldest first.
+func (s *Store) SetSeries(metric string, pts []engine.Point) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.f.Metrics[metric] = append([]engine.Point(nil), pts...)
+	return s.saveLocked()
 }
 
 // Append records a value of metric.

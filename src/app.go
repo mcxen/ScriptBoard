@@ -57,9 +57,9 @@ type app struct {
 	// confirmDelete is the script whose delete button was clicked once.
 	confirmDelete string
 	draft         store.Script
-	metricIdx     int     // 0 weight, 1 gold
-	entry         float64 // the value typed in the editor
-	status        string  // one line of feedback: saved, recorded, errors
+	tablePage     int    // the page of rows the table editor shows
+	tableAppend   int    // an import: 0 replaces the rows, 1 joins them
+	status        string // one line of feedback: saved, recorded, errors
 
 	// Quick entry on the home cards: the value typed for each input, and the
 	// last line of feedback.
@@ -184,6 +184,9 @@ func newApp(dir string, offline bool) (*app, error) {
 	if err := a.ensureBuiltins(); err != nil {
 		return nil, err
 	}
+	if err := a.ensureBuiltinTables(); err != nil {
+		return nil, err
+	}
 	a.syncPlugins()
 	a.set = st.Settings()
 	if offline {
@@ -276,6 +279,9 @@ func (a *app) post(fn func()) {
 
 // metaOf returns the meta of sc, compiled once for each source.
 func (a *app) metaOf(sc store.Script) (engine.Meta, error) {
+	if sc.IsTable() {
+		return tableMeta(sc), nil
+	}
 	k := curLang() + "\x00" + sc.ID + "\x00" + sc.Source
 	if e, ok := a.metas[k]; ok {
 		return e.meta, e.err
@@ -340,6 +346,8 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 	}
 	st := &runState{loading: true}
 	a.runs[key] = st
+	// The run reads the table off the main thread, and the editor changes it.
+	sc.Table = sc.Table.Clone()
 	force := a.forced[sc.ID]
 	delete(a.forced, sc.ID)
 	meta, _ := a.metaOf(sc)
@@ -438,6 +446,9 @@ func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, 
 // executeOpt is execute; force asks the network for every source, whatever the
 // cache holds (the user pressed refresh).
 func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (engine.Result, error) {
+	if sc.IsTable() {
+		return a.tableResult(sc), nil
+	}
 	// The system first, then the user's permission: a script that cannot run
 	// here, or that uses what it was not allowed, does not start.
 	if r := a.specOf(sc); !r.SupportsOS(caps.OS()) {

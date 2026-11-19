@@ -125,6 +125,10 @@ func (a *app) logout() {
 
 // uploadDraft sends the draft in the editor for review. It needs a login.
 func (a *app) uploadDraft() {
+	if a.draft.IsTable() {
+		a.comm.note = tr("数据表不能上传到社区，只有脚本可以")
+		return
+	}
 	cl := a.communityClient()
 	if a.set.Token == "" {
 		a.comm.note = tr("上传需要先登录")
