@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Menu bar: a script that asks for it (`meta()` `menubar: true`) can show a card in the menu bar (macOS) or notification area, as an icon of its own. The user picks the cards from the card's right-click menu. The icon shows the headline beside it on macOS (the script can give its own title and tooltip), and the card's menu has the script's items (web links only), refresh, the window and quit. With a card in the bar, closing the window hides it and the app keeps running.
 - Charts: a `progress` chart shows completion as bars (`progress: [{name, value, max, unit}]`): each bar says "3 / 10 · 30%", or its percentage when there is no maximum. It draws on every card size with a chart; a medium card has room for two bars and says how many more it leaves out, while large cards and the full view show them all.
 - Layout: a result can set `layout: {legend, summary, stats}`. The legend (a multi-series chart's names) and the summary line can be hidden; the stats are their own block under the chart. The right-click menu of a card hides or shows its legend, and the choice is kept. A medium card with progress bars shows no stats block; its full view does.
 - Plugins: `plugin_save` takes `position` (where the card sits on the home page; leave it out to put it last) and `size` (mini, small, medium, large or wide). A card the user has moved or resized keeps its own place and size.

@@ -143,6 +143,10 @@ type Settings struct {
 	CardOrder []string `json:"cardOrder"`
 	// LegendHidden are the home cards whose legend the user hid, by script ID.
 	LegendHidden map[string]bool `json:"legendHidden"`
+	// MenuBar are the cards the user put in the menu bar, by script ID, in the
+	// order they were added. Only a script that asks for the menu bar can be
+	// here.
+	MenuBar []string `json:"menuBar"`
 	// ScriptVars are the values the user chose for a script's variables, by
 	// script ID and then variable key.
 	ScriptVars map[string]map[string]string `json:"scriptVars"`

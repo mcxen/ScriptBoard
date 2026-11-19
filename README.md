@@ -247,6 +247,14 @@ export function meta() {
 
 体重按设置里的单位（kg / 斤）输入，统一以 kg 存储。
 
+## 菜单栏
+
+脚本在 `meta()` 里写 `menubar: true`，它的卡片就能放进菜单栏（macOS）或通知区（Windows、Linux）。放不放由用户在卡片的右键菜单里选，每张卡片一个图标。
+
+结果里可以给 `menubar: {title, tooltip}`：macOS 上 `title` 写在图标旁边，Windows 和 Linux 不显示标题，内容都在提示文字里。不写时，标题是卡片的大数字（最多 12 个字），提示是标题加摘要。`menu: [{label, url}, {separator: true}]` 是脚本自己的菜单项：带 `url` 的打开网页（只允许 http 和 https），不带的是一行字。菜单最后是「刷新」「打开盯盯板」和「退出」。
+
+菜单栏里有卡片时，关闭窗口只是隐藏，应用继续运行；从菜单栏的「退出」才会真的退出。每分钟刷新一次，缓存在一分钟内的直接用。
+
 ## MCP 服务器（设置 → MCP 服务器）
 
 应用里自带一个 MCP 服务器，参考 Notes 的做法：默认关闭，打开后生成密钥，每次请求都要带 `Authorization: Bearer <密钥>`。

@@ -74,6 +74,10 @@ type Meta struct {
 	// Vars are the values the user switches, which fill {key} in the sources
 	// (see vars.go); render reads the chosen ones as ctx.vars.
 	Vars []Var `json:"vars"`
+	// Menubar says the card can show in the menu bar (macOS) or notification
+	// area: the user chooses whether it does. What it shows there is the
+	// result's MenuBar and Menu.
+	Menubar bool `json:"menubar"`
 }
 
 // ManualInput is a value typed in by hand.
@@ -269,6 +273,19 @@ type Stat struct {
 	Sub   string `json:"sub"`
 }
 
+// MenuBar is a card's title and tooltip in the menu bar.
+type MenuBar struct {
+	Title   string `json:"title"`
+	Tooltip string `json:"tooltip"`
+}
+
+// MenuEntry is one item of a card's menu in the menu bar.
+type MenuEntry struct {
+	Label     string `json:"label"`
+	URL       string `json:"url,omitempty"`
+	Separator bool   `json:"separator,omitempty"`
+}
+
 // Result is what render returns, plus the lines the script logged.
 type Result struct {
 	Title string   `json:"title"`
@@ -285,8 +302,16 @@ type Result struct {
 	// pictures; the carousel shows that history.
 	Images []Image `json:"images"`
 	// Layout says how the card of this result is laid out (see Layout).
-	Layout *Layout  `json:"layout,omitempty"`
-	Logs   []string `json:"-"`
+	Layout *Layout `json:"layout,omitempty"`
+	// MenuBar is the card's icon in the menu bar, when the user has put it
+	// there: a short title beside the icon, and a tooltip. Without it, the
+	// title is the headline and the tooltip the headline with the summary.
+	MenuBar *MenuBar `json:"menubar,omitempty"`
+	// Menu lists the script's own items in the menu bar menu, before the app's:
+	// an item with a URL opens it (web addresses only), one without is a line
+	// of text, and {separator: true} is a rule.
+	Menu []MenuEntry `json:"menu,omitempty"`
+	Logs []string    `json:"-"`
 	// DataAt and Stale are filled by the host, not the script: when the oldest
 	// data behind the result was fetched (Unix milliseconds), and whether any
 	// of it came from the cache because a request failed or the app is offline.

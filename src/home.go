@@ -324,6 +324,18 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				a.toggleLegend(sc.ID)
 				*open = false
 			}
+			// The menu bar: offered when the script asks for it, and the user
+			// chooses whether the card is there.
+			if menuBarOffered(meta) {
+				bar := tr("在菜单栏显示")
+				if a.menuBarOn(sc.ID) {
+					bar = tr("从菜单栏移除")
+				}
+				if btn(c, bar).Clicked() {
+					a.toggleMenuBar(sc.ID)
+					*open = false
+				}
+			}
 		})
 	})
 	if a.editing {

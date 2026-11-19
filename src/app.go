@@ -25,10 +25,16 @@ import (
 // main thread. Scripts run off the main thread and post their results back
 // with post, so the view never waits for the network.
 type app struct {
-	win     *mygo.Window // nil in tests, where runs happen inline
-	router  *ui.Router
-	store   *store.Store
-	dataDir string // the folder of data.json; plugins and icons live under it
+	win *mygo.Window // nil in tests, where runs happen inline
+	// bars are the icons of the cards in the menu bar, by script ID, and barSig
+	// what each shows, so that an unchanged icon is not drawn again.
+	bars   map[string]*mygo.Tray
+	barSig map[string]string
+	// quitting is set once the app quits, so that the window really closes.
+	quitting bool
+	router   *ui.Router
+	store    *store.Store
+	dataDir  string // the folder of data.json; plugins and icons live under it
 	// cache keeps the responses of the sources, their history and the last
 	// result of each card, for offline use and for opening quickly.
 	cache *cache.Store
@@ -286,7 +292,9 @@ func (a *app) attach(w *mygo.Window) {
 	a.win = w
 	go a.watchPlugins()
 	go a.feedLoop()
+	go a.menuBarLoop()
 	a.applyMCP()
+	a.syncMenuBar()
 }
 
 // post runs fn on the main thread.
@@ -395,6 +403,7 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 			st.old = false
 			st.res = res
 			st.err = err
+			a.menuBarRan(sc.ID)
 		})
 	}
 	if a.win == nil {
