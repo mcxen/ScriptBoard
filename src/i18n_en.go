@@ -4,6 +4,15 @@ package main
 // Fragments that are joined to a value ("已登录：" + name) are listed as they
 // appear in the source.
 var enText = map[string]string{
+	"仅 ": "Only ",
+	"这个组件只能在这些系统上使用：":               "This widget works only on these systems: ",
+	"这个组件不能在任何设备上使用，它的 meta() 有矛盾。": "This widget cannot be used on any device: its meta() contradicts itself.",
+	"。到「编辑」里这个脚本的说明处授权后才能运行。":       ". Allow it in Edit, in this script's details, and it will run.",
+	"需要授权：":    "Needs your permission: ",
+	"撤销":       "Take back",
+	"授权":       "Allow",
+	"已授权":      "Allowed",
+	"未授权":      "Not allowed",
 	"依赖":       "Needs",
 	"平台":       "Platform",
 	"已还原为内置版本": "Restored to the built-in version",

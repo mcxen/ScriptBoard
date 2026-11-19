@@ -46,32 +46,30 @@ type claudeEntry struct {
 }
 
 func (claudeCode) Fetch(ctx context.Context, o Options) (Report, error) {
-	dir := o.Dir
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return Report{}, err
-		}
-		dir = filepath.Join(home, ".claude", "projects")
+	dirs := []string{o.Dir}
+	if o.Dir == "" {
+		dirs = claudeDirs()
 	}
 	since := o.Now.AddDate(0, 0, -35) // older logs are not read
 	var entries []claudeEntry
 	seen := map[string]bool{}
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || ctx.Err() != nil {
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || ctx.Err() != nil {
+				return nil
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+				return nil
+			}
+			if info, err := d.Info(); err == nil && info.ModTime().Before(since) {
+				return nil
+			}
+			entries = readClaudeFile(path, since, seen, entries)
 			return nil
+		})
+		if err != nil {
+			return Report{}, err
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
-		}
-		if info, err := d.Info(); err == nil && info.ModTime().Before(since) {
-			return nil
-		}
-		entries = readClaudeFile(path, since, seen, entries)
-		return nil
-	})
-	if err != nil {
-		return Report{}, err
 	}
 	return buildClaudeReport(entries, o), nil
 }
@@ -172,4 +170,34 @@ func activeBlock(entries []claudeEntry, now time.Time) float64 {
 		return 0
 	}
 	return total
+}
+
+// claudeDirs are the folders Claude Code writes its logs to. They differ by
+// system and by setup, which is the host's business, not the script's: the
+// folder CLAUDE_CONFIG_DIR names when it is set (it may list several, as a PATH
+// does), the .claude folder in the user's home (the profile folder on Windows),
+// and the XDG config folder that some Linux setups use.
+func claudeDirs() []string {
+	var out []string
+	add := func(dir string) {
+		dir = filepath.Join(dir, "projects")
+		for _, d := range out {
+			if d == dir {
+				return
+			}
+		}
+		out = append(out, dir)
+	}
+	if env := os.Getenv("CLAUDE_CONFIG_DIR"); env != "" {
+		for _, d := range filepath.SplitList(env) {
+			if d != "" {
+				add(d)
+			}
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		add(filepath.Join(home, ".claude"))
+		add(filepath.Join(home, ".config", "claude"))
+	}
+	return out
 }

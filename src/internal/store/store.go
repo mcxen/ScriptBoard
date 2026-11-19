@@ -55,6 +55,9 @@ type Settings struct {
 	ThemeMode string `json:"themeMode"`
 	// SidebarCollapsed folds the sidebar into a narrow rail of icons.
 	SidebarCollapsed bool `json:"sidebarCollapsed"`
+	// Grants are the sensitive features (files, exec, key) the user allowed,
+	// by script id. A script that is not built in uses none without one.
+	Grants map[string][]string `json:"grants"`
 	// UpdateSource is where updates come from: "" automatic (the tvv.tw
 	// mirror for Chinese, GitHub otherwise), "github" or "tvv".
 	UpdateSource string `json:"updateSource"`

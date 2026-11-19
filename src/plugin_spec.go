@@ -27,20 +27,41 @@ func (a *app) specOf(sc store.Script) spec.Resolved {
 	return spec.Resolve(m)
 }
 
-// supported reports whether the script can run on this device.
+// supported reports whether the script can run on this system.
 func (a *app) supported(sc store.Script) bool {
-	return a.specOf(sc).Supports(caps.Platform())
+	return a.specOf(sc).SupportsOS(caps.OS())
 }
 
-// errUnsupported is why a script does not run on this device.
-func errUnsupported(r spec.Resolved) error {
-	switch {
-	case r.DesktopOnly():
-		return errors.New(tr("这个组件只能在电脑上使用：它要读电脑上的文件。"))
-	case len(r.Platforms) == 1 && r.Platforms[0] == caps.Mobile:
-		return errors.New(tr("这个组件只能在手机上使用。"))
+// osName is how a system is written for the user.
+func osName(system string) string {
+	switch system {
+	case caps.MacOS:
+		return "macOS"
+	case caps.Windows:
+		return "Windows"
+	case caps.Linux:
+		return "Linux"
+	case caps.Android:
+		return "Android"
+	case caps.IOS:
+		return "iOS"
 	}
-	return errors.New(tr("这个组件不能在这台设备上使用。"))
+	return system
+}
+
+// errUnsupported is why a script does not run on this system.
+func errUnsupported(r spec.Resolved) error {
+	if len(r.OSes) == 0 {
+		return errors.New(tr("这个组件不能在任何设备上使用，它的 meta() 有矛盾。"))
+	}
+	if r.DesktopOnly() && r.PlatformDependent() && caps.Platform() == caps.Mobile {
+		return errors.New(tr("这个组件只能在电脑上使用：它要读电脑上的文件。"))
+	}
+	names := make([]string, len(r.OSes))
+	for i, s := range r.OSes {
+		names[i] = osName(s)
+	}
+	return errors.New(tr("这个组件只能在这些系统上使用：") + strings.Join(names, "、"))
 }
 
 // originLabel names where a script came from.
@@ -56,15 +77,21 @@ func originLabel(origin string) string {
 	return tr("自建")
 }
 
-// platformLabel names where a script runs, or "" when it runs anywhere.
+// platformLabel names where a script runs, or "" when it runs everywhere.
 func platformLabel(r spec.Resolved) string {
 	switch {
-	case r.DesktopOnly():
+	case len(r.OSes) == len(caps.Systems):
+		return ""
+	case r.DesktopOnly() && len(r.OSes) == len(caps.Expand(caps.Desktop)):
 		return tr("仅电脑")
-	case len(r.Platforms) == 1 && r.Platforms[0] == caps.Mobile:
+	case r.MobileOnly() && len(r.OSes) == len(caps.Expand(caps.Mobile)):
 		return tr("仅手机")
 	}
-	return ""
+	names := make([]string, len(r.OSes))
+	for i, s := range r.OSes {
+		names[i] = osName(s)
+	}
+	return tr("仅 ") + strings.Join(names, "、")
 }
 
 // needLabel names a platform feature a script depends on.
@@ -130,7 +157,8 @@ func (a *app) specInfo(c *ui.Context, sc store.Script) {
 	if m.Description != "" {
 		hint(c, m.Description)
 	}
-	if !r.Supports(caps.Platform()) {
+	a.grantRows(c, sc)
+	if !r.SupportsOS(caps.OS()) {
 		notice(c, errUnsupported(r).Error(), feedback.Warning)
 	}
 	for _, problem := range r.Problems {
@@ -183,5 +211,38 @@ func (a *app) restoreDraft() {
 		a.saveDraft()
 		a.status = tr("已还原为内置版本")
 		return
+	}
+}
+
+// grantRows lists the sensitive features a script that is not built in uses
+// (the computer's files, programs, a service key), whether the user allowed
+// each, and the button that allows or takes it back. The script does not run
+// without them.
+func (a *app) grantRows(c *ui.Context, sc store.Script) {
+	if a.trusted(sc) {
+		return
+	}
+	p := pal(c)
+	for _, n := range a.needsOf(sc) {
+		if !caps.Sensitive[n] {
+			continue
+		}
+		n := n
+		on := a.granted(sc, n)
+		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+			state, color := tr("未授权"), p.warn
+			if on {
+				state, color = tr("已授权"), p.down
+			}
+			ui.Text(c, needLabel(n)).FontSize(fsSmall)
+			chip(c, state, color, color.Alpha(0.14))
+			label := tr("授权")
+			if on {
+				label = tr("撤销")
+			}
+			if btn(c, label).Clicked() {
+				a.setGrant(sc.ID, n, !on)
+			}
+		})
 	}
 }

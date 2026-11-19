@@ -225,7 +225,14 @@ type FeedData struct {
 type Input struct {
 	Now time.Time
 	// Lang is the language of the user: "zh" or "en".
-	Lang     string
+	Lang string
+	// OS is the system the app runs on ("macos", "windows", "linux", "android",
+	// "ios") and Kind its group ("desktop" or "mobile"): ctx.platform. A script
+	// asks the host for what is system specific, and rarely needs these.
+	OS, Kind string
+	// Granted are the sensitive features the script may use: ctx.granted[need]
+	// is true for each.
+	Granted  []string
 	TZOffset int // seconds east of UTC, so scripts can group values by local day
 	// View holds the value of each adjusted dimension, by its key.
 	View map[string]float64
@@ -280,6 +287,8 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	arg, err := json.Marshal(map[string]any{
 		"now":      in.Now.UnixMilli(),
 		"lang":     langOr(in.Lang),
+		"platform": map[string]string{"os": in.OS, "kind": in.Kind},
+		"granted":  grantedSet(in.Granted),
 		"tzOffset": in.TZOffset,
 		"view":     nonNilView(in.View),
 		"feeds":    nonNilFeeds(in.Feeds),
@@ -397,4 +406,14 @@ func langOr(l string) string {
 		return "zh"
 	}
 	return l
+}
+
+// grantedSet is the granted features as the object ctx.granted: a feature that
+// was not granted is absent, so ctx.granted.files is undefined, not an error.
+func grantedSet(list []string) map[string]bool {
+	out := make(map[string]bool, len(list))
+	for _, n := range list {
+		out[n] = true
+	}
+	return out
 }

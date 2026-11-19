@@ -98,3 +98,66 @@ func TestPlatformCanBeSet(t *testing.T) {
 		t.Errorf("platform %q", p)
 	}
 }
+
+// A script for one system runs there and nowhere else: Windows only is not
+// offered on macOS.
+func TestOneSystemOnly(t *testing.T) {
+	r := Resolve(engine.Meta{Platforms: []string{caps.Windows}})
+	if !r.SupportsOS(caps.Windows) || r.SupportsOS(caps.MacOS) || r.SupportsOS(caps.Linux) || r.SupportsOS(caps.Android) {
+		t.Errorf("windows only: %v", r.OSes)
+	}
+	if len(r.Platforms) != 1 || r.Platforms[0] != caps.Windows {
+		t.Errorf("platform words %v", r.Platforms)
+	}
+	if r.DesktopOnly() != true || r.MobileOnly() {
+		t.Errorf("windows only is a desktop script: %+v", r)
+	}
+}
+
+// Systems and groups mix, and the words say them back the short way.
+func TestSystemsAndGroups(t *testing.T) {
+	r := Resolve(engine.Meta{Platforms: []string{caps.Windows, caps.Linux}})
+	if got := strings.Join(r.Platforms, ","); got != "windows,linux" {
+		t.Errorf("windows and linux: %q", got)
+	}
+	r = Resolve(engine.Meta{Platforms: []string{caps.Desktop, caps.IOS}})
+	if got := strings.Join(r.Platforms, ","); got != "desktop,ios" {
+		t.Errorf("desktop and ios: %q", got)
+	}
+	if r.Supports(caps.Mobile) || !r.SupportsOS(caps.IOS) || r.SupportsOS(caps.Android) {
+		t.Errorf("desktop and ios: %v", r.OSes)
+	}
+	if got := strings.Join(Resolve(engine.Meta{}).Platforms, ","); got != "desktop,mobile" {
+		t.Errorf("undeclared: %q", got)
+	}
+}
+
+// Claiming a system that what the script uses cannot run on is a problem, and
+// the system is left out: Claude Code's logs are on computers.
+func TestSystemClaimsAreChecked(t *testing.T) {
+	r := Resolve(engine.Meta{Platforms: []string{caps.Windows, caps.Android}, Usage: []string{"claude-code"}})
+	if !r.SupportsOS(caps.Windows) || r.SupportsOS(caps.Android) {
+		t.Errorf("systems %v", r.OSes)
+	}
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "android") {
+		t.Errorf("problems %v", r.Problems)
+	}
+	r = Resolve(engine.Meta{Platforms: []string{caps.Android}, Needs: []string{caps.Exec}})
+	if len(r.OSes) != 0 || len(r.Problems) == 0 {
+		t.Errorf("a phone script that runs programs: %+v", r)
+	}
+}
+
+// The system follows the device, or what a test sets, and a group word picks a
+// system of it.
+func TestSystemCanBeSet(t *testing.T) {
+	t.Cleanup(func() { caps.SetOS("") })
+	caps.SetOS(caps.Windows)
+	if caps.OS() != caps.Windows || caps.Platform() != caps.Desktop {
+		t.Errorf("os %q platform %q", caps.OS(), caps.Platform())
+	}
+	caps.SetPlatform(caps.Mobile)
+	if caps.OS() != caps.Android || caps.Platform() != caps.Mobile {
+		t.Errorf("os %q platform %q", caps.OS(), caps.Platform())
+	}
+}

@@ -399,8 +399,13 @@ func (a *app) invalidateAll() { a.runs = map[string]*runState{} }
 // execute compiles sc, fetches its sources and renders it with the values
 // of its dimensions. It does not touch the UI, so it may run on any goroutine.
 func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, error) {
-	if r := a.specOf(sc); !r.Supports(caps.Platform()) {
+	// The system first, then the user's permission: a script that cannot run
+	// here, or that uses what it was not allowed, does not start.
+	if r := a.specOf(sc); !r.SupportsOS(caps.OS()) {
 		return engine.Result{}, errUnsupported(r)
+	}
+	if missing := a.missingGrants(sc); len(missing) > 0 {
+		return engine.Result{}, errNeedsGrant(missing)
 	}
 	s, err := engine.CompileLang(sc.Name, sc.Source, curLang())
 	if err != nil {
@@ -417,6 +422,9 @@ func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, 
 		Now:      now,
 		Lang:     curLang(),
 		TZOffset: tz,
+		OS:       caps.OS(),
+		Kind:     caps.Platform(),
+		Granted:  a.grantedList(sc),
 		View:     vals,
 		Metrics:  a.store.Metrics(),
 		Feeds:    a.feedInput(s.Meta.Feeds, now),

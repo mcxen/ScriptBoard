@@ -331,7 +331,7 @@ export function meta() {
     name: "Claude Code 用量",
     description: "读取本机 Claude Code 日志，统计用量和剩余", // 一句话
     version: "1.0.0",                // x.y.z
-    platforms: ["desktop"],          // 在哪里能用：desktop（电脑）、mobile（手机）；不写就是都能用
+    platforms: ["desktop"],          // 在哪里能用：desktop、mobile，或具体系统 macos、windows、linux、android、ios；不写就是都能用
     needs: ["files"],                // 依赖的平台能力，见下表；没有依赖写 []
     usage: ["claude-code"],
     sources: {},
@@ -348,7 +348,13 @@ export function meta() {
 
 **声明和实际用到的会合并。** 宿主还会看脚本用了什么：有 `sources` 或 `feeds` 就依赖 `network`；读 `claude-code` 用量就依赖 `files`，只能在电脑上用；余额类提供方依赖 `network` 和 `key`。依赖 `files` 或 `exec` 的脚本，手机一律不能用，即使它声明了 `mobile`。声明和实际不符时，编辑页和 MCP 的 `script_check` 会给出警告（比如声明了手机却读电脑文件、用了网络却没有声明、写了规范之外的词）。没有声明的老脚本照常运行，由宿主推断。
 
-**在当前设备上不能用的脚本**：首页不显示它的卡片，运行时说明原因（「这个组件只能在电脑上使用：它要读电脑上的文件」），编辑页里仍然看得到，标着「仅电脑」。想在电脑上试手机的规则，设环境变量 `SCRIPTBOARD_PLATFORM=mobile`。
+**平台按系统隔离。** `platforms` 可以写分组（`desktop` 是 macOS、Windows、Linux，`mobile` 是 Android、iOS），也可以写具体的系统。只写 `["windows"]` 的脚本，在 macOS、Linux 和手机上都不会显示卡片、也不会运行，编辑页里仍然看得到，标着「仅 Windows」。想在这台电脑上试别的系统的规则，设环境变量 `SCRIPTBOARD_OS=windows`（或 `SCRIPTBOARD_PLATFORM=mobile`）。
+
+**在当前系统上不能用的脚本**：首页不显示它的卡片，运行时说明原因（「这个组件只能在这些系统上使用：Windows」「这个组件只能在电脑上使用：它要读电脑上的文件」）。
+
+**平台提供接口，脚本不处理系统差异。** 脚本不自己开文件、起程序或发请求，只在 `meta()` 里说要什么，宿主去做，再通过 `ctx` 交给 `render`：`ctx.sources`（联网取数）、`ctx.feeds`（curl、tcp、文件、exec 数据源）、`ctx.usage`（AI 用量）、`ctx.metrics`（用户录入的值）、`ctx.platform`（`{os, kind}`）、`ctx.granted`（允许它用的敏感能力）。Claude Code 的日志在 Windows、macOS、Linux 上各在哪、`CLAUDE_CONFIG_DIR` 怎么设，都是宿主的事，脚本只读 `ctx.usage["claude-code"]`。
+
+**权限。** `files`、`exec`、`key` 是敏感能力：不是内置的脚本（社区的、本地插件、自建的），要用它们必须由用户在编辑页的说明块里「授权」，一个脚本、一项能力一授权，可以随时「撤销」。没授权就不运行，卡片上写明缺哪一项。读文件或运行程序的数据源（`file://`、`exec:`）也算：读它的脚本同样要授权，没声明也一样。内置脚本在源码和发布时一致的情况下默认受信任，改过之后就和别的脚本一样了。
 
 **来源和管理。** 每个脚本记着自己的来源：
 
@@ -358,6 +364,8 @@ export function meta() {
 | 社区 | 社区 | 从社区下载，记着社区 id；可以删除（点两次确认） |
 | 本地插件 | 本地插件 | 在插件文件夹里，文件夹是唯一来源，应用里只读；用 MCP 创建和修改 |
 | 自建 | 自建 | 自己写、复制或粘贴导入的；可以删除 |
+
+MCP 的 `plugin_guide` 工具返回完整的开发说明（脚本的形状、`meta()` 的字段、平台和依赖、权限、宿主提供的接口、系统差异怎么处理），内容由代码里的列表生成，规范改了它也跟着变；助手写插件前先读它，写完用 `script_check` 检查声明和实际是否一致。
 
 编辑页的脚本列表每一行写着来源，电脑专用的还写着依赖（「内置 · 仅电脑 · 读本机文件」）；右边的说明块有来源、版本、平台和依赖的标识、一句话介绍和警告；全屏页的「关于」里有同样的信息。内置脚本都按规范声明，`internal/spec/builtins_test.go` 逐个检查：版本、平台、依赖、介绍齐全，声明和实际一致，新增内置脚本不合规就过不了测试。Claude Code 用量是典型的「电脑专用、依赖平台」的脚本。
 

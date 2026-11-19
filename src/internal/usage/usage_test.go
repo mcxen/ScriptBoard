@@ -150,3 +150,52 @@ func TestRegisterExtendsProviders(t *testing.T) {
 		t.Error("registered provider not listed")
 	}
 }
+
+// Where Claude Code's logs are depends on the system and the setup, and the
+// provider finds them: the folders CLAUDE_CONFIG_DIR lists, the home folder's
+// .claude, and the XDG folder.
+func TestClaudeDirsFollowTheSetup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
+	other := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", other+string(os.PathListSeparator)+filepath.Join(home, "second"))
+	dirs := claudeDirs()
+	want := []string{
+		filepath.Join(other, "projects"),
+		filepath.Join(home, "second", "projects"),
+		filepath.Join(home, ".claude", "projects"),
+		filepath.Join(home, ".config", "claude", "projects"),
+	}
+	if strings.Join(dirs, "|") != strings.Join(want, "|") {
+		t.Errorf("dirs %v, want %v", dirs, want)
+	}
+}
+
+// With no folder given, the provider reads the logs it finds in those places,
+// and counts a reply once even when two folders hold it.
+func TestClaudeCodeReadsTheFoldersItFinds(t *testing.T) {
+	now := time.Date(2026, 11, 18, 15, 0, 0, 0, time.UTC)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	write := func(dir, name string, lines ...string) {
+		p := filepath.Join(dir, "projects", name, "s.jsonl")
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reply := line(now.Add(-time.Hour), "m1", "r1", "claude-a", 10, 90, 0, 0)
+	write(filepath.Join(home, ".claude"), "p1", reply)
+	write(filepath.Join(home, ".config", "claude"), "p2", reply, line(now.Add(-time.Hour), "m2", "r2", "claude-a", 0, 400, 0, 0))
+
+	r, err := Fetch(context.Background(), "claude-code", Options{Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Windows["today"]; got != 500 {
+		t.Errorf("today %v tokens, want 500 (the reply that is in both folders counted once)", got)
+	}
+}

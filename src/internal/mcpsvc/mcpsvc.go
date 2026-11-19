@@ -219,6 +219,14 @@ func Tools() []Tool {
 			InputSchema: obj(map[string]any{"id": str("plugin id")}, "id"),
 		},
 		{
+			Name: "plugin_guide",
+			Description: "Read this first. The plugin reference: the script shape, meta() fields, the platforms " +
+				"(desktop, mobile, or one system such as windows) and needs (network, files, exec, key), which " +
+				"features the user must allow, what the host provides as ctx, and how system differences are " +
+				"handled by the host instead of the script.",
+			InputSchema: obj(map[string]any{}),
+		},
+		{
 			Name: "script_check",
 			Description: "Compile a script without saving it and report its meta (name, icon, dims) and its " +
 				"contract: the platforms it runs on and the features it needs (declared plus what the host sees " +
@@ -319,6 +327,8 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		return "已删除插件 " + str("id"), nil
+	case "plugin_guide":
+		return Guide(), nil
 	case "script_check":
 		meta, err := plugins.CheckSource("check.js", str("source"))
 		if err != nil {

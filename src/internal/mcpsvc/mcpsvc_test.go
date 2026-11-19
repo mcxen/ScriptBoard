@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"scriptboard/src/internal/caps"
 )
 
 const demoSource = `export function meta() { return { name: "演示", icon: "sparkles", sources: {} }; }
@@ -70,8 +72,8 @@ func TestMCPCreatesPluginAndIcon(t *testing.T) {
 	if v := result(1)["protocolVersion"]; v != "2024-11-05" {
 		t.Errorf("protocol version %v", v)
 	}
-	if n := len(result(2)["tools"].([]any)); n != 7 {
-		t.Errorf("%d tools listed, want 7", n)
+	if n := len(result(2)["tools"].([]any)); n != 8 {
+		t.Errorf("%d tools listed, want 8", n)
 	}
 	if isErr(3) {
 		t.Errorf("plugin_save failed: %s", text(3))
@@ -210,5 +212,46 @@ export function render(ctx) { return { title: "y", big: "1", sub: "", lines: [],
 	}
 	if got := texts[5]; !strings.Contains(got, "platforms=desktop,mobile") || !strings.Contains(got, "needs=network") {
 		t.Errorf("plugin_list: %q", got)
+	}
+}
+
+// The guide an assistant reads says every platform and need the host accepts,
+// who allows what, and where system differences are handled, and it can be read
+// even when the server is read-only.
+func TestGuideSaysWhatTheHostAccepts(t *testing.T) {
+	g := Guide()
+	for _, word := range caps.Platforms {
+		if !strings.Contains(g, `"`+word+`"`) {
+			t.Errorf("the guide does not mention the platform %q", word)
+		}
+	}
+	for _, need := range caps.Needs {
+		if !strings.Contains(g, "`"+need+"`") {
+			t.Errorf("the guide does not mention the need %q", need)
+		}
+	}
+	for _, want := range []string{
+		`platforms: ["windows"]`,      // a one-system script is not offered elsewhere
+		"ctx.platform", "ctx.granted", // what the host gives
+		"allows it in the editor", // the permission rule
+		"System differences belong to the host",
+		"script_check", "plugin_save",
+	} {
+		if !strings.Contains(g, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
+	}
+
+	var out bytes.Buffer
+	msgs := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		reqCall(2, "plugin_guide", map[string]any{}),
+	}
+	srv := Server{DataDir: t.TempDir(), ReadOnly: func() bool { return true }}
+	if err := srv.Serve(strings.NewReader(strings.Join(msgs, "\n")+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "ScriptBoard plugin guide") || strings.Contains(out.String(), `"isError":true`) {
+		t.Errorf("the guide cannot be read in read-only mode: %s", out.String())
 	}
 }
