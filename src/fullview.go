@@ -28,7 +28,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	idx, vals := a.viewOf(sc.ID, meta.Dims)
 	st := &runState{err: metaErr}
 	if metaErr == nil {
-		st = a.ensure(runKey(sc.ID, meta.Dims, vals), sc, vals)
+		st = a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
 	}
 	sel := a.selOf("full:" + sc.ID)
 
@@ -38,6 +38,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				// A phone has room for icons, not for a row of buttons; 大图 gives
 				// the chart the window's height, which a phone has none to spare.
 				a.refreshButton(c, sc)
+				a.resetIcon(c, sc)
 				if action.ActionIcon(c, icon("pencil-line"), action.ActionIconProps{Size: theme.Small, Title: tr("编辑")}).Clicked() {
 					a.router.Push("/edit/" + sc.ID)
 				}
@@ -52,6 +53,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			if btn(c, tr("刷新")).Clicked() {
 				a.refreshScript(sc)
 			}
+			a.resetButton(c, sc)
 			if btn(c, tr("编辑")).Clicked() {
 				a.router.Push("/edit/" + sc.ID)
 			}
@@ -113,6 +115,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 					})
 				}
 				a.dimRow(c, idx, meta.Dims)
+				a.varRow(c, sc, meta)
 			})
 
 			h := float32(340)
@@ -198,7 +201,26 @@ func (a *app) infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compac
 	if len(meta.Feeds) > 0 {
 		rows = append(rows, row{title: tr("数据源"), control: val(joinNames(meta.Feeds))})
 	}
-	group(c, tr("关于"), compact, rows...)
+	// The details fold: one line with a summary, opened by its link. Closed,
+	// they take a line at the foot of the page rather than a block.
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		label(c, tr("关于"))
+		ui.Text(c, kind+" · "+where).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+		ui.Spacer(c)
+		toggle := tr("展开")
+		if a.aboutOpen {
+			toggle = tr("收起")
+		}
+		if ui.Text(c, toggle).FontSize(fsSmall).TextColor(p.accent).Cursor(ui.CursorPointer).Clicked() {
+			a.aboutOpen = !a.aboutOpen
+		}
+	})
+	if a.aboutOpen {
+		rows = append(rows, row{title: tr("数据"), note: tr("清空这个脚本取过的数据和历史，下次打开重新取"), control: func() {
+			a.resetButton(c, sc)
+		}})
+		group(c, "", compact, rows...)
+	}
 }
 
 func joinNames(names []string) string {

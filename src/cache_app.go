@@ -82,7 +82,7 @@ func (a *app) savedResult(sc store.Script, run string, m engine.Meta) (engine.Re
 	if a.cache == nil || len(m.Sources) == 0 || strings.HasPrefix(run, draftKey) {
 		return engine.Result{}, false
 	}
-	data, at, ok := a.cache.GetResult(resultKey(sc, run, curLang()))
+	data, at, ok := a.cache.GetResultOf(sc.ID, resultKey(sc, run, curLang()))
 	if !ok {
 		return engine.Result{}, false
 	}
@@ -102,7 +102,7 @@ func (a *app) saveResult(sc store.Script, run string, m engine.Meta, res engine.
 		return
 	}
 	if data, err := json.Marshal(res); err == nil {
-		_ = a.cache.PutResult(resultKey(sc, run, curLang()), data, a.now())
+		_ = a.cache.PutResultOf(sc.ID, resultKey(sc, run, curLang()), data, a.now())
 	}
 }
 

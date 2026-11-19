@@ -190,9 +190,24 @@ func (s *Store) History(url string, limit int) []Entry {
 
 // GetResult is what was cached under key, and when.
 func (s *Store) GetResult(key string) ([]byte, time.Time, bool) {
+	return s.GetResultOf("", key)
+}
+
+// resultPath is where the result of key, of owner, is kept. Results of one
+// owner (a script) share a folder, so that forgetting the owner forgets them
+// all; an empty owner keeps them with the others.
+func (s *Store) resultPath(owner, key string) string {
+	if owner == "" {
+		return s.path("res", key, ".json")
+	}
+	return filepath.Join(s.dir, "res", name(owner), name(key)+".json")
+}
+
+// GetResultOf is what was cached under key for owner, and when.
+func (s *Store) GetResultOf(owner, key string) ([]byte, time.Time, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b, err := os.ReadFile(s.path("res", key, ".json"))
+	b, err := os.ReadFile(s.resultPath(owner, key))
 	if err != nil {
 		return nil, time.Time{}, false
 	}
@@ -209,6 +224,11 @@ func (s *Store) GetResult(key string) ([]byte, time.Time, bool) {
 
 // PutResult caches data under key.
 func (s *Store) PutResult(key string, data []byte, at time.Time) error {
+	return s.PutResultOf("", key, data, at)
+}
+
+// PutResultOf caches data under key, for owner.
+func (s *Store) PutResultOf(owner, key string, data []byte, at time.Time) error {
 	if !json.Valid(data) {
 		return errors.New("cache: the result is not JSON")
 	}
@@ -218,10 +238,32 @@ func (s *Store) PutResult(key string, data []byte, at time.Time) error {
 	if err != nil {
 		return err
 	}
-	if err := write(s.path("res", key, ".json"), rec); err != nil {
+	if err := write(s.resultPath(owner, key), rec); err != nil {
 		return err
 	}
 	return s.pruneLocked(MaxTotalBytes)
+}
+
+// Forget drops what is cached for url: its latest response and its history.
+func (s *Store) Forget(url string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range []string{s.path("src", url, ".json"), s.path("hist", url, ".jsonl")} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// ForgetOwner drops every saved result of owner.
+func (s *Store) ForgetOwner(owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if owner == "" {
+		return nil
+	}
+	return os.RemoveAll(filepath.Join(s.dir, "res", name(owner)))
 }
 
 // Size is the bytes the cache takes.

@@ -91,6 +91,10 @@ type app struct {
 	cols    int
 	unit    float32
 	homeIDs []string
+	// confirmReset is the script whose reset button was clicked once.
+	confirmReset string
+	// aboutOpen is whether the full view shows a script's details.
+	aboutOpen bool
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
@@ -474,10 +478,17 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	if a.cache != nil {
 		opt.Cache = cacheAdapter{a.cache}
 	}
-	sources, info := engine.FetchCached(context.Background(), a.client, s.Meta.Sources, now, opt)
+	// The variables the user chose fill the sources: each combination is its
+	// own URL, so its own cache and history.
+	vars := a.varsOf(sc, s.Meta)
+	urls := make(map[string]string, len(s.Meta.Sources))
+	for name, tmpl := range s.Meta.Sources {
+		urls[name] = engine.ExpandVars(tmpl, now, vars)
+	}
+	sources, info := engine.FetchCached(context.Background(), a.client, urls, now, opt)
 	var history map[string][]engine.HistoryPoint
 	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
-		history = engine.HistoryOf(opt.Cache, s.Meta.Sources, names, n, now)
+		history = engine.HistoryOf(opt.Cache, urls, names, n, now)
 	}
 	res, err := s.Run(context.Background(), engine.Input{
 		Now:      now,
@@ -497,6 +508,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		Sources:    sources,
 		SourceInfo: info,
 		History:    history,
+		Vars:       vars,
 	})
 	if err == nil {
 		res.DataAt, res.Stale = dataTimes(info)

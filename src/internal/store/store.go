@@ -136,6 +136,9 @@ type Settings struct {
 	// CardOrder is the order the home cards were arranged in; cards not in it
 	// follow in the order of the scripts.
 	CardOrder []string `json:"cardOrder"`
+	// ScriptVars are the values the user chose for a script's variables, by
+	// script ID and then variable key.
+	ScriptVars map[string]map[string]string `json:"scriptVars"`
 	// CardScale scales the home cards and their icons, from about 0.7 to 1.6.
 	CardScale float64 `json:"cardScale"`
 }

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Switchable variables: a script declares `vars` (a city, a currency pair) in `meta()`, and each `{key}` in a source is filled with the value the user picked on the card or the full view. Each value has its own cache and history; `ctx.vars` gives the value to `render`. No code is needed beyond the config.
+- Reset data: a script's full view and editor have 「重置数据」 (two clicks), which clears its cached responses and history for every value of its variables, its saved results, and its data source samples.
+- The full view's details are folded into one line (「关于 · 自建 · 电脑与手机 · 展开」); the reset is among them.
 - Home layout: an edit mode (「编辑布局」). Drag a card to move it, drag its bottom-right corner to resize it (width snaps to columns, height in steps of 16). The layout is saved. The size guide strip above the cards is gone; the right-click menu stays.
 - The home grid uses the whole window: a wide window no longer leaves a blank strip on the right, and a row's last card fills what the row has left.
 

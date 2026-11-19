@@ -70,6 +70,9 @@ type Meta struct {
 	History []string `json:"history"`
 	// HistoryLimit is how many of the newest it wants; 0 is 120.
 	HistoryLimit int `json:"historyLimit"`
+	// Vars are the values the user switches, which fill {key} in the sources
+	// (see vars.go); render reads the chosen ones as ctx.vars.
+	Vars []Var `json:"vars"`
 }
 
 // ManualInput is a value typed in by hand.
@@ -264,6 +267,8 @@ type Input struct {
 	// (ctx.history).
 	SourceInfo map[string]SourceInfo
 	History    map[string][]HistoryPoint
+	// Vars are the chosen value of each variable (ctx.vars).
+	Vars map[string]string
 }
 
 // Script is a compiled script. Runs share the compiled module but each gets a
@@ -318,6 +323,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 		"sources":    nonNilSources(in.Sources),
 		"sourceInfo": nonNilInfo(in.SourceInfo),
 		"history":    nonNilHistory(in.History),
+		"vars":       nonNilVars(in.Vars),
 	})
 	if err != nil {
 		return Result{}, err
@@ -450,6 +456,14 @@ func nonNilInfo(m map[string]SourceInfo) map[string]SourceInfo {
 func nonNilHistory(m map[string][]HistoryPoint) map[string][]HistoryPoint {
 	if m == nil {
 		return map[string][]HistoryPoint{}
+	}
+	return m
+}
+
+// nonNilVars is the chosen variables, never nil, so that ctx.vars is an object.
+func nonNilVars(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
 	}
 	return m
 }

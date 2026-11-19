@@ -141,7 +141,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	idx, vals := a.viewOf(sc.ID, meta.Dims)
 	st := &runState{err: metaErr}
 	if metaErr == nil {
-		st = a.ensure(runKey(sc.ID, meta.Dims, vals), sc, vals)
+		st = a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
 	}
 
 	size := classOf(b)
@@ -221,6 +221,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			case 2, 3:
 				ui.Spacer(c)
 				a.dimRow(c, idx, meta.Dims)
+				a.varRow(c, sc, meta)
 				// A wide card is a strip: its chart is shorter than a large card's.
 				chartH := max(120, b.Height-210) * s
 				if size == 3 {

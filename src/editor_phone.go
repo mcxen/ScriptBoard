@@ -143,6 +143,7 @@ func (a *app) phoneScript(c *ui.Context) {
 		if btn(c, tr("导出")).Clicked() {
 			a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
 		}
+		a.resetIcon(c, a.draft)
 		if a.originOf(a.draft) == store.OriginBuiltin && btn(c, tr("还原")).Clicked() {
 			a.restoreDraft()
 		}

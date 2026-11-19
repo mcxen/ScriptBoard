@@ -225,6 +225,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			if btn(c, tr("运行")).Clicked() {
 				a.invalidate(draftKey)
 			}
+			a.resetButton(c, a.draft)
 			if primaryBtn(c, tr("保存")).Clicked() {
 				a.saveDraft()
 			}
@@ -251,8 +252,9 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			return
 		}
 		idx, vals := a.viewOf(draftKey, meta.Dims)
-		st := a.ensure(runKey(draftKey, meta.Dims, vals), a.draft, vals)
+		st := a.ensure(a.runKeyOf(draftKey, a.draft, meta, vals), a.draft, vals)
 		a.dimRow(c, idx, meta.Dims)
+		a.varRow(c, a.draft, meta)
 		switch {
 		case st.loading:
 			ui.Text(c, tr("运行中…")).TextColor(p.muted)

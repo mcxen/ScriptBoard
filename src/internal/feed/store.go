@@ -30,6 +30,21 @@ func (s *Store) file(id string) (string, error) {
 	return filepath.Join(s.dir, id+".jsonl"), nil
 }
 
+// Reset deletes every sample of the source: what it read before, so that old
+// readings do not sit beside new ones.
+func (s *Store) Reset(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path, err := s.file(id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // Append adds a sample to the source's file.
 func (s *Store) Append(id string, smp Sample) error {
 	path, err := s.file(id)
