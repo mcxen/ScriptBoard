@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,20 +26,37 @@ func Expand(tmpl string, now time.Time) string {
 	return r.Replace(tmpl)
 }
 
-// Fetch loads every source. A source that fails becomes {"error": "..."}, so
-// the script can show its fallback instead of the whole run failing.
+// Fetch loads every source at the same time. A source that fails becomes
+// {"error": "..."}, so the script can show its fallback instead of the whole
+// run failing.
 func Fetch(ctx context.Context, client *http.Client, sources map[string]string, now time.Time) map[string]json.RawMessage {
-	out := make(map[string]json.RawMessage, len(sources))
+	names := make([]string, 0, len(sources))
+	urls := make([]string, 0, len(sources))
 	for name, tmpl := range sources {
-		body, err := get(ctx, client, Expand(tmpl, now))
-		switch {
-		case err != nil:
-			out[name] = errorJSON(err)
-		case !json.Valid(body):
-			out[name] = errorJSON(errors.New("response is not JSON"))
-		default:
-			out[name] = body
-		}
+		names = append(names, name)
+		urls = append(urls, Expand(tmpl, now))
+	}
+	raw := make([]json.RawMessage, len(names))
+	var wg sync.WaitGroup
+	for i := range names {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, err := get(ctx, client, urls[i])
+			switch {
+			case err != nil:
+				raw[i] = errorJSON(err)
+			case !json.Valid(body):
+				raw[i] = errorJSON(errors.New("response is not JSON"))
+			default:
+				raw[i] = body
+			}
+		}(i)
+	}
+	wg.Wait()
+	out := make(map[string]json.RawMessage, len(names))
+	for i, name := range names {
+		out[name] = raw[i]
 	}
 	return out
 }

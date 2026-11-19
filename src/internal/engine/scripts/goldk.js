@@ -1,5 +1,5 @@
 // 金价 K 线：把金价录入交给宿主，按周期聚合成 K 线（秒、分、时、日、周、月）。
-// 维度：范围（天）与周期。没有数据时用示例行情。
+// 维度：范围（天）与周期。没有录入时不造数。
 // 语言：meta({lang}) 和 render(ctx) 都带 lang（"zh" 或 "en"）。
 // Language: meta({lang}) and render(ctx) both get lang ("zh" or "en").
 let EN = false;
@@ -19,6 +19,10 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("金价 K 线", "Gold candles"),
+    description: t("把你录入的金价按周期聚合成 K 线", "Candles of the gold prices you record, by period"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: [],
     icon: "candlestick-chart",
     inputs: [{ metric: "gold", label: t("金价", "Gold"), unit: t("元/克", "CNY/g"), step: 0.1 }],
     dims: [
@@ -47,55 +51,36 @@ function periodName(value) {
   return t(p.zh, p.en);
 }
 
-// 示例行情：40 根 K 线，每根 4 个报价，只在没有录入时使用。
-function sample(period, now) {
-  const step = period === -1 ? 2592000 : period; // a month, for the sample
-  const start = Math.floor(now / 1000 / step) * step - 39 * step;
-  const ticks = [];
-  let base = 620;
-  for (let i = 0; i < 40; i++) {
-    const open = base;
-    const close = base + 4 * Math.sin(i / 3) + (i % 4) - 1.5;
-    const high = Math.max(open, close) + 2 + (i % 3);
-    const low = Math.min(open, close) - 2 - (i % 2);
-    const t0 = (start + i * step) * 1000;
-    const span = step * 1000;
-    ticks.push(
-      { t: t0, v: open },
-      { t: t0 + Math.floor(span / 4), v: high },
-      { t: t0 + Math.floor(span / 2), v: low },
-      { t: t0 + span - 1, v: close },
-    );
-    base = close;
-  }
-  return ticks;
-}
-
 export function render(ctx) {
   EN = ctx.lang === "en";
   const period = ctx.view.period ?? 86400;
   const range = ctx.view.range ?? 0;
   const since = range > 0 ? ctx.now - range * 86400000 : 0;
-  let ticks = (ctx.metrics.gold ?? [])
+  const ticks = (ctx.metrics.gold ?? [])
     .slice()
     .sort((a, b) => a.t - b.t)
     .filter((p) => p.t >= since);
+  const unit = periodName(period);
 
-  let note = "";
   if (ticks.length === 0) {
-    ticks = sample(period, ctx.now);
-    note = t("示例数据：还没有金价录入", "Sample data: no gold prices recorded yet");
+    return {
+      title: `${t("金价", "Gold")} · ${unit}K（${t("元/克", "CNY/g")}）`,
+      icon: "candlestick-chart",
+      big: "--",
+      sub: t("还没有录入", "Nothing recorded yet"),
+      lines: [t("在「编辑」页录入金价", "Record gold prices in Edit")],
+      chart: null,
+    };
   }
   const last = ticks[ticks.length - 1].v;
   const prev = ticks.length > 1 ? ticks[ticks.length - 2].v : last;
   const pct = prev === 0 ? 0 : ((last - prev) / prev) * 100;
-  const unit = periodName(period);
   return {
     title: `${t("金价", "Gold")} · ${unit}K（${t("元/克", "CNY/g")}）`,
     icon: "candlestick-chart",
     big: last.toFixed(2),
     sub: `${t("较前一根", "vs previous")} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`,
-    lines: note ? [note] : [t("悬浮查看每根的开高低收", "Hover a candle for its open, high, low and close")],
+    lines: [t("悬浮查看每根的开高低收", "Hover a candle for its open, high, low and close")],
     chart: { type: "candle", ticks: ticks, period: period, limit: 60 },
   };
 }

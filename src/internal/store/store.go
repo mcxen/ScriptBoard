@@ -15,6 +15,18 @@ import (
 	"scriptboard/src/internal/feed"
 )
 
+// Where a script came from.
+const (
+	// OriginBuiltin: it ships with the app.
+	OriginBuiltin = "builtin"
+	// OriginCommunity: it was downloaded from the community.
+	OriginCommunity = "community"
+	// OriginPlugin: it is a local plugin, kept in the plugin folder.
+	OriginPlugin = "plugin"
+	// OriginUser: the user wrote, copied or imported it.
+	OriginUser = "user"
+)
+
 // Script is a user's script as stored.
 type Script struct {
 	ID     string `json:"id"`
@@ -22,6 +34,12 @@ type Script struct {
 	Source string `json:"source"`
 	// Home shows the script as a card on the home page.
 	Home bool `json:"home"`
+	// Origin is where the script came from: one of the Origin constants. It is
+	// empty on a script saved before origins existed; the app works it out.
+	Origin string `json:"origin,omitempty"`
+	// CommunityID is the id the script has in the community, for one that was
+	// downloaded from it.
+	CommunityID string `json:"communityID,omitempty"`
 }
 
 // Settings are the app's settings.

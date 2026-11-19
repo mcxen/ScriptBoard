@@ -5,6 +5,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/engine"
+	"scriptboard/src/internal/spec"
 	"scriptboard/src/internal/store"
 )
 
@@ -123,7 +124,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				}
 			})
 		}
-		infoBlock(c, sc, meta, compact)
+		a.infoBlock(c, sc, meta, compact)
 	})
 }
 
@@ -142,19 +143,35 @@ func firstNonEmpty(a, b string) string {
 }
 
 // infoBlock says what the script is: where it comes from and what it reads.
-func infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compact bool) {
+func (a *app) infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compact bool) {
 	p := pal(c)
 	val := func(text string) func() {
 		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
-	kind := tr("内置脚本")
+	kind := originLabel(a.originOf(sc))
 	if isPluginScript(sc.ID) {
-		kind = tr("本地插件 · ") + sc.ID
+		kind += " · " + sc.ID
+	}
+	if meta.Version != "" {
+		kind += " · v" + meta.Version
+	}
+	r := spec.Resolve(meta)
+	where := tr("电脑与手机")
+	if pl := platformLabel(r); pl != "" {
+		where = pl
+	}
+	needs := make([]string, len(r.Needs))
+	for i, n := range r.Needs {
+		needs[i] = needLabel(n)
 	}
 	rows := []row{
 		{title: tr("来源"), control: val(kind)},
+		{title: tr("平台"), control: val(where)},
 		{title: tr("图标"), control: val(meta.Icon)},
 		{title: tr("首页显示"), control: val(onOff(sc.Home))},
+	}
+	if len(needs) > 0 {
+		rows = append(rows, row{title: tr("依赖"), control: val(joinNames(needs))})
 	}
 	if len(meta.Dims) > 0 {
 		rows = append(rows, row{title: tr("可调维度"), control: val(dimNames(meta.Dims))})

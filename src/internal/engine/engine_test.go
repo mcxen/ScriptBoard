@@ -112,6 +112,29 @@ func TestFetchFailureBecomesError(t *testing.T) {
 	}
 }
 
+func TestFetchRunsSourcesTogether(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	start := time.Now()
+	out := Fetch(context.Background(), srv.Client(), map[string]string{
+		"a": srv.URL + "/a",
+		"b": srv.URL + "/b",
+		"c": srv.URL + "/c",
+	}, time.Now())
+	if d := time.Since(start); d >= 600*time.Millisecond {
+		t.Errorf("took %v, want the three sources fetched together", d)
+	}
+	for _, k := range []string{"a", "b", "c"} {
+		if !strings.Contains(string(out[k]), `"ok"`) {
+			t.Errorf("%s: %s", k, out[k])
+		}
+	}
+}
+
 func TestExpandDates(t *testing.T) {
 	now := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
 	got := Expand("a/{start}..{end}", now)

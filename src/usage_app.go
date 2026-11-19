@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 	"scriptboard/src/internal/usage"
 )
@@ -103,7 +104,7 @@ func (a *app) forgetUsage() {
 	a.usage.mu.Lock()
 	a.usage.entries = nil
 	a.usage.mu.Unlock()
-	a.invalidateAll()
+	a.invalidateWhere(func(_ store.Script, m engine.Meta) bool { return len(m.Usage) > 0 })
 }
 
 // usageForm is the text and numbers being typed for each provider.

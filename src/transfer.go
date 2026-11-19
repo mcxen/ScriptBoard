@@ -65,14 +65,21 @@ func parseScript(text string) (store.Script, error) {
 	return store.Script{Name: name, Source: src, Home: true}, nil
 }
 
-// importText saves the script in text as a new script and opens it in the
-// editor. It reports the problem instead when the text is not a script.
+// importText saves the script in text as the user's own new script and opens it
+// in the editor. It reports the problem instead when the text is not a script.
 func (a *app) importText(text string) error {
+	return a.importScript(text, store.OriginUser, "")
+}
+
+// importScript is importText for a script of a known origin: one downloaded
+// from the community is kept with its community id.
+func (a *app) importScript(text, origin, communityID string) error {
 	sc, err := parseScript(text)
 	if err != nil {
 		return err
 	}
 	sc.ID = fmt.Sprintf("import-%d", a.now().UnixNano())
+	sc.Origin, sc.CommunityID = origin, communityID
 	if err := a.store.SaveScript(sc); err != nil {
 		return err
 	}

@@ -151,3 +151,21 @@ func TestSettingsPage(t *testing.T) {
 	click(t, tt, "首页")
 	requireText(t, tt, "体重 · 斤")
 }
+
+func TestRefreshBuiltin(t *testing.T) {
+	if !refreshBuiltin("gold", "export function meta(){return {name:'x',sources:{}}}") {
+		t.Error("old gold should refresh")
+	}
+	if refreshBuiltin("gold", `https://tmini.net/api/gold-price?type=json`) {
+		t.Error("live gold should stay")
+	}
+	if !refreshBuiltin("goldk", "示例数据：还没有金价录入") {
+		t.Error("old goldk should refresh")
+	}
+	if refreshBuiltin("goldk", "没有录入时不造数") {
+		t.Error("new goldk should stay")
+	}
+	if refreshBuiltin("fx", "anything") {
+		t.Error("other builtins stay")
+	}
+}

@@ -321,12 +321,55 @@ go tool mygo build -platform android
 
 数据保存在数据目录的 `data.json`，里面有脚本、记录、设置。社区的登录凭证也在这里，只保存在这台电脑上。删掉这个文件可以重来，首次运行会写入示例脚本和示例数据。
 
+## 插件规范
+
+所有脚本（内置的、社区下载的、本地插件、自己写的）走同一套规范，由 `internal/spec` 实现。`meta()` 里声明：
+
+```js
+export function meta() {
+  return {
+    name: "Claude Code 用量",
+    description: "读取本机 Claude Code 日志，统计用量和剩余", // 一句话
+    version: "1.0.0",                // x.y.z
+    platforms: ["desktop"],          // 在哪里能用：desktop（电脑）、mobile（手机）；不写就是都能用
+    needs: ["files"],                // 依赖的平台能力，见下表；没有依赖写 []
+    usage: ["claude-code"],
+    sources: {},
+  };
+}
+```
+
+| `needs` | 含义 | 手机 |
+| --- | --- | --- |
+| `network` | 发 HTTP 请求（`sources`、数据源） | 有 |
+| `files` | 读电脑上才有的文件，如某个工具的日志 | **没有** |
+| `exec` | 运行电脑上的程序 | **没有** |
+| `key` | 要用户填某个服务的密钥 | 有 |
+
+**声明和实际用到的会合并。** 宿主还会看脚本用了什么：有 `sources` 或 `feeds` 就依赖 `network`；读 `claude-code` 用量就依赖 `files`，只能在电脑上用；余额类提供方依赖 `network` 和 `key`。依赖 `files` 或 `exec` 的脚本，手机一律不能用，即使它声明了 `mobile`。声明和实际不符时，编辑页和 MCP 的 `script_check` 会给出警告（比如声明了手机却读电脑文件、用了网络却没有声明、写了规范之外的词）。没有声明的老脚本照常运行，由宿主推断。
+
+**在当前设备上不能用的脚本**：首页不显示它的卡片，运行时说明原因（「这个组件只能在电脑上使用：它要读电脑上的文件」），编辑页里仍然看得到，标着「仅电脑」。想在电脑上试手机的规则，设环境变量 `SCRIPTBOARD_PLATFORM=mobile`。
+
+**来源和管理。** 每个脚本记着自己的来源：
+
+| 来源 | 标识 | 怎么管理 |
+| --- | --- | --- |
+| 内置 | 内置 | 随应用发布，不能删除；改过之后可以「还原」成发布时的源码；可以从首页上拿掉 |
+| 社区 | 社区 | 从社区下载，记着社区 id；可以删除（点两次确认） |
+| 本地插件 | 本地插件 | 在插件文件夹里，文件夹是唯一来源，应用里只读；用 MCP 创建和修改 |
+| 自建 | 自建 | 自己写、复制或粘贴导入的；可以删除 |
+
+编辑页的脚本列表每一行写着来源，电脑专用的还写着依赖（「内置 · 仅电脑 · 读本机文件」）；右边的说明块有来源、版本、平台和依赖的标识、一句话介绍和警告；全屏页的「关于」里有同样的信息。内置脚本都按规范声明，`internal/spec/builtins_test.go` 逐个检查：版本、平台、依赖、介绍齐全，声明和实际一致，新增内置脚本不合规就过不了测试。Claude Code 用量是典型的「电脑专用、依赖平台」的脚本。
+
 ## 图表与图标的脚本约定
 
 ```js
 export function meta() {
   return {
     name: "金价 K 线",
+    version: "1.0.0",                    // 规范见上一节：version、platforms、needs、description
+    platforms: ["desktop", "mobile"],
+    needs: [],
     icon: "candlestick-chart",          // Lucide 图标名，见 icons/
     dims: [                              // 可选：用户可以调节的维度
       { key: "range", label: "范围", options: [{ value: 7, label: "7 天" }, { value: 0, label: "全部" }] },

@@ -7,7 +7,16 @@ const t = (zh, en) => (EN ? en : zh);
 
 export function meta(a) {
   EN = !!a && a.lang === "en";
-  return { name: t("OpenRouter 余额", "OpenRouter balance"), icon: "wallet", usage: ["openrouter-credits"], sources: {} };
+  return {
+    name: t("OpenRouter 余额", "OpenRouter balance"),
+    description: t("OpenRouter 额度", "OpenRouter credits"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: ["network", "key"],
+    icon: "wallet",
+    usage: ["openrouter-credits"],
+    sources: {},
+  };
 }
 
 export function render(ctx) {

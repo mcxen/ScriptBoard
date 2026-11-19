@@ -154,7 +154,7 @@ func mcpPrompt(m store.MCPSettings) string {
 	for _, t := range mcpsvc.Tools() {
 		fmt.Fprintf(&b, "- %s：%s\n", t.Name, t.Description)
 	}
-	b.WriteString(tr("\n插件脚本是 ES 模块，导出 meta() 和 render(ctx)。写好后用 plugin_save 保存，应用约一秒后显示。\n"))
+	b.WriteString(tr("\n插件脚本是 ES 模块，导出 meta() 和 render(ctx)。meta() 里要声明 version（如 \"1.0.0\"）、platforms（\"desktop\" 电脑、\"mobile\" 手机）和 needs（\"network\" 联网、\"files\" 读本机文件、\"exec\" 运行本机程序、\"key\" 需要密钥）；读本机文件的脚本只能在电脑上用。写好后用 script_check 检查（它会指出声明和实际用到的不一致），再用 plugin_save 保存，应用约一秒后显示。\n"))
 	if m.ReadOnly {
 		b.WriteString(tr("\n这个服务器是只读的：只有读取类的工具可用。\n"))
 	}

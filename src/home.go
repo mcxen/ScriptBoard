@@ -16,10 +16,11 @@ import (
 
 // cardSizes are the base widths and heights of the home cards: small shows
 // the headline only, medium adds a curve, large a chart you can hover over.
-var cardSizes = [3][2]float32{
+var cardSizes = [4][2]float32{
 	{170, 128},
 	{300, 208},
 	{620, 400},
+	{0, 208}, // wide: the width is the whole row's
 }
 
 const cardGap = 16
@@ -51,20 +52,20 @@ func (a *app) contentW() float32 {
 // columns on a wide window, 6 on a middling one, 2 on a phone; and how many
 // columns a small, a medium and a large card span in it. Cards of different
 // sizes share the grid, so a row can hold a large card beside a medium one.
-func gridFor(width float32) (cols int, spans [3]int) {
+func gridFor(width float32) (cols int, spans [4]int) {
 	switch {
 	case width >= 900:
-		return 12, [3]int{3, 4, 8}
+		return 12, [4]int{3, 4, 8, 12}
 	case width >= 520:
-		return 6, [3]int{2, 3, 6}
+		return 6, [4]int{2, 3, 6, 6}
 	}
-	return 2, [3]int{1, 2, 2}
+	return 2, [4]int{1, 2, 2, 2}
 }
 
 // sizeOf is the size of a home card: its own when the user gave it one, else
 // the default.
 func (a *app) sizeOf(id string) int {
-	if n, ok := a.set.CardSizes[id]; ok && n >= 0 && n <= 2 {
+	if n, ok := a.set.CardSizes[id]; ok && n >= 0 && n <= 3 {
 		return n
 	}
 	return a.cardSize
@@ -79,6 +80,7 @@ func (a *app) setSize(id string, size int) {
 	if err := a.store.SetSettings(a.set); err != nil {
 		a.set = a.store.Settings()
 	}
+	a.showSizeGuide(size)
 }
 
 // setAllSizes gives every card the same size again.
@@ -88,6 +90,7 @@ func (a *app) setAllSizes(size int) {
 	if err := a.store.SetSettings(a.set); err != nil {
 		a.set = a.store.Settings()
 	}
+	a.showSizeGuide(size)
 }
 
 // cardLayout works out the size of a card of the given size from the width
@@ -132,6 +135,7 @@ func (a *app) home(c *ui.Context, compact bool) {
 			return
 		}
 		// Cards of different sizes line up at their tops.
+		a.sizeGuide(c)
 		ui.Row(c).Wrap().Gap(cardGap).AlignItems(ui.Start).Children(func() {
 			for _, sc := range scripts {
 				a.card(c, sc)
@@ -231,7 +235,7 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 				}
 			}
 			a.refreshButton(c, sc)
-			if action.ActionIcon(c, icon("maximize-2"), action.ActionIconProps{Size: theme.Small, Title: tr("切换这张卡片的大小")}).Clicked() {
+			if action.ActionIcon(c, icon("maximize-2"), action.ActionIconProps{Size: theme.Small, Title: tr("右键切换大小")}).Clicked() {
 				a.setSize(sc.ID, (size+1)%3)
 			}
 		})
@@ -251,16 +255,35 @@ func (a *app) card(c *ui.Context, sc store.Script) {
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
-			case 2:
+			case 2, 3:
 				ui.Spacer(c)
 				a.dimRow(c, idx, meta.Dims)
-				Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: 190 * s, Selected: a.selOf("card:" + sc.ID)})
+				// A wide card is a strip: its chart is shorter than a large card's.
+				chartH := 190 * s
+				if size == 3 {
+					chartH = 120 * s
+				}
+				Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
 				Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
 				}
 			}
 		}
+	})
+	// Right click on this card: a menu in the window with its four sizes. It
+	// changes this card only.
+	open := a.cardMenuOpen(sc.ID)
+	ui.ContextMenuBase(c, el, open).Popup(func(panel ui.Element) {
+		panel.Padding(6).Gap(2).Background(p.card).Radius(10).BorderWidth(1).BorderColor(p.border).Children(func() {
+			for i, name := range sizeNames() {
+				i := i
+				if btn(c, name).Clicked() {
+					a.setSize(sc.ID, i)
+					*open = false
+				}
+			}
+		})
 	})
 	if el.Hovered() {
 		el.Border(1, accent.Alpha(0.55))

@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/community"
+	"scriptboard/src/internal/store"
 )
 
 // commState is what the community page shows. Requests run off the main
@@ -162,7 +163,7 @@ func (a *app) importFromCommunity(id string) {
 			a.comm.note = err.Error()
 			return
 		}
-		if err := a.importText(raw); err != nil {
+		if err := a.importScript(raw, store.OriginCommunity, id); err != nil {
 			a.comm.note = tr("下载的内容不能用：") + err.Error()
 			return
 		}

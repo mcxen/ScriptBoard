@@ -17,7 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/plugins"
+	"scriptboard/src/internal/spec"
 )
 
 const protocolVersion = "2024-11-05"
@@ -217,8 +219,10 @@ func Tools() []Tool {
 			InputSchema: obj(map[string]any{"id": str("plugin id")}, "id"),
 		},
 		{
-			Name:        "script_check",
-			Description: "Compile a script without saving it and report its meta (name, icon, dims).",
+			Name: "script_check",
+			Description: "Compile a script without saving it and report its meta (name, icon, dims) and its " +
+				"contract: the platforms it runs on and the features it needs (declared plus what the host sees " +
+				"it use), with warnings when what it declares does not match what it uses.",
 			InputSchema: obj(map[string]any{"source": str("the script source")}, "source"),
 		},
 		{
@@ -264,7 +268,15 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		list, err := plugins.List(dataDir)
 		var b strings.Builder
 		for _, p := range list {
-			fmt.Fprintf(&b, "%s  %s  icon=%s  home=%v\n", p.Manifest.ID, p.Manifest.Name, p.Manifest.Icon, p.Manifest.Home)
+			fmt.Fprintf(&b, "%s  %s  icon=%s  home=%v", p.Manifest.ID, p.Manifest.Name, p.Manifest.Icon, p.Manifest.Home)
+			if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil {
+				r := spec.Resolve(meta)
+				fmt.Fprintf(&b, "  platforms=%s  needs=%s", strings.Join(r.Platforms, ","), strings.Join(r.Needs, ","))
+				if len(r.Problems) > 0 {
+					fmt.Fprintf(&b, "  warnings=%d", len(r.Problems))
+				}
+			}
+			b.WriteString("\n")
 		}
 		if b.Len() == 0 {
 			b.WriteString("没有插件\n")
@@ -297,7 +309,11 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		if err := plugins.Save(dataDir, m, str("source")); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("已保存插件 %s，在 %s", m.ID, plugins.PluginDir(dataDir)), nil
+		out := fmt.Sprintf("已保存插件 %s，在 %s", m.ID, plugins.PluginDir(dataDir))
+		if meta, err := plugins.CheckSource(m.ID+".js", str("source")); err == nil {
+			out += "\n" + contractReport(meta)
+		}
+		return out, nil
 	case "plugin_delete":
 		if err := plugins.Delete(dataDir, str("id")); err != nil {
 			return "", err
@@ -309,7 +325,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		out, _ := json.MarshalIndent(meta, "", "  ")
-		return "脚本可以运行\n" + string(out), nil
+		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta), nil
 	case "icon_add":
 		path, err := plugins.AddIcon(dataDir, str("plugin"), str("name"), []byte(str("svg")))
 		if err != nil {
@@ -324,4 +340,21 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		return strings.Join(names, "\n") + "\n", nil
 	}
 	return "", fmt.Errorf("没有这个工具：%s", name)
+}
+
+// contractReport says where a script runs and what it needs, after the host
+// has added what it sees the script use to what the script declares, and lists
+// what the author should fix. A meta() declares them as platforms ("desktop",
+// "mobile") and needs ("network", "files", "exec", "key"), with a version.
+func contractReport(meta engine.Meta) string {
+	r := spec.Resolve(meta)
+	var b strings.Builder
+	fmt.Fprintf(&b, "平台：%s\n依赖：%s\n", strings.Join(r.Platforms, "、"), strings.Join(r.Needs, "、"))
+	if !r.Declared {
+		b.WriteString("提示：meta() 里没有声明 platforms 和 needs，宿主按脚本实际用到的来推断；规范的脚本应该声明它们和 version。\n")
+	}
+	for _, p := range r.Problems {
+		fmt.Fprintf(&b, "警告：%s\n", p)
+	}
+	return b.String()
 }

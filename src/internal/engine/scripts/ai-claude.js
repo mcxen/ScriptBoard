@@ -10,6 +10,10 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("Claude Code 用量", "Claude Code usage"),
+    description: t("读取本机 Claude Code 日志，统计用量和剩余", "Usage and what is left, from Claude Code's logs on this computer"),
+    version: "1.0.0",
+    platforms: ["desktop"],
+    needs: ["files"],
     icon: "bot",
     usage: ["claude-code"],
     dims: [

@@ -41,7 +41,7 @@ func (a *app) openEditor(id string) {
 func (a *app) newScript() {
 	id := fmt.Sprintf("script-%d", a.now().UnixNano())
 	a.editorID = id
-	a.draft = store.Script{ID: id, Name: tr("新脚本"), Source: engine.DefaultSourceFor(curLang())}
+	a.draft = store.Script{ID: id, Name: tr("新脚本"), Source: engine.DefaultSourceFor(curLang()), Origin: store.OriginUser}
 	a.status = tr("未保存")
 	delete(a.dims, draftKey)
 	a.invalidate(draftKey)
@@ -55,6 +55,8 @@ func (a *app) duplicateDraft() {
 		Name:   a.draft.Name + " " + tr("副本"),
 		Source: a.draft.Source,
 		Home:   true,
+		// A copy is the user's own, whatever it was copied from.
+		Origin: store.OriginUser,
 	}
 	if err := a.store.SaveScript(sc); err != nil {
 		a.status = tr("复制失败：") + err.Error()
@@ -64,7 +66,7 @@ func (a *app) duplicateDraft() {
 	a.draft = sc
 	delete(a.dims, draftKey)
 	a.invalidate(draftKey)
-	a.invalidateAll()
+	a.invalidate(sc.ID)
 	a.status = tr("已复制，可以修改后保存")
 }
 
@@ -104,7 +106,7 @@ func (a *app) recordMetric(metric string, v float64) error {
 	if err := a.store.Append(metric, engine.Point{T: a.now().UnixMilli(), V: v}); err != nil {
 		return err
 	}
-	a.invalidateAll()
+	a.invalidateMetric(metric)
 	return nil
 }
 
@@ -161,10 +163,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			items := []display.ListItem{}
 			for _, sc := range a.store.Scripts() {
 				meta, _ := a.metaOf(sc)
-				it := display.ListItem{Key: sc.ID, Label: tr(sc.Name), Icon: icon(meta.Icon)}
-				if isPluginScript(sc.ID) {
-					it.Description = tr("本地插件")
-				}
+				it := display.ListItem{Key: sc.ID, Label: tr(sc.Name), Icon: icon(meta.Icon), Description: a.scriptNote(sc)}
 				items = append(items, it)
 			}
 			if key := display.List(c, display.ListProps{Items: items, Active: a.editorID}); key != "" {
@@ -185,8 +184,9 @@ func (a *app) editor(c *ui.Context, compact bool) {
 							if active {
 								t.Bold()
 							}
-							if isPluginScript(sc.ID) {
-								ui.Text(c, tr("本地插件")).FontSize(fsTiny).TextColor(p.muted)
+							note := ui.Text(c, a.scriptNote(sc)).FontSize(fsTiny).TextColor(p.muted)
+							if !a.supported(sc) {
+								note.TextColor(p.warn) // this device cannot run it
 							}
 						})
 					})
@@ -224,6 +224,20 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			if btn(c, tr("复制")).Clicked() {
 				a.duplicateDraft()
 			}
+			if a.originOf(a.draft) == store.OriginBuiltin {
+				if btn(c, tr("还原")).Clicked() {
+					a.restoreDraft()
+				}
+			}
+			if a.canDelete(a.draft) {
+				label := tr("删除")
+				if a.confirmDelete == a.draft.ID {
+					label = tr("确认删除")
+				}
+				if btn(c, label).Clicked() {
+					a.deleteDraft()
+				}
+			}
 			if btn(c, tr("导出")).Clicked() {
 				a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
 			}
@@ -242,6 +256,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			sw(c, &a.draft.Home)
 			ui.Text(c, tr("显示在首页")).FontSize(fsBody)
 		})
+		a.specInfo(c, a.draft)
 		field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
 			textArea(c, &a.draft.Source, "", int(sourceH/17)).Font("monospace").FontSize(fsSmall)
 		})

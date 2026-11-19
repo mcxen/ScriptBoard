@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/store"
@@ -46,11 +47,13 @@ type app struct {
 	cardSize int     // 0 small, 1 medium, 2 large
 
 	// Editor.
-	editorID  string
-	draft     store.Script
-	metricIdx int     // 0 weight, 1 gold
-	entry     float64 // the value typed in the editor
-	status    string  // one line of feedback: saved, recorded, errors
+	editorID string
+	// confirmDelete is the script whose delete button was clicked once.
+	confirmDelete string
+	draft         store.Script
+	metricIdx     int     // 0 weight, 1 gold
+	entry         float64 // the value typed in the editor
+	status        string  // one line of feedback: saved, recorded, errors
 
 	// Quick entry on the home cards: the value typed for each input, and the
 	// last line of feedback.
@@ -65,11 +68,17 @@ type app struct {
 	transferErr  string
 
 	// Settings. set is the working copy; it is saved on every change.
-	set      store.Settings
-	unitIdx  int
-	langIdx  int // the language row of the settings: 0 auto, 1 中文, 2 English
-	skinIdx  int // the appearance row of the settings: 0 default, 1 Mac OS 9
-	themeIdx int // the light and dark row of the settings: 0 system, 1 light, 2 dark
+	set     store.Settings
+	unitIdx int
+	langIdx int // the language row of the settings: 0 auto, 1 中文, 2 English
+	skinIdx int // the appearance row of the settings: 0 default, 1 Mac OS 9
+	// The size guide: the size just chosen, until when it shows, and its SVGs.
+	guideSize  int
+	guideUntil time.Time
+	guideSVG   [4]*ui.SVG
+	// cardMenus are the open states of the cards' right-click menus, by script.
+	cardMenus map[string]*bool
+	themeIdx  int // the light and dark row of the settings: 0 system, 1 light, 2 dark
 
 	// AI usage: the reports kept for a moment, the forms in the settings, and
 	// the folder of Claude Code logs (empty is the default one; tests set it).
@@ -207,7 +216,7 @@ func (a *app) seed() error {
 		// Scripts that need a key start off the home page.
 		home := b.ID == "ai-claude" || !strings.HasPrefix(b.ID, "ai-")
 		scripts = append(scripts, store.Script{
-			ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home,
+			ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin,
 		})
 	}
 	now := time.Now()
@@ -344,12 +353,55 @@ func (a *app) invalidate(key string) {
 	}
 }
 
+// cardMenuOpen is the open state of a card's right-click menu.
+func (a *app) cardMenuOpen(id string) *bool {
+	if a.cardMenus == nil {
+		a.cardMenus = map[string]*bool{}
+	}
+	if open, ok := a.cardMenus[id]; ok {
+		return open
+	}
+	open := new(bool)
+	a.cardMenus[id] = open
+	return open
+}
+
+// invalidateWhere drops the runs of the scripts that pick reports for, and
+// leaves every other card as it is.
+func (a *app) invalidateWhere(pick func(sc store.Script, m engine.Meta) bool) {
+	for _, sc := range a.store.Scripts() {
+		m, err := a.metaOf(sc)
+		if err != nil {
+			continue
+		}
+		if pick(sc, m) {
+			a.invalidate(sc.ID)
+		}
+	}
+}
+
+// invalidateMetric drops the runs of the scripts that read metric as an input.
+func (a *app) invalidateMetric(metric string) {
+	a.invalidateWhere(func(_ store.Script, m engine.Meta) bool {
+		for _, in := range m.Inputs {
+			if in.Metric == metric {
+				return true
+			}
+		}
+		return false
+	})
+	a.invalidate(draftKey)
+}
+
 // invalidateAll drops every run.
 func (a *app) invalidateAll() { a.runs = map[string]*runState{} }
 
 // execute compiles sc, fetches its sources and renders it with the values
 // of its dimensions. It does not touch the UI, so it may run on any goroutine.
 func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, error) {
+	if r := a.specOf(sc); !r.Supports(caps.Platform()) {
+		return engine.Result{}, errUnsupported(r)
+	}
 	s, err := engine.CompileLang(sc.Name, sc.Source, curLang())
 	if err != nil {
 		return engine.Result{}, err
@@ -396,7 +448,8 @@ func fmtTime(ms int64) string {
 func (a *app) homeScripts() []store.Script {
 	var out []store.Script
 	for _, sc := range a.store.Scripts() {
-		if sc.Home {
+		// A script this device cannot run has no card on it.
+		if sc.Home && a.supported(sc) {
 			out = append(out, sc)
 		}
 	}
@@ -404,10 +457,20 @@ func (a *app) homeScripts() []store.Script {
 }
 
 // ensureBuiltins adds the built-in scripts a data file from an earlier version
-// does not have yet. Scripts that need a key start off the home page.
+// does not have yet (including goldacc, aqi, hs300, btc), and refreshes gold /
+// goldk when they still use the old mock or hand-entered source. Scripts that
+// need a key start off the home page.
 func (a *app) ensureBuiltins() error {
 	for _, b := range engine.Builtins() {
-		if _, ok := a.store.Script(b.ID); ok {
+		sc, ok := a.store.Script(b.ID)
+		if ok && !refreshBuiltin(b.ID, sc.Source) {
+			// A script saved before origins existed learns that it is built in.
+			if sc.Origin == "" {
+				sc.Origin = store.OriginBuiltin
+				if err := a.store.SaveScript(sc); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		s, err := engine.Compile(b.ID+".js", b.Source)
@@ -415,9 +478,48 @@ func (a *app) ensureBuiltins() error {
 			return fmt.Errorf("builtin %s: %w", b.ID, err)
 		}
 		home := b.ID == "ai-claude" || !strings.HasPrefix(b.ID, "ai-")
-		if err := a.store.SaveScript(store.Script{ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home}); err != nil {
+		if ok {
+			home = sc.Home
+		}
+		if err := a.store.SaveScript(store.Script{ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// refreshBuiltin is true when a stored builtin is the old gold script (hand
+// records, no Tmini) or the old gold K-line (sample candles).
+func refreshBuiltin(id, source string) bool {
+	switch id {
+	case "gold":
+		return !strings.Contains(source, "tmini.net/api/gold-price")
+	case "goldk":
+		return strings.Contains(source, "示例数据：还没有金价录入")
+	}
+	return false
+}
+
+// builtinIDs are the ids of the scripts that ship with the app.
+func builtinIDs() map[string]bool {
+	ids := map[string]bool{}
+	for _, b := range engine.Builtins() {
+		ids[b.ID] = true
+	}
+	return ids
+}
+
+// originOf is where a script came from. A script saved before origins existed
+// is a plugin by its id, built in if it has a built-in's id, and the user's
+// otherwise.
+func (a *app) originOf(sc store.Script) string {
+	switch {
+	case isPluginScript(sc.ID):
+		return store.OriginPlugin
+	case sc.Origin != "":
+		return sc.Origin
+	case builtinIDs()[sc.ID]:
+		return store.OriginBuiltin
+	}
+	return store.OriginUser
 }

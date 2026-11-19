@@ -29,6 +29,19 @@ const (
 // Meta is what a script's meta() returns.
 type Meta struct {
 	Name string `json:"name"`
+	// Description says in a line what the script shows.
+	Description string `json:"description"`
+	// Version is the script's own version, such as "1.0.0". The host does not
+	// compare it; the editor and the community show it.
+	Version string `json:"version"`
+	// Platforms lists where the script can run: "desktop" and "mobile" (package
+	// caps). Missing, it runs anywhere its other needs allow. A script that
+	// reads the computer's own files is desktop only, whatever it says.
+	Platforms []string `json:"platforms"`
+	// Needs lists the platform features the script depends on: "network",
+	// "files", "exec" and "key" (package caps). The host adds what it sees the
+	// script use: its sources, feeds and usage providers.
+	Needs []string `json:"needs"`
 	// Icon names a Lucide icon shipped with the app, as "coins".
 	Icon string `json:"icon"`
 	// Dims are the dimensions the user can adjust, such as the time range.

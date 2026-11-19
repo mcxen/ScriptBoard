@@ -162,3 +162,53 @@ func TestHTTPKeyAndReadOnly(t *testing.T) {
 		t.Errorf("key %q", k)
 	}
 }
+
+// A script check and a plugin save say where the script runs and what it
+// needs, and warn when its meta() claims more than the script can do.
+func TestMCPReportsTheContract(t *testing.T) {
+	dir := t.TempDir()
+	liar := `export function meta() { return { name: "x", platforms: ["desktop", "mobile"], needs: ["files"], usage: ["claude-code"], sources: {} }; }
+export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [], chart: null }; }`
+	honest := `export function meta() { return { name: "y", version: "1.0.0", platforms: ["desktop", "mobile"], needs: ["network"], sources: { a: "https://example.com/x" } }; }
+export function render(ctx) { return { title: "y", big: "1", sub: "", lines: [], chart: null }; }`
+	msgs := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		reqCall(2, "script_check", map[string]any{"source": liar}),
+		reqCall(3, "script_check", map[string]any{"source": demoSource}),
+		reqCall(4, "plugin_save", map[string]any{"id": "honest-one", "name": "诚实的插件", "source": honest}),
+		reqCall(5, "plugin_list", map[string]any{}),
+	}
+	var out bytes.Buffer
+	if err := (Server{DataDir: dir}).Serve(strings.NewReader(strings.Join(msgs, "\n")+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	texts := map[int]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		var r struct {
+			ID     float64 `json:"id"`
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatal(err)
+		}
+		if len(r.Result.Content) > 0 {
+			texts[int(r.ID)] = r.Result.Content[0].Text
+		}
+	}
+	if got := texts[2]; !strings.Contains(got, "平台：desktop\n") || !strings.Contains(got, "警告：") {
+		t.Errorf("script that claims a phone it cannot run on: %q", got)
+	}
+	if got := texts[3]; !strings.Contains(got, "没有声明 platforms 和 needs") {
+		t.Errorf("script with no declarations: %q", got)
+	}
+	if got := texts[4]; !strings.Contains(got, "平台：desktop、mobile") || strings.Contains(got, "警告") {
+		t.Errorf("plugin_save of an honest script: %q", got)
+	}
+	if got := texts[5]; !strings.Contains(got, "platforms=desktop,mobile") || !strings.Contains(got, "needs=network") {
+		t.Errorf("plugin_list: %q", got)
+	}
+}

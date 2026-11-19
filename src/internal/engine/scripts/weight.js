@@ -8,6 +8,10 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("体重记录", "Weight log"),
+    description: t("记录体重并画出变化", "Log your weight and chart it"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: [],
     icon: "scale",
     inputs: [{ metric: "weight", label: t("体重", "Weight"), unit: "kg", step: 0.1 }],
     dims: [

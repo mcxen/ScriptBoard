@@ -9,6 +9,10 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("汇率 USD/CNY", "USD/CNY rate"),
+    description: t("美元兑人民币汇率走势", "US dollar to yuan exchange rate"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: ["network"],
     icon: "dollar-sign",
     dims: [
       {

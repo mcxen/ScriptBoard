@@ -7,7 +7,16 @@ const t = (zh, en) => (EN ? en : zh);
 
 export function meta(a) {
   EN = !!a && a.lang === "en";
-  return { name: t("DeepSeek 余额", "DeepSeek balance"), icon: "wallet", usage: ["deepseek-balance"], sources: {} };
+  return {
+    name: t("DeepSeek 余额", "DeepSeek balance"),
+    description: t("DeepSeek 账户余额", "DeepSeek account balance"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: ["network", "key"],
+    icon: "wallet",
+    usage: ["deepseek-balance"],
+    sources: {},
+  };
 }
 
 export function render(ctx) {

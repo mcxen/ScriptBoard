@@ -9,6 +9,10 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("七日天气 · 上海", "7-day weather · Shanghai"),
+    description: t("上海未来七日气温", "Shanghai's temperatures for the next seven days"),
+    version: "1.0.0",
+    platforms: ["desktop", "mobile"],
+    needs: ["network"],
     icon: "cloud-sun",
     sources: {
       wx: "https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7",
