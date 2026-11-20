@@ -182,7 +182,8 @@ type Gauge struct {
 // Chart is what a result draws. Type "gauge" draws Gauge as a ring of what is
 // left; "barh" draws Series[0] as horizontal bars, one per label. Type is "line" (the default), "dot" for
 // scattered points, or "candle" for a K-line, which reads Candles instead of
-// Series. Labels, one per point, name each point in the detail readout;
+// Series. Type "calendar" is a month of days: the host fills the lunar date
+// and the holidays, and a click on a day shows them. Labels, one per point, name each point in the detail readout;
 // XLabels, when set, label the first and the last point along the x axis.
 type Chart struct {
 	Type    string   `json:"type"`
@@ -273,7 +274,7 @@ type RingStyle struct {
 
 // ChartTypes are the chart types a result can draw. A script that names another
 // draws nothing useful, so script_check reports it.
-var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress", "progressRing"}
+var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress", "progressRing", "calendar"}
 
 // UnknownChartType reports whether t is not one of ChartTypes (an empty type is
 // a line).
@@ -523,6 +524,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 		return res, err
 	}
 	finishChart(res.Chart, in.TZOffset)
+	finishCalendar(&res, in)
 	return res, nil
 }
 

@@ -20,4 +20,7 @@ export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [],
 	if got := chartReport(src("progress")); got != "" {
 		t.Errorf("a warning for progress: %q", got)
 	}
+	if got := chartReport(src("calendar")); got != "" {
+		t.Errorf("a warning for calendar: %q", got)
+	}
 }

@@ -35,7 +35,24 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 
 	// The whole window, as the home page: the tiles and the chart are sized to it.
 	pageFull(c, compact, func() {
-		subheader(c, a, tr(sc.Name), st.res.Title, func() {
+		cal := isCalendar(st.res.Chart)
+		sub := st.res.Title
+		if cal {
+			sub = ""
+		}
+		subheader(c, a, tr(sc.Name), sub, func() {
+			if cal {
+				if compact {
+					if action.ActionIcon(c, icon("pencil-line"), action.ActionIconProps{Size: theme.Small, Title: tr("编辑")}).Clicked() {
+						a.router.Push("/edit/" + sc.ID)
+					}
+					return
+				}
+				if btn(c, tr("编辑")).Clicked() {
+					a.router.Push("/edit/" + sc.ID)
+				}
+				return
+			}
 			if compact {
 				// A phone has room for icons, not for a row of buttons; 大图 gives
 				// the chart the window's height, which a phone has none to spare.
@@ -72,6 +89,11 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			return
 		}
 		res := st.res
+		if isCalendar(res.Chart) {
+			a.calendarPage(c, sel, compact)
+			a.infoBlock(c, sc, meta, compact)
+			return
+		}
 		accent := accentOf(res, p.accent)
 
 		// The hero: the headline number, the controls, and the chart.
@@ -127,7 +149,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			if compact {
 				h = min(h, 300)
 			}
-			Chart(c, ChartProps{Data: res.Chart, Style: a.styles[sc.ID], Height: h, Selected: sel, Full: true})
+			Chart(c, ChartProps{Data: res.Chart, Style: a.styles[sc.ID], Height: h, Selected: sel, Full: true, Now: a.now()})
 			Detail(c, res.Chart, sel)
 		})
 

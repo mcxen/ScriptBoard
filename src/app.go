@@ -616,7 +616,7 @@ func (a *app) homeScripts() []store.Script {
 }
 
 // ensureBuiltins adds the built-in scripts a data file from an earlier version
-// does not have yet (including goldacc, aqi, hs300, btc, fxcny), and refreshes gold /
+// does not have yet (including goldacc, aqi, hs300, btc, fxcny, cnwx, cal), and refreshes gold /
 // goldk when they still use the old mock or hand-entered source. Scripts that
 // need a key start off the home page.
 func (a *app) ensureBuiltins() error {

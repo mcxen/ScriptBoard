@@ -194,7 +194,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// type in) leaves, and the card grows when that is under 96, rather than the
 	// content spilling out of it over the next card.
 	wideChart := 120 * s
-	if size == 3 && ready {
+	if size == 3 && ready && !isCalendar(st.res.Chart) {
 		need := 32*s + 36*s // its padding, and the gaps between its parts
 		if showTitle {
 			need += 36 * s
@@ -277,8 +277,12 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		if size == sizeMini {
 			// The smallest card: its number and nothing else. A click opens the
 			// full view and the right-click menu still picks a size.
-			ui.Spacer(c)
-			ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
+			if ready && isCalendar(st.res.Chart) {
+				a.calendarHomeCard(c, size, s, b.Height)
+			} else {
+				ui.Spacer(c)
+				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
+			}
 			if a.editing {
 				a.resizeHandle(c, sc.ID, span, b)
 			}
@@ -304,6 +308,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 		default:
+			if isCalendar(st.res.Chart) {
+				a.calendarHomeCard(c, size, s, b.Height)
+				break
+			}
 			// A card with no headline, or no summary, does not keep a line empty.
 			if st.res.Big != "" {
 				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
@@ -352,11 +360,15 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					}
 				} else {
 					sparkH := max(54, b.Height-154)*s + lift
-					if len(st.res.Stats) > 0 {
+					if len(st.res.Stats) > 0 && !isCalendar(st.res.Chart) {
 						// The stat strip takes the room a curve would have had.
 						sparkH = max(28, b.Height-210)*s + lift
 					}
-					SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
+					if isCalendar(st.res.Chart) {
+						Chart(c, ChartProps{Data: st.res.Chart, Height: sparkH, Now: a.now()})
+					} else {
+						SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
+					}
 				}
 				for _, in := range inputs {
 					a.quickEntry(c, sc.ID, in)
@@ -375,8 +387,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					chartH = wideChart
 				}
 				if hasChart {
-					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID)})
-					Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID), Now: a.now()})
+					if !isCalendar(st.res.Chart) {
+						Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+					}
 					if showLegend {
 						legendRow(c, st.res.Chart)
 					}
@@ -391,7 +405,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			// The stats are their own block at the foot of the card, when the
 			// layout keeps them. A medium card with bars has no room for them;
 			// its full view has them.
-			barsOnMedium := size == 1 && hasChart && isProgress(st.res.Chart)
+			barsOnMedium := size == 1 && hasChart && (isProgress(st.res.Chart) || isCalendar(st.res.Chart))
 			if size > 0 && lay.Stats != "hide" && !barsOnMedium {
 				cardStats(c, st.res.Stats)
 			}

@@ -78,8 +78,8 @@ func TestClaudeCodeScriptIsDesktopAndFiles(t *testing.T) {
 // own records does not.
 func TestBuiltinNeedsMatchTheirUse(t *testing.T) {
 	want := map[string]bool{ // needs the network
-		"weight": false, "goldk": false,
-		"fx": true, "fxcny": true, "weather": true, "bing": true, "aqi": true, "gold": true, "goldacc": true, "hs300": true, "btc": true,
+		"weight": false, "cal": false, "goldk": false,
+		"fx": true, "fxcny": true, "weather": true, "bing": true, "cnwx": true, "aqi": true, "gold": true, "goldacc": true, "hs300": true, "btc": true,
 		"ai-deepseek": true, "ai-openrouter": true, "ai-claude": false,
 	}
 	for _, b := range engine.Builtins() {

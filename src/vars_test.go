@@ -176,3 +176,20 @@ func TestWeatherShowsTheChosenCity(t *testing.T) {
 		t.Errorf("after switching: title %q %v", res.Title, err)
 	}
 }
+
+func TestCnwxShowsTheChosenCity(t *testing.T) {
+	a := newTestApp(t)
+	sc, ok := a.store.Script("cnwx")
+	if !ok {
+		t.Fatal("no cnwx script")
+	}
+	res, err := a.execute(sc, nil)
+	if err != nil || !strings.Contains(res.Title, "上海") {
+		t.Fatalf("default title %q %v", res.Title, err)
+	}
+	a.setVar(sc, "city", "%E5%8C%97%E4%BA%AC")
+	res, err = a.execute(sc, nil)
+	if err != nil || !strings.Contains(res.Title, "北京") {
+		t.Errorf("after switching: title %q %v", res.Title, err)
+	}
+}

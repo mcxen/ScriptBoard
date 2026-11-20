@@ -261,16 +261,20 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsSmall).TextColor(p.up)
 		default:
-			ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
-			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-				ui.Text(c, st.res.Big).FontSize(30).Bold()
-				if cs := summarize(st.res.Chart); cs.ok {
-					deltaChip(c, cs.pct)
-				}
-			})
-			ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
-			Chart(c, ChartProps{Data: st.res.Chart, Height: 170, Selected: a.selOf(draftKey)})
-			Detail(c, st.res.Chart, a.selOf(draftKey))
+			if isCalendar(st.res.Chart) {
+				a.calendarPreview(c, a.selOf(draftKey), 280)
+			} else {
+				ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
+				ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+					ui.Text(c, st.res.Big).FontSize(30).Bold()
+					if cs := summarize(st.res.Chart); cs.ok {
+						deltaChip(c, cs.pct)
+					}
+				})
+				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
+				Chart(c, ChartProps{Data: st.res.Chart, Height: 170, Selected: a.selOf(draftKey), Now: a.now()})
+				Detail(c, st.res.Chart, a.selOf(draftKey))
+			}
 			for _, line := range st.res.Lines {
 				ui.Text(c, line).FontSize(fsTiny).TextColor(p.muted)
 			}

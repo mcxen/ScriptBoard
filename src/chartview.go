@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/chart"
@@ -242,8 +243,10 @@ type ChartProps struct {
 	Selected *int
 	// Full adds a label at every few points of the x axis, and a crosshair
 	// that reads out the value under the pointer. It is for the full-screen
-	// view.
+	// view. A calendar's days are buttons only when Full is set.
 	Full bool
+	// Now is the civil date a calendar treats as today. Zero is time.Now.
+	Now time.Time
 }
 
 // Chart draws a chart from its props.
@@ -251,6 +254,11 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 	h := p.Height
 	if h <= 0 {
 		h = 180
+	}
+	if isCalendar(p.Data) {
+		v := calendarOpts(p.Full, h)
+		v.Sel, v.Now = p.Selected, p.Now
+		return calendarMonth(c, v)
 	}
 	return chartWith(c, p.Data, p.Style, h, p.Selected, p.Full)
 }
@@ -332,6 +340,11 @@ func Spark(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 // SparkStyled is Spark in the style the user chose for the card; "" is the
 // chart's own default.
 func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Element {
+	if isCalendar(ch) {
+		v := calendarOpts(false, h)
+		v.Now = time.Now()
+		return calendarMonth(c, v)
+	}
 	if isCombo(ch) {
 		return comboView(c, ch, "", h, nil, false)
 	}
@@ -668,6 +681,9 @@ func readout(ch *engine.Chart, i int) string {
 // Detail is the readout line under a chart: the chosen point, or the latest
 // one while nothing is chosen.
 func Detail(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
+	if isCalendar(ch) {
+		return calendarDetail(c, sel, time.Now())
+	}
 	i := count(ch) - 1
 	// A touch screen has no hovering: it is a touch on the chart.
 	hint := tr("悬浮图表查看详情")
