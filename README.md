@@ -26,14 +26,14 @@
 
 应用自己检查更新（设置 → 更新）：启动后约 10 秒看一次，之后每天一次，有新版本时显示更新说明，可以安装、稍后提醒或跳过这一版；装完提示重启。
 
-- **签名**：每个平台的更新包都用发布者的 Ed25519 私钥签名，应用内置公钥（`mygo.json` 的 `updates.publicKey`，也写在 `update.go`，测试会检查两处一致），签名不对的文件不会安装。私钥只放在 GitHub 的 Secrets（`MYGO_UPDATER_PRIVATE_KEY`）和发布者自己的保险处，不在仓库里。
+- **签名**：每个平台的更新包都用发布者的 Ed25519 私钥签名，应用内置公钥（`mygo.json` 的 `updates.publicKey`，也写在 `src/update.go`，测试会检查两处一致），签名不对的文件不会安装。私钥只放在 GitHub 的 Secrets（`MYGO_UPDATER_PRIVATE_KEY`）和发布者自己的保险处，不在仓库里。
 - **来源**（设置 → 更新 → 更新来源）：**自动**（系统语言是中文时走 tvv.tw 镜像，否则走 GitHub）、**GitHub**、**tvv.tw 镜像**。镜像只是代理：清单和更新包先从镜像取，超时、下载失败、大小不对或签名不对时自动改用 GitHub，所以镜像不可信也无妨。
 - **不能自己更新的情况**：开发版，或用包管理器安装的版本（比如装在 `/opt` 的 `.deb`）：下载新版安装包覆盖即可。
 - 自己的更新服务器或 S3/R2：`mygo.json` 的 `updates` 可以改用 `url` 或 `s3`，见 [MyGo 的 auto-updates 文档](https://github.com/egoist/mygo/blob/main/docs/updates.md)。
 
 ## 发布（给维护者）
 
-发布流程和 Notes 应用一样：打一个 `v<版本>` 的标签，GitHub Actions 构建所有平台、签名更新并发布。
+打一个 `v<版本>` 的标签，GitHub Actions 会自动构建所有平台、签名更新并发布。
 
 1. 改 `mygo.json` 的 `version`，在 `CHANGELOG.md` 加 `## <版本>` 一节（它就是更新说明）。
 2. 一次性：`go tool mygo keygen -o <目录>` 生成密钥对，公钥写进 `mygo.json`，私钥存进仓库的 Secrets：`gh secret set MYGO_UPDATER_PRIVATE_KEY < <目录>/mygo-update.key`。**私钥丢了，已安装的应用就收不到更新。**
@@ -57,7 +57,7 @@
 「设置 → 外观 → 内容宽度」决定页面内容能有多宽：**自动**（默认）——首页和详情页这类数据页铺满窗口，设置、社区这类文字页保持易读的宽度（约 1120）；**舒适**——所有页面都保持这个宽度；**宽**——放宽到约 1600；**铺满**——所有页面都铺满窗口。有宽度上限的页面居中显示，页面里按宽度排的东西（卡片网格、统计块、图片）跟着同一个上限走。
 
 - **默认**：Lobe 的令牌，蓝色主色，圆角。
-- **Mac OS 9**：整套控件都换成了经典 Mac 的样子，由应用自己画：菜单栏、带横纹的窗口标题栏、有立体边的按钮和分段选项、方形的复选框、反白选中的侧栏、带点阵的桌面、白底的图表区，字体优先用 Geneva（没有 Geneva 的系统用系统字体）。浅色外观，深色系统下也保持浅色。窗口本身仍是系统的窗口，只是内容换了样子。
+- **Mac OS 9**：整套控件都换成了经典 Mac 的样子，由应用自己画：菜单栏、带横纹的窗口标题栏、有立体边的按钮和分段选项、方形的复选框、反白选中的侧栏、带点阵的桌面、白底的图表区，内置 12px 像素字体（Fusion Pixel 12px，OFL）。浅色外观，深色系统下也保持浅色。窗口本身仍是系统的窗口，只是内容换了样子。
 
 图表样式里有三种复古样式，**任何皮肤下都能用**，在全屏查看的「样式」里选：
 
@@ -71,13 +71,13 @@
 
 「设置 → 语言」可选自动、中文、English；自动时跟随系统（环境变量 `SCRIPTBOARD_LANG`、`LC_ALL`、`LANG`，再读 macOS 的语言设置）。切换后界面、内置脚本的标题与维度、窗口标题和应用名（盯盯板 / ScriptBoard）立即换成对应语言。
 
-- 界面文字在源码里写中文，`tr("…")` 在 `i18n_en.go` 的表里查英文；表里没有的字符串原样显示，不会空白。来自 `internal/` 的错误信息用 `trMsg` 翻译（`i18n_msg.go`）。
+- 界面文字在源码里写中文，`tr("…")` 在 `src/i18n_en.go` 的表里查英文；表里没有的字符串原样显示，不会空白。来自 `src/internal/` 的错误信息用 `trMsg` 翻译（`src/i18n_msg.go`）。
 - 脚本拿到语言：`meta({lang})` 的参数和 `render(ctx).lang` 都是 `"zh"` 或 `"en"`，自己写的脚本可以据此出中英文标题（内置脚本的写法是 `t("中文", "English")`）。
-- 加语言：给 `enText` 补一张表，`tr` 里按语言选表即可；`i18n_test.go` 会检查英文界面里没有漏掉的中文。
+- 加语言：给 `enText` 补一张表，`tr` 里按语言选表即可；`src/i18n_test.go` 会检查英文界面里没有漏掉的中文。
 
 ## 界面与组件
 
-界面用 [Lobe MyGo](https://mygo.lobehub.com)（`github.com/lobehub/lobe-mygo`）的组件和设计令牌，图表和图标是自己的。Lobe 的组件都是 `组件(c, 值, Props{…})` 的形式，`Props` 里的零值就是默认值。`kit.go` 把它们包成 `btn`、`primaryBtn`、`segmented`、`sw`、`textInput`、`numberInput` 等，页面里直接调用；卡片是 `layout.Block`，涨跌标签是 `display.Tag`，空状态是 `display.Empty`，侧栏和编辑页的脚本列表是 `display.List`。
+界面用 [Lobe MyGo](https://mygo.lobehub.com)（`github.com/lobehub/lobe-mygo`）的组件和设计令牌，图表和图标是自己的。Lobe 的组件都是 `组件(c, 值, Props{…})` 的形式，`Props` 里的零值就是默认值。`src/kit.go` 把它们包成 `btn`、`primaryBtn`、`segmented`、`sw`、`textInput`、`numberInput` 等，页面里直接调用；卡片是 `layout.Block`，涨跌标签是 `display.Tag`，空状态是 `display.Empty`，侧栏和编辑页的脚本列表是 `display.List`。
 
 图表也是同一种形式：
 
@@ -95,27 +95,27 @@ Chart(c, ChartProps{
 
 ## 页面
 
-- **首页**：组件卡片，每张卡片是一个脚本的输出。卡片可以**大小不一**：顶部的 小 / 中 / 大 一次设置全部，每张卡片右上角的按钮或右键菜单单独设置这一张；滑条整体缩放图标与卡片（70% 到 160%）。
-- **编辑布局**：顶部的「编辑布局」打开编辑模式。拖卡片的正文可以换位置；拖卡片右下角的角可以调宽窄和高矮（宽度按列吸附，高度每 16 点一档）；「完成」退出。位置、大小和顺序都保存在设置里，「小 / 中 / 大」一次设置全部时会清掉手动排的位置。
-- 网格是 12 列（窄于 900 点时 6 列，手机单列）。每一行的最后一张卡片会占满这一行剩下的列，所以窗口拉宽也不会右边空一大块。卡片右上角的刷新按钮立即重新取数（见下文「点击刷新」）。点卡片进入全屏查看（编辑模式里不进入）。
+- **首页**：组件卡片，每张卡片是一个脚本的输出。卡片可以**大小不一**（迷你 / 小 / 中 / 大 / 宽）：顶部一次设置全部，每张卡片右上角的按钮或右键菜单单独设置这一张；滑条整体缩放图标与卡片（70% 到 160%）。
+- **编辑布局**：顶部的「编辑布局」打开编辑模式。拖卡片的正文可以换位置；拖卡片右下角的角可以调宽窄和高矮（宽度按列吸附，高度每 16 点一档）；也可以直接把卡片从首页移走；「完成」退出。位置、大小和顺序都保存在设置里，顶部统一切换尺寸时会清掉手动排的位置。
+- 网格是 12 列（窄于 900 点时 6 列，手机 2 列，大、宽卡片占整行）。每一行的最后一张卡片会占满这一行剩下的列，所以窗口拉宽也不会右边空一大块。卡片右上角的刷新按钮立即重新取数（见下文「点击刷新」）。点卡片进入全屏查看（编辑模式里不进入）。
 - **全屏查看**：一个脚本的完整视图，见下文「全屏与图表」。
 - **编辑**：左边选脚本或数据表。脚本：中间改源码，右边看预览、调节维度，也可以导入、导出脚本；插件脚本在插件文件夹里改，编辑页只读。数据表：中间是表格，见下。两种东西不混在一起。
-
-### 数据表
-
-有的插件不需要脚本，就是一张表：**设置 → 编辑 → + 数据表**。表格可以直接改单元格、加删行列、按时间排序（40 行一页）；**导入 Excel / CSV**（`.xlsx`、`.csv`、`.tsv`，中文系统的 GBK 编码的 CSV 也能读；手机上用「粘贴导入」），或从 Excel 复制一块单元格**粘贴导入**；导入时可选「替换」或「追加」；**导出 CSV**（带 BOM，Excel 直接打开不乱码）或「复制 CSV」。表里的数字自动成为图表的曲线，第一列是日期或文字时当横轴标签，设为「显示在首页」就是一张卡片。
-
-内置的「体重数据」「金价数据」是已记录数值的表：改这里就是改首页卡片用的记录（体重按设置里的单位显示，保存时换回公斤），导入时按时间合并。数据表不能上传到社区。
 - **社区**：登录后上传脚本，等管理员审核；无需登录即可下载已通过的脚本。
 - **设置**：在电脑上点侧栏的「设置」会打开一个单独的窗口（宽度合适，主窗口不动，再点一次就把它带到前面）；手机上是一个页面。内容按外观（风格、明暗、语言、内容宽度）、数据（体重单位、离线模式、本地缓存）、AI 用量、数据源、更新、MCP 服务器（关着时只有一个开关，打开后才有端口、密钥和复制配置的按钮）、社区、关于（版本、数据文件、插件目录）分组。
 
-窗口宽度小于 640 时改用手机排版：底部标签栏，卡片和表单单列排列。
+窗口宽度小于 640 时改用手机排版：底部标签栏，首页卡片双列排列（大、宽卡片占整行），表单单列排列。
+
+### 数据表
+
+有的插件不需要脚本，就是一张表：**编辑 → + 数据表**。表格可以直接改单元格、加删行列、按时间排序（40 行一页）；**导入 Excel / CSV**（`.xlsx`、`.csv`、`.tsv`，中文系统的 GBK 编码的 CSV 也能读；手机上用「粘贴导入」），或从 Excel 复制一块单元格**粘贴导入**；导入时可选「替换」或「追加」；**导出 CSV**（带 BOM，Excel 直接打开不乱码）或「复制 CSV」。表里的数字自动成为图表的曲线，第一列是日期或文字时当横轴标签，设为「显示在首页」就是一张卡片。
+
+内置的「体重数据」「金价数据」是已记录数值的表：改这里就是改首页卡片用的记录（体重按设置里的单位显示，保存时换回公斤），导入时按时间合并。数据表不能上传到社区。
 
 ## 全屏与图表
 
 点击任一卡片进入全屏查看，可以看到：
 
-- **样式**：折线、面积、点状、柱状、阶梯；K 线数据另有 K 线、收盘线、收盘柱。选择的样式会同时用于首页卡片。
+- **样式**：折线、面积、点状、柱状、阶梯；K 线数据另有 K 线、空心K线、美国线、收盘线、收盘柱。选择的样式会同时用于首页卡片。
 - **大图**：打开后图表占满窗口高度。
 - **坐标**：鼠标移到图上，显示最近一点的标签和数值，并在右侧显示鼠标所在高度的数值（十字线）。
 - **统计**：最新、涨跌（含自起点的百分比）、最高、最低、平均、振幅，每项都标出对应的日期或时间。
@@ -136,10 +136,13 @@ Chart(c, ChartProps{
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
 | `progressRing` | **完成度环**：数据同 `progress`，每项一个环，环里是百分比，下面是名字和「已完成 / 总数」。可调：`ring: {layout, size, thickness, cap, track, fill, center, align, valign}`，每项还能给 `color` 和 `to`（见下）。中等卡片画前三项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
 | `progress` | **完成度条**：每项一根条，标出「已完成 / 总数 · 百分比」；没有上限时数值就是百分比。中等卡片画前两项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
+| `calendar` | **月视图日历**：由宿主填充农历、干支、生肖、节气与国际/中国节日；全屏页支持点选或用方向键 / Home 切换日期并查看当天详情（内置的「日历」脚本就是这样） | 无需 `series`，只需 `{type: "calendar"}` |
 
-K 线的周期由宿主统一聚合（`internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
+K 线的周期由宿主统一聚合（`src/internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
 多条折线时只给第一条填充面积，避免两层半透明色叠出不属于任何一条线的颜色。
+
+**图片与轮播：`images`。** 结果可以带 `images: [{url, caption, source}]`。宿主会把图片下载缓存到本机并保留历史，在卡片和全屏页里左右翻看，支持打开来源页或复制图片链接（内置的「必应壁纸」就是这样）。默认铺满整张卡片，文字和按钮悬浮时出现在图片上；也可以用 `layout: {image: "inline"}` 把图片当作卡片里的一块。
 
 **完成度环的样式：`ring`。** `layout` 是 `row`（每项一个环，默认）或 `concentric`（像 Apple Watch 的活动圆环，几个环套在一起，旁边是图例）；`size` 环的大小（32 到 200）；`thickness` 环的粗细，占大小的比例（0.04 到 0.3）；`cap` 是 `round`（圆头，默认）或 `butt`（平头）；`track` 是底环：`tint`（同色的淡色，默认）、`neutral`（灰）、`none`；`fill` 是 `gradient`（沿弧线渐深，默认）或 `solid`；`center` 是环里写什么：`percent`（默认）、`value`、`none`；`align` 是环在卡片里的左右位置：`left`（默认）、`center`、`right`、`between`、`around`、`evenly`；`valign` 是上下位置：`top`（紧挨摘要，默认）、`middle`、`bottom`。每一项还能写 `color`（`#RRGGBB`）和 `to`（弧线渐变到的颜色）。值超过上限，环会绕第二圈。
 
@@ -237,7 +240,7 @@ Runner    Due / Poll / PollDue(并行) / Health / Stale / LastError   熔断与�
 | `claude-code` | 读 `~/.claude/projects/**/*.jsonl`：今日 / 本周 / 本月 / 5 小时窗口、按模型、每日；按 `message.id + requestId` 去重 | 不需要密钥；填「月额度」「5 小时额度」就能看到剩余量圆环 |
 | `deepseek-balance`、`moonshot-balance`、`siliconflow-balance`、`openrouter-credits` | 调用各家的余额接口 | API 密钥；填「充值总额」得到剩余比例 |
 
-**没有核实的部分**：各家余额接口的地址与返回格式是按公开文档写的，测试用本地假服务验证，**没有拿真实密钥试过**，第一次用请先确认；接口变了，改 `internal/usage/balance.go`。**故意不做**的：不读任何凭证文件，也不调用没有公开的 OAuth 用量接口。密钥只保存在这台电脑的 `data.json` 里。`usage.Register(Provider)` 可以接入新的提供方。
+**没有核实的部分**：各家余额接口的地址与返回格式是按公开文档写的，测试用本地假服务验证，**没有拿真实密钥试过**，第一次用请先确认；接口变了，改 `src/internal/usage/balance.go`。**故意不做**的：不读任何凭证文件，也不调用没有公开的 OAuth 用量接口。密钥只保存在这台电脑的 `data.json` 里。`usage.Register(Provider)` 可以接入新的提供方。
 
 ## 首页快速录入
 
@@ -272,16 +275,16 @@ export function meta() {
 
 ## MCP 服务器（设置 → MCP 服务器）
 
-应用里自带一个 MCP 服务器，参考 Notes 的做法：默认关闭，打开后生成密钥，每次请求都要带 `Authorization: Bearer <密钥>`。
+应用里自带一个 MCP 服务器：默认关闭，打开后生成密钥，每次请求都要带 `Authorization: Bearer <密钥>`。
 
 - 可设端口、是否允许局域网访问（默认只有本机）、只读、公开地址（经代理访问时用）；密钥可复制、可重新生成，旧密钥立刻失效。
 - 「连接助手」里一键复制：提示词（地址、密钥、全部工具）、Claude Code 命令、JSON 配置（Cursor、Claude Desktop 等按地址连接的客户端）、stdio 配置。
-- stdio 方式：应用以 `--mcp-stdio` 运行，不开窗口、不需要密钥，直接读写数据目录（`cmd/sbmcp` 是同样功能的独立小程序）。
+- stdio 方式：应用以 `--mcp-stdio` 运行，不开窗口、不需要密钥，直接读写数据目录（`src/cmd/sbmcp` 是同样功能的独立小程序）。
 - 只读开启后，`plugin_save`、`plugin_delete`、`icon_add` 被拒绝，读取类工具照常可用。
 
 ## MCP：让助手帮你开发插件和图标
 
-`cmd/sbmcp` 是一个 MCP 服务器（stdio），提供这些工具：
+`src/cmd/sbmcp` 是一个 MCP 服务器（stdio），提供这些工具：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -289,9 +292,11 @@ export function meta() {
 | `plugin_get` | 读取一个插件的清单和源码 |
 | `plugin_save` | 创建或更新插件；脚本先编译检查，不能运行的不会保存。`menubar: true` 让这个插件第一次出现时就放进菜单栏（脚本的 `meta()` 里也要写 `menubar: true`；之后放不放由用户决定）。`position` 是首页位置（从 1 起，不写则排在最后），`size` 是默认尺寸（mini、small、medium、large、wide）；用户自己排过的位置和尺寸优先 |
 | `plugin_delete` | 删除插件和它的图标 |
+| `plugin_guide` | 返回完整的插件开发说明（`meta()` 字段、平台、权限、宿主接口等），随代码里的规范同步生成 |
 | `script_check` | 只检查脚本能不能运行，并返回它的元信息；图标不存在、图表类型不认识、菜单栏的用法有问题（没写 `menubar: true` 就给了菜单、链接不是 http、动作不存在、标题会被截短）都会给出警告 |
 | `icon_add` | 保存 SVG 图标（可以指定属于哪个插件）；带脚本或事件属性的 SVG 会被拒绝 |
 | `icon_list` | 列出可用的图标 |
+| `icon_catalog` | 按分类（天气、财经、图表、时间、身体、智能、数据与网络、界面）列出内置图标 |
 
 构建并注册（以 Claude Code 为例，放在项目根目录的 `.mcp.json`）：
 
@@ -318,25 +323,23 @@ MCP 工具不需要登录，写入的插件应用里约一秒后可见。
 - 上传：必须登录，提交后待审核。每人每天最多 10 个，单个脚本最大 64 KB。
 - 审核：管理员用管理员密钥（Worker 的 `ADMIN_KEY` 机密）登录 `/admin` 页面，通过或拒绝。管理员密钥不写在代码里，也不放在 App 里。
 
-部署和本地验证的步骤见下面的「社区」一节。
-
 ### 本地验证
 
 ```bash
-cd ScriptBoard/community
+cd ScriptBoard/src/community
 npx wrangler d1 migrations apply scriptboard-community --local
 npx wrangler dev --local --port 8787
 # 另开一个终端（ADMIN_KEY 写在 src/community/.dev.vars 里，只用于本地）
 ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' .dev.vars) BASE=http://localhost:8787 ./scripts/smoke-test.sh
-cd ..
-SB_COMMUNITY_URL=http://localhost:8787 SB_ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' src/community/.dev.vars) go test ./internal/community/
+cd ../..
+SB_COMMUNITY_URL=http://localhost:8787 SB_ADMIN_KEY=$(sed -n 's/^ADMIN_KEY=//p' src/community/.dev.vars) go test ./src/internal/community/
 ```
 
 ## 运行与测试
 
 ```bash
 cd ScriptBoard
-go run .
+go run ./src
 ```
 
 需要 Go 1.27.3 或更高版本。
@@ -426,7 +429,7 @@ export function meta() {
 
 MCP 的 `plugin_guide` 工具返回完整的开发说明（脚本的形状、`meta()` 的字段、平台和依赖、权限、宿主提供的接口、系统差异怎么处理），内容由代码里的列表生成，规范改了它也跟着变；助手写插件前先读它，写完用 `script_check` 检查声明和实际是否一致。
 
-编辑页的脚本列表每一行写着来源，电脑专用的还写着依赖（「内置 · 仅电脑 · 读本机文件」）；右边的说明块有来源、版本、平台和依赖的标识、一句话介绍和警告；全屏页的「关于」里有同样的信息。内置脚本都按规范声明，`internal/spec/builtins_test.go` 逐个检查：版本、平台、依赖、介绍齐全，声明和实际一致，新增内置脚本不合规就过不了测试。Claude Code 用量是典型的「电脑专用、依赖平台」的脚本。
+编辑页的脚本列表每一行写着来源，电脑专用的还写着依赖（「内置 · 仅电脑 · 读本机文件」）；右边的说明块有来源、版本、平台和依赖的标识、一句话介绍和警告；全屏页的「关于」里有同样的信息。内置脚本都按规范声明，`src/internal/spec/builtins_test.go` 逐个检查：版本、平台、依赖、介绍齐全，声明和实际一致，新增内置脚本不合规就过不了测试。Claude Code 用量是典型的「电脑专用、依赖平台」的脚本。
 
 ## 图表与图标的脚本约定
 
@@ -437,7 +440,7 @@ export function meta() {
     version: "1.0.0",                    // 规范见上一节：version、platforms、needs、description
     platforms: ["desktop", "mobile"],
     needs: [],
-    icon: "candlestick-chart",          // Lucide 图标名，见 icons/
+    icon: "candlestick-chart",          // Lucide 图标名，见 src/icons/
     dims: [                              // 可选：用户可以调节的维度
       { key: "range", label: "范围", options: [{ value: 7, label: "7 天" }, { value: 0, label: "全部" }] },
     ],
@@ -455,7 +458,7 @@ export function render(ctx) {
     sub: "较前日 -0.18%",
     lines: ["7 根K线"],
     chart: {
-      type: "candle",                    // line | dot | candle
+      type: "candle",                    // 见上表所有 type（line / dot / candle / gauge / barh / heat / panels / combo / progress / progressRing / calendar）
       candles: [{ o: 638.8, h: 647.4, l: 638.1, c: 643.8 }],
       labels: ["11-18"],                 // 每个点的标签：坐标、悬浮时显示
       xLabels: ["11-12", "11-18"],       // 可选，横轴首尾标签
@@ -473,26 +476,32 @@ export function render(ctx) {
 | 路径 | 内容 |
 | --- | --- |
 | `src/main.go`、`src/app.go` | 窗口、应用状态、脚本运行、手机排版与宽窄判断 |
-| `home.go` | 首页与组件卡片，卡片尺寸随窗口与滑条调节 |
-| `fullview.go`、`stats.go` | 全屏查看与统计 |
-| `chartview.go` | 图表样式、大图、十字线与坐标 |
-| `editor.go`、`transfer.go` | 编辑页、导入与导出 |
-| `community.go` | 社区页 |
-| `plugins_app.go` | 插件目录同步与监视 |
-| `settings.go` | 设置页 |
-| `icons.go`、`icons/` | Lucide 图标；插件与共用图标在运行时读取 |
-| `internal/engine` | moejs 封装：编译、meta / render、维度、取数据源、超时 |
-| `internal/store` | 数据文件（脚本、记录、设置、数据源） |
-| `internal/feed` | 数据源：协议（http / file / tcp / exec）、curl 解析、取数、重试与备用请求、熔断、样本存储、汇总 |
-| `feeds.go`、`feeds_test.go` | 数据源页面、轮询循环、健康状态与测试 |
-| `refresh.go` | 卡片刷新 |
-| `charts2.go` | 剩余量圆环与横置条形图 |
-| `usage_app.go`、`internal/usage` | AI 用量：设置、缓存、各提供方 |
-| `i18n.go`、`i18n_en.go`、`i18n_msg.go` | 中英文 |
-| `internal/plugins` | 插件与图标的文件夹，应用和 MCP 共用 |
-| `internal/community` | 社区接口客户端 |
-| `src/cmd/sbmcp` | MCP 服务器 |
+| `src/home.go`、`src/layout.go` | 首页与组件卡片、网格布局、编辑布局与卡片尺寸 |
+| `src/fullview.go`、`src/stats.go` | 全屏查看与统计 |
+| `src/chartview.go`、`src/charts2.go`、`src/progress_view.go`、`src/calendar_view.go` | 图表（折线 / K 线 / 复古样式 / 剩余量圆环 / 横置条形 / 热力表 / 叠放面板 / 组合 / 完成度条与环 / 月视图日历） |
+| `src/images_app.go`、`src/images_ui.go` | 图片缓存、历史与轮播卡片 |
+| `src/menubar.go` | 菜单栏图标与自定义菜单 |
+| `src/live_app.go`、`src/refresh.go` | 实时线轮询与卡片刷新 |
+| `src/editor.go`、`src/transfer.go`、`src/table_app.go` | 编辑页、导入导出与数据表编辑 |
+| `src/community.go` | 社区页 |
+| `src/plugins_app.go`、`src/plugin_spec.go`、`src/permissions.go` | 插件目录同步与监视、规范说明与权限授权 |
+| `src/settings.go`、`src/settings_window.go`、`src/pagewidth.go` | 设置页（独立窗口）、外观与内容宽度 |
+| `src/skin.go`、`src/skin_mac9.go`、`src/skin_font.go` | 外观主题、Mac OS 9 皮肤与内置像素字体 |
+| `src/icons.go`、`src/icons/` | Lucide 图标；插件与共用图标在运行时读取 |
+| `src/feeds.go`、`src/usage_app.go`、`src/mcp_app.go`、`src/update.go` | 数据源页与轮询、AI 用量、应用内 MCP 服务器、自动更新 |
+| `src/i18n.go`、`src/i18n_en.go`、`src/i18n_msg.go` | 中英文 |
+| `src/internal/engine` | moejs 封装：编译、meta / render、维度、变量、取数据源、K 线聚合、内置脚本 |
+| `src/internal/calendar` | 农历、干支、生肖、节气与节日计算 |
+| `src/internal/store`、`src/internal/cache` | 数据文件（脚本、记录、设置、数据源）与响应/历史缓存 |
+| `src/internal/table` | 数据表与 Excel / CSV / TSV 导入导出 |
+| `src/internal/feed` | 数据源：协议（http / file / tcp / exec）、curl 解析、取数、重试与备用请求、熔断、样本存储、汇总 |
+| `src/internal/usage` | AI 用量各提供方 |
+| `src/internal/spec`、`src/internal/caps`、`src/internal/iconcat` | 插件规范校验、平台能力与图标分类 |
+| `src/internal/plugins`、`src/internal/mcpsvc` | 插件与图标文件夹、MCP 协议与工具实现（应用和独立程序共用） |
+| `src/internal/community` | 社区接口客户端 |
+| `src/cmd/sbmcp` | 独立 MCP 服务器（stdio） |
 | `src/community/` | Cloudflare Worker：社区接口、D1 表结构、审核页 |
+| `ScriptWidgets/` | Android 桌面小组件原型（基于 MuJS 与 JNI） |
 
 ## 已知限制
 
