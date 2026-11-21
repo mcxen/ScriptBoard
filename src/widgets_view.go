@@ -85,6 +85,20 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 	}
 	switch ch.Type {
 	case "donut":
+		if subStyle == "classic" || subStyle == "matrix" {
+			cp := *ch
+			var d engine.DonutStyle
+			if ch.Donut != nil {
+				d = *ch.Donut
+			}
+			if subStyle == "classic" {
+				d.Style = ""
+			} else {
+				d.Style = subStyle
+			}
+			cp.Donut = &d
+			ch = &cp
+		}
 		return donutWidgetView(c, ch, h, sel, full)
 	case "checklist":
 		return checklistViewWith(c, a, scriptID, ch.Checklist, limit, full)
@@ -94,7 +108,7 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 		return countdownView(c, ch.Countdown, now, limit, full)
 	case "clock":
 		spec := ch.Clock
-		if subStyle == "analog" || subStyle == "digital" || subStyle == "world" {
+		if subStyle == "analog" || subStyle == "digital" || subStyle == "matrix" || subStyle == "world" {
 			var cp engine.ClockSpec
 			if spec != nil {
 				cp = *spec
@@ -104,7 +118,17 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 		}
 		return clockView(c, spec, now, h, full)
 	case "contrib":
-		return contribView(c, ch.Contrib, sel, full)
+		spec := ch.Contrib
+		if spec != nil && (subStyle == "classic" || subStyle == "matrix") {
+			cp := *spec
+			if subStyle == "classic" {
+				cp.Style = ""
+			} else {
+				cp.Style = subStyle
+			}
+			spec = &cp
+		}
+		return contribView(c, spec, sel, full)
 	}
 	return ui.Text(c, "")
 }
@@ -164,11 +188,16 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 	} else if n >= 5 {
 		centerFS = clampF(d*0.145, 10.5, 20)
 	}
+	isMatrix := st.Style == "matrix"
 	vals := make([]float64, len(items))
 	cols := make([]ui.Color, len(items))
 	for i, it := range items {
 		vals[i] = it.Value
-		cols[i] = parseColor(it.Color, donutPalette[i%len(donutPalette)])
+		defCol := donutPalette[i%len(donutPalette)]
+		if isMatrix {
+			defCol = matrixPalette[i%len(matrixPalette)]
+		}
+		cols[i] = parseColor(it.Color, defCol)
 	}
 	maxLegend := len(items)
 	if !full && maxLegend > 4 {
@@ -177,6 +206,10 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 	return ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
 		ui.Column(c).Size(d, d).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
 			Draw(func(pt *ui.Painter, r ui.Rect) {
+				if isMatrix {
+					paintMatrixDonut(pt, r, vals, cols, thick, activeIdx)
+					return
+				}
 				cx, cy := r.X+r.W/2, r.Y+r.H/2
 				outer := min(r.W, r.H)/2 - 5
 				inner := outer * (1 - thick)
@@ -197,9 +230,15 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 					pt.FillPath(chart.Sector(cx, cy, inner, outR, sl), col)
 				}
 			}).Children(func() {
-			ui.Text(c, center).FontSize(centerFS).FontWeight(700).NoWrap()
+			t := ui.Text(c, center).FontSize(centerFS).FontWeight(700).NoWrap()
+			if isMatrix {
+				t.TextColor(ui.Hex("#F8FAFC"))
+			}
 			if centerSub != "" {
-				ui.Text(c, centerSub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				sub := ui.Text(c, centerSub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				if isMatrix {
+					sub.TextColor(ui.Hex("#94A3B8"))
+				}
 			}
 		})
 		ui.Column(c).Gap(4).Grow(1).MinWidth(110).Children(func() {
@@ -665,6 +704,10 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 		})
 	}
 
+	if st.Style == "matrix" {
+		return matrixClockView(c, st, now, h, full)
+	}
+
 	if st.Style == "digital" {
 		padY := float32(0)
 		if full {
@@ -785,6 +828,9 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 	p := pal(c)
 	if spec == nil || len(spec.Cells) == 0 {
 		return ui.Text(c, tr("暂无打卡记录")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	if spec.Style == "matrix" {
+		return matrixContribView(c, spec, sel, full)
 	}
 	base := parseColor(spec.Color, ui.Hex("#10B981"))
 	cells := spec.Cells

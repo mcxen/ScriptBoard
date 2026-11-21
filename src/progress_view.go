@@ -39,22 +39,31 @@ var neonPalette = []ui.Color{
 	ui.Hex("#00F5D4"), ui.Hex("#38BDF8"), ui.Hex("#FF2A85"), ui.Hex("#A855F7"), ui.Hex("#22C55E"), ui.Hex("#FB923C"),
 }
 
+// matrixPalette are vibrant LED segment colors matching classic multi-zone LED
+// dot matrices (blue -> green -> cyan -> orange -> violet -> rose).
+var matrixPalette = []ui.Color{
+	ui.Hex("#3B82F6"), ui.Hex("#22C55E"), ui.Hex("#06B6D4"), ui.Hex("#F97316"), ui.Hex("#A855F7"), ui.Hex("#F43F5E"),
+}
+
 // progressBarView draws a standalone progressBar component: solid, gradient,
-// neon (glowing neon tube) or segmented blocks. It needs no chart wrapper or
-// chart detail controls.
+// neon (glowing neon tube), segmented blocks, or matrix (glowing LED dot matrix).
+// It needs no chart wrapper or chart detail controls.
 func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Element {
 	p := pal(c)
 	if pb == nil {
 		return ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
 	}
+	style := pb.Style
+	if style == "" {
+		style = "solid"
+	}
+	if style == "matrix" {
+		return matrixProgressView(c, p, pb, limit)
+	}
 	items := pb.Items
 	shown, more := items, 0
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
-	}
-	style := pb.Style
-	if style == "" {
-		style = "solid"
 	}
 	isNeon := style == "neon"
 	barH := pb.Height
@@ -296,6 +305,375 @@ func paintSegmentedBar(pt *ui.Painter, track ui.Rect, segs int, frac float32, fr
 	}
 }
 
+type matrixSegment struct {
+	color     ui.Color
+	startFrac float32
+	endFrac   float32
+}
+
+// matrixIsStacked reports whether a matrix progressBar should merge its items
+// into a single multi-zone LED dot matrix strip (like a segmented quota/usage
+// bar) or draw one LED matrix bar per item.
+func matrixIsStacked(pb *engine.ProgressBar, items []engine.Progress) bool {
+	if pb.Stacked != nil {
+		return *pb.Stacked
+	}
+	if pb.Total > 0 {
+		return true
+	}
+	if len(items) <= 1 {
+		return false
+	}
+	unit := items[0].Unit
+	commonMax := items[0].Max
+	sum := 0.0
+	for _, it := range items {
+		if it.Value < 0 {
+			return false
+		}
+		if it.Unit != unit {
+			return false
+		}
+		if it.Max != commonMax {
+			return false
+		}
+		sum += it.Value
+	}
+	if sum <= 0 {
+		return false
+	}
+	if commonMax > 0 {
+		return sum <= commonMax*1.001
+	}
+	return true
+}
+
+// matrixTotal computes the overall capacity for a stacked LED matrix bar.
+func matrixTotal(pb *engine.ProgressBar, items []engine.Progress) float64 {
+	sum := 0.0
+	for _, it := range items {
+		if it.Value > 0 {
+			sum += it.Value
+		}
+	}
+	if pb.Total > 0 {
+		return max(pb.Total, sum)
+	}
+	if len(items) > 0 && items[0].Max > 0 {
+		allSame := true
+		for _, it := range items[1:] {
+			if it.Max != items[0].Max {
+				allSame = false
+				break
+			}
+		}
+		if allSame && sum <= items[0].Max*1.001 {
+			return items[0].Max
+		}
+	}
+	if sum > 0 && sum <= 100 && (len(items) == 0 || items[0].Max <= 0) {
+		unit := ""
+		if len(items) > 0 {
+			unit = items[0].Unit
+		}
+		if unit == "" || unit == "%" {
+			return 100
+		}
+	}
+	if sum <= 0 {
+		return 100
+	}
+	return sum
+}
+
+func matrixTrackStyle(p palette, track string, first ui.Color) (bg ui.Color, hasBg bool, darkBg bool) {
+	switch track {
+	case "none":
+		return ui.Color{}, false, p.dark
+	case "neutral":
+		return p.chip, true, p.dark
+	case "tint":
+		return first.Alpha(0.10), true, p.dark
+	default: // "dark" or ""
+		return ui.Hex("#05070B"), true, true
+	}
+}
+
+func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit int) ui.Element {
+	items := pb.Items
+	if len(items) == 0 {
+		return ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	glow := pb.Glow
+	if glow <= 0 {
+		glow = 1.0
+	} else {
+		glow = clampF(glow, 0.2, 1.5)
+	}
+	animate := pb.Animate == nil || *pb.Animate
+	cols := pb.Cols
+	if cols > 0 {
+		cols = min(max(cols, 12), 80)
+	}
+
+	if matrixIsStacked(pb, items) {
+		rows := pb.Rows
+		if rows <= 0 {
+			rows = 7
+		}
+		rows = min(max(rows, 3), 10)
+		barH := pb.Height
+		if barH <= 0 {
+			barH = float32(rows)*7.2 + 12
+		}
+		barH = clampF(barH, 28, 120)
+
+		total := matrixTotal(pb, items)
+		segs := make([]matrixSegment, 0, len(items))
+		cursor := 0.0
+		for i, it := range items {
+			v := max(it.Value, 0)
+			if v <= 0 {
+				continue
+			}
+			col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+			start := float32(cursor / total)
+			cursor += v
+			end := float32(min(cursor/total, 1.0))
+			if end > start {
+				segs = append(segs, matrixSegment{color: col, startFrac: start, endFrac: end})
+			}
+		}
+		firstCol := matrixPalette[0]
+		if len(segs) > 0 {
+			firstCol = segs[0].color
+		}
+		bg, hasBg, darkBg := matrixTrackStyle(p, pb.Track, firstCol)
+
+		shown, more := items, 0
+		if limit > 0 && len(items) > limit {
+			shown, more = items[:limit], len(items)-limit
+		}
+
+		return ui.Column(c).Gap(8).Children(func() {
+			ui.Box(c).Height(barH).Draw(func(pt *ui.Painter, r ui.Rect) {
+				paintMatrixBar(pt, r, rows, cols, segs, bg, hasBg, darkBg, glow, animate, p.muted)
+			})
+			if !pb.HideLabel {
+				ui.Row(c).Wrap().Gap(12).AlignItems(ui.Center).Children(func() {
+					for i, it := range shown {
+						col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+						valText := trimNum(it.Value) + it.Unit
+						if it.Unit == "" && total == 100 && it.Max <= 0 {
+							valText = fmt.Sprintf("%.0f%%", math.Round(it.Value))
+						}
+						ui.Row(c).AlignItems(ui.Center).Gap(5).Children(func() {
+							ui.Box(c).Size(7, 7).Radius(3.5).Background(col).Shrink(0)
+							if it.Name != "" {
+								ui.Text(c, it.Name).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+							}
+							ui.Text(c, valText).FontSize(fsTiny).FontWeight(600).NoWrap()
+						})
+					}
+					if more > 0 {
+						ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
+					}
+				})
+			}
+		})
+	}
+
+	// Single-item or per-item matrix progress bars.
+	shown, more := items, 0
+	if limit > 0 && len(items) > limit {
+		shown, more = items[:limit], len(items)-limit
+	}
+	rows := pb.Rows
+	if rows <= 0 {
+		if len(shown) == 1 {
+			rows = 7
+		} else {
+			rows = 5
+		}
+	}
+	rows = min(max(rows, 3), 10)
+	barH := pb.Height
+	if barH <= 0 {
+		if len(shown) == 1 {
+			barH = float32(rows)*7.2 + 12
+		} else {
+			barH = float32(rows)*6.4 + 10
+		}
+	}
+	barH = clampF(barH, 28, 120)
+
+	return ui.Column(c).Gap(10).Children(func() {
+		for i, it := range shown {
+			i, it := i, it
+			pct := it.Percent()
+			frac := float32(pct / 100)
+			col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+			bg, hasBg, darkBg := matrixTrackStyle(p, pb.Track, col)
+			var segs []matrixSegment
+			if frac > 0 {
+				segs = []matrixSegment{{color: col, startFrac: 0, endFrac: frac}}
+			}
+			ui.Column(c).Gap(4).Children(func() {
+				if it.Name != "" || !pb.HideLabel {
+					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+						if !pb.HideLabel {
+							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).NoWrap()
+							if p.dark {
+								lbl.TextColor(col)
+							}
+						}
+					})
+				}
+				ui.Box(c).Height(barH).Draw(func(pt *ui.Painter, r ui.Rect) {
+					paintMatrixBar(pt, r, rows, cols, segs, bg, hasBg, darkBg, glow, animate, p.muted)
+				})
+			})
+		}
+		if more > 0 {
+			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
+		}
+	})
+}
+
+// matrixDotHash returns a deterministic pseudo-random value in [0, 1) for an
+// LED dot coordinate so each dot keeps an organic, stable luminance tier.
+func matrixDotHash(col, row int) float64 {
+	x := uint64(col*73856093^row*19349663) + 0x9e3779b97f4a7c15
+	x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
+	x = (x ^ (x >> 27)) * 0x94d049bb133111eb
+	x ^= x >> 31
+	return float64(x&0xFFFFFF) / float64(0x1000000)
+}
+
+func matrixDotPhase(col, row int) float64 {
+	return matrixDotHash(col*3+11, row*7+29)
+}
+
+// paintMatrixBar draws a luminous LED dot-matrix panel with multi-tier dot
+// brightness, white-hot sparkle cores, unlit hardware grid dots, and optional
+// subtle breathing + flowing shimmer animation.
+func paintMatrixBar(pt *ui.Painter, r ui.Rect, rows, wantCols int, segs []matrixSegment, bg ui.Color, hasBg, darkBg bool, glow float32, animate bool, muted ui.Color) {
+	if r.W <= 4 || r.H <= 4 || rows <= 0 {
+		return
+	}
+	const panelRad = float32(8)
+	if hasBg {
+		pt.Fill(r, bg, panelRad)
+		if darkBg {
+			pt.StrokePath(roundedRectPath(r, panelRad), 1, ui.Hex("#FFFFFF").Alpha(0.07))
+		}
+	}
+
+	padX := float32(8)
+	padY := float32(6)
+	innerW := r.W - padX*2
+	innerH := r.H - padY*2
+	if innerW <= 4 || innerH <= 4 {
+		return
+	}
+
+	pitchY := innerH / float32(rows)
+	cols := wantCols
+	if cols <= 0 {
+		cols = int(math.Round(float64(innerW / pitchY)))
+		cols = min(max(cols, 10), 72)
+	}
+	pitchX := innerW / float32(cols)
+	pitch := min(pitchX, pitchY)
+	dotR := clampF(pitch*0.29, 1.3, 4.5)
+
+	gridW := pitchX * float32(cols)
+	gridH := pitchY * float32(rows)
+	originX := r.X + (r.W-gridW)/2
+	originY := r.Y + (r.H-gridH)/2
+
+	var sec, wavePos float64
+	if animate && len(segs) > 0 {
+		pt.AnimationFrameRate(30)
+		sec = float64(pt.Now().UnixNano()) / 1e9
+		wavePos = math.Mod(sec*0.26, 1.50) - 0.22
+	}
+
+	unlit := muted.Alpha(0.18)
+	if darkBg {
+		unlit = ui.Hex("#FFFFFF").Alpha(0.055)
+	}
+	white := ui.Hex("#FFFFFF")
+
+	for col := 0; col < cols; col++ {
+		colFrac := (float32(col) + 0.5) / float32(cols)
+		var seg *matrixSegment
+		for i := range segs {
+			if colFrac >= segs[i].startFrac && colFrac <= segs[i].endFrac {
+				seg = &segs[i]
+				break
+			}
+		}
+		cx := originX + (float32(col)+0.5)*pitchX
+		nx := float64(col) / float64(max(cols-1, 1))
+
+		for row := 0; row < rows; row++ {
+			cy := originY + (float32(row)+0.5)*pitchY
+			if seg == nil {
+				pt.Fill(ui.Rect{X: cx - dotR*0.85, Y: cy - dotR*0.85, W: dotR * 1.7, H: dotR * 1.7}, unlit, dotR*0.85)
+				continue
+			}
+
+			h := matrixDotHash(col, row)
+			var base, hot float64
+			switch {
+			case h < 0.28:
+				base, hot = 0.26, 0
+			case h < 0.66:
+				base, hot = 0.64, 0
+			case h < 0.89:
+				base, hot = 0.94, 0.14
+			default:
+				base, hot = 1.0, 0.82
+			}
+
+			breath := 1.0
+			shimmer := 0.0
+			if animate {
+				phase := matrixDotPhase(col, row) * 2 * math.Pi
+				speed := 1.3 + 0.9*matrixDotPhase(row+31, col+17)
+				breath = 0.86 + 0.14*math.Sin(sec*speed+phase)
+
+				ny := float64(row) / float64(max(rows-1, 1))
+				d := nx - ny*0.10 - wavePos
+				shimmer = math.Exp(-(d * d) / (2 * 0.065 * 0.065))
+			}
+
+			intensity := clampF(float32(base*breath+shimmer*0.30), 0.18, 1.18)
+			whiteMix := clampF(float32(hot+shimmer*0.30), 0, 0.92)
+
+			if glow > 0 && intensity > 0.32 {
+				rOuter := dotR * (1.85 + 0.35*float32(shimmer))
+				aOuter := min(0.15*intensity*glow, 0.32)
+				pt.Fill(ui.Rect{X: cx - rOuter, Y: cy - rOuter, W: rOuter * 2, H: rOuter * 2}, seg.color.Alpha(aOuter), rOuter)
+
+				rMid := dotR * (1.35 + 0.15*float32(shimmer))
+				aMid := min(0.30*intensity*glow, 0.54)
+				pt.Fill(ui.Rect{X: cx - rMid, Y: cy - rMid, W: rMid * 2, H: rMid * 2}, seg.color.Alpha(aMid), rMid)
+			}
+
+			dotCol := seg.color.Mix(white, whiteMix*0.82).Alpha(min(intensity, 1.0))
+			pt.Fill(ui.Rect{X: cx - dotR, Y: cy - dotR, W: dotR * 2, H: dotR * 2}, dotCol, dotR)
+
+			if whiteMix > 0.36 {
+				coreR := dotR * 0.56
+				pt.Fill(ui.Rect{X: cx - coreR, Y: cy - coreR, W: coreR * 2, H: coreR * 2}, white.Alpha(min(whiteMix*0.95, 0.96)), coreR)
+			}
+		}
+	}
+}
+
 // progressLabel is "3 / 10 · 30%", or "30%" for a bar given as a percentage.
 func progressLabel(it engine.Progress, pct float64) string {
 	pctText := fmt.Sprintf("%.0f%%", math.Round(pct))
@@ -329,13 +707,13 @@ var ringAligns = map[string]ui.Align{
 
 // ringStyle is a chart's ring options, with the defaults and the limits applied.
 type ringStyle struct {
-	concentric  bool
-	size        float32 // 0 fits the card
-	thick       float32 // the stroke's width, as a share of the size
-	butt, solid bool
-	track       string // tint, neutral or none
-	center      string // percent, value or none
-	align       ui.Align
+	concentric          bool
+	size                float32 // 0 fits the card
+	thick               float32 // the stroke's width, as a share of the size
+	butt, solid, matrix bool
+	track               string // tint, neutral or none
+	center              string // percent, value or none
+	align               ui.Align
 }
 
 func ringStyleOf(ch *engine.Chart) ringStyle {
@@ -343,7 +721,7 @@ func ringStyleOf(ch *engine.Chart) ringStyle {
 	if ch != nil && ch.Ring != nil {
 		r = *ch.Ring
 	}
-	st := ringStyle{concentric: r.Layout == "concentric", butt: r.Cap == "butt", solid: r.Fill == "solid",
+	st := ringStyle{concentric: r.Layout == "concentric", butt: r.Cap == "butt", solid: r.Fill == "solid", matrix: r.Fill == "matrix",
 		track: r.Track, center: r.Center, align: ringAligns[r.Align]} // the zero value is left
 	if st.track == "" {
 		st.track = "tint"
@@ -449,16 +827,28 @@ func progressRingView(c *ui.Context, ch *engine.Chart, limit int, d float32) ui.
 			ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
 		}
 		for i, it := range shown {
+			i := i
 			from, to := ringColors(p, st, it, i)
 			track, hasTrack := ringTrack(st, to, p.chip)
 			ui.Column(c).Gap(5).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Size(d, d).AlignItems(ui.Center).Justify(ui.Center).
 					Draw(func(pt *ui.Painter, r ui.Rect) {
+						cx, cy := r.X+r.W/2, r.Y+r.H/2
+						if st.matrix {
+							discR := min(r.W, r.H) / 2
+							paintMatrixRingHousing(pt, cx, cy, discR)
+							w := max(min(r.W, r.H)*max(st.thick, 0.16), 8)
+							paintMatrixRingArc(pt, cx, cy, discR-3-w/2, w, it.Raw(), to, i)
+							return
+						}
 						w := min(r.W, r.H) * st.thick
-						ringArc(pt, r.X+r.W/2, r.Y+r.H/2, (min(r.W, r.H)-w)/2, w, it.Raw(), from, to, track, hasTrack, st)
+						ringArc(pt, cx, cy, (min(r.W, r.H)-w)/2, w, it.Raw(), from, to, track, hasTrack, st)
 					}).Children(func() {
 					if text := ringCenter(st, it); text != "" {
-						ui.Text(c, text).FontSize(clampF(d*0.24, 11, 20)).FontWeight(650).NoWrap()
+						t := ui.Text(c, text).FontSize(clampF(d*0.24, 11, 20)).FontWeight(650).NoWrap()
+						if st.matrix {
+							t.TextColor(ui.Hex("#F8FAFC"))
+						}
 					}
 				})
 				ui.Text(c, it.Name).FontSize(fsCaption).FontWeight(500).NoWrap()
@@ -481,12 +871,20 @@ func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engi
 		ui.Box(c).Size(d, d).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
 			cx, cy := r.X+r.W/2, r.Y+r.H/2
 			big := min(r.W, r.H) / 2
+			if st.matrix {
+				paintMatrixRingHousing(pt, cx, cy, big)
+				big -= 3
+			}
 			n := float32(max(len(shown), 1))
 			// The rings share the outer part; the middle stays open.
 			w := min(min(r.W, r.H)*st.thick, big*0.88/(n*1.2))
 			gap := w * 0.2
 			for i, it := range shown {
 				from, to := ringColors(p, st, it, i)
+				if st.matrix {
+					paintMatrixRingArc(pt, cx, cy, big-w/2-float32(i)*(w+gap), w, it.Raw(), to, i)
+					continue
+				}
 				track, hasTrack := ringTrack(st, to, p.chip)
 				ringArc(pt, cx, cy, big-w/2-float32(i)*(w+gap), w, it.Raw(), from, to, track, hasTrack, st)
 			}

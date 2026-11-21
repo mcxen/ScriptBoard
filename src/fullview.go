@@ -217,7 +217,8 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			swaps := visualSwapOptions(res)
 			showBarStylePicker := hasPB
 			showClockStylePicker := isClock(viewRes.Chart)
-			if plot || showBarStylePicker || showClockStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
+			showMatrixStylePicker := !plot && !showBarStylePicker && !showClockStylePicker && hasMatrixStyleOption(viewRes.Chart)
+			if plot || showBarStylePicker || showClockStylePicker || showMatrixStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
 				ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
 					if len(swaps) > 1 {
 						a.componentSwapPicker(c, sc.ID, swaps, compSpec.Type, compact)
@@ -247,6 +248,8 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 						a.progressBarStylePicker(c, sc.ID, viewRes, subStyle)
 					} else if showClockStylePicker {
 						a.clockStylePicker(c, sc.ID, viewRes.Chart.Clock, subStyle)
+					} else if showMatrixStylePicker {
+						a.matrixWidgetStylePicker(c, sc.ID, viewRes.Chart, subStyle)
 					}
 					a.dimRow(c, idx, meta.Dims)
 					a.varRow(c, sc, meta)
@@ -777,7 +780,7 @@ func (a *app) componentSwapPicker(c *ui.Context, id string, swaps []string, acti
 	})
 }
 
-// progressBarStylePicker switches a progressBar between neon / gradient / solid / segmented.
+// progressBarStylePicker switches a progressBar between neon / matrix / gradient / solid / segmented.
 func (a *app) progressBarStylePicker(c *ui.Context, id string, res engine.Result, subStyle string) {
 	p := pal(c)
 	pb, ok := progressBarOf(res)
@@ -786,6 +789,7 @@ func (a *app) progressBarStylePicker(c *ui.Context, id string, res engine.Result
 	}
 	opts := []struct{ key, label string }{
 		{"neon", "霓虹灯"},
+		{"matrix", "点阵灯"},
 		{"gradient", "渐变"},
 		{"solid", "纯色"},
 		{"segmented", "分段"},
@@ -818,12 +822,13 @@ func (a *app) progressBarStylePicker(c *ui.Context, id string, res engine.Result
 	})
 }
 
-// clockStylePicker switches a clock widget between analog, digital, and world styles.
+// clockStylePicker switches a clock widget between analog, digital, matrix, and world styles.
 func (a *app) clockStylePicker(c *ui.Context, id string, spec *engine.ClockSpec, subStyle string) {
 	p := pal(c)
 	opts := []struct{ key, label string }{
 		{"analog", "指针表盘"},
 		{"digital", "数字"},
+		{"matrix", "点阵灯"},
 	}
 	if spec != nil && len(spec.Zones) > 0 {
 		opts = append(opts, struct{ key, label string }{"world", "世界时钟"})
@@ -847,6 +852,87 @@ func (a *app) clockStylePicker(c *ui.Context, id string, spec *engine.ClockSpec,
 		ui.Text(c, tr("时钟样式")).FontSize(fsSmall).TextColor(p.muted)
 		if choose(c, &cur, labels...) {
 			a.setCardStyle(id, opts[cur].key)
+		}
+	})
+}
+
+func hasMatrixStyleOption(ch *engine.Chart) bool {
+	if ch == nil {
+		return false
+	}
+	switch ch.Type {
+	case "donut", "progressRing", "gauge", "contrib":
+		return true
+	}
+	return false
+}
+
+// matrixWidgetStylePicker lets donut, progressRing, gauge, and contrib toggle
+// between their classic appearance and the Matrix LED dot style at runtime.
+func (a *app) matrixWidgetStylePicker(c *ui.Context, id string, ch *engine.Chart, subStyle string) {
+	if ch == nil {
+		return
+	}
+	p := pal(c)
+	var opts []struct{ key, label string }
+	curStyle := subStyle
+	switch ch.Type {
+	case "donut":
+		opts = []struct{ key, label string }{{"classic", "经典"}, {"matrix", "点阵灯"}}
+		if curStyle == "" {
+			if ch.Donut != nil && ch.Donut.Style == "matrix" {
+				curStyle = "matrix"
+			} else {
+				curStyle = "classic"
+			}
+		}
+	case "progressRing":
+		opts = []struct{ key, label string }{{"gradient", "渐变"}, {"solid", "纯色"}, {"matrix", "点阵灯"}}
+		if curStyle == "" {
+			if ch.Ring != nil && ch.Ring.Fill != "" {
+				curStyle = ch.Ring.Fill
+			} else {
+				curStyle = "gradient"
+			}
+		}
+	case "gauge":
+		opts = []struct{ key, label string }{{"classic", "经典"}, {"matrix", "点阵灯"}}
+		if curStyle == "" {
+			if ch.Gauge != nil && ch.Gauge.Style == "matrix" {
+				curStyle = "matrix"
+			} else {
+				curStyle = "classic"
+			}
+		}
+	case "contrib":
+		opts = []struct{ key, label string }{{"classic", "方块"}, {"matrix", "点阵灯"}}
+		if curStyle == "" {
+			if ch.Contrib != nil && ch.Contrib.Style == "matrix" {
+				curStyle = "matrix"
+			} else {
+				curStyle = "classic"
+			}
+		}
+	default:
+		return
+	}
+	cur := 0
+	labels := make([]string, len(opts))
+	for i, o := range opts {
+		labels[i] = tr(o.label)
+		if o.key == curStyle {
+			cur = i
+		}
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		ui.Text(c, tr("风格")).FontSize(fsSmall).TextColor(p.muted)
+		if choose(c, &cur, labels...) {
+			swap, _ := parseViewOverride(a.styles[id])
+			if swap != "" {
+				a.setCardStyle(id, "view:"+swap+":"+opts[cur].key)
+			} else {
+				a.setCardStyle(id, opts[cur].key)
+			}
 		}
 	})
 }

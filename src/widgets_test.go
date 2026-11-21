@@ -165,7 +165,13 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	absent(t, tt, "悬浮图表查看详情")
 	savePNG(t, tt, "23-visual-editor-neon")
 
-	// Switch progress bar style to segmented via visual segmented control.
+	// Switch progress bar style to matrix and segmented via visual segmented control.
+	click(t, tt, "点阵灯")
+	if !strings.Contains(a.draft.Source, `"style": "matrix"`) {
+		t.Fatalf("expected matrix style in source:\n%s", a.draft.Source)
+	}
+	requireText(t, tt, "呼吸流光")
+	requireText(t, tt, "合并点阵")
 	click(t, tt, "分段")
 	if !strings.Contains(a.draft.Source, `"style": "segmented"`) {
 		t.Fatalf("expected segmented style in source:\n%s", a.draft.Source)
@@ -347,4 +353,232 @@ export function render() { return { title: "圆环", big: "", sub: "", lines: []
 		settle(tt)
 		absent(t, tt, "样式", "大图", "折线", "悬浮图表查看详情")
 	}
+}
+
+func TestMatrixProgressBarVisualAndBehavior(t *testing.T) {
+	a := newTestApp(t)
+	for _, sc := range a.store.Scripts() {
+		sc.Home = false
+		a.store.SaveScript(sc)
+	}
+	matrixSrc := `export function meta() { return { name: "点阵配额", icon: "sparkles", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵配额",
+    icon: "sparkles",
+    big: "84%",
+    sub: "本月 Token 分配与剩余额度",
+    lines: [],
+    progressBar: {
+      style: "matrix",
+      rows: 7,
+      total: 100,
+      glow: 1.1,
+      track: "dark",
+      animate: true,
+      items: [
+        { name: "Sonnet", value: 24, unit: "%", color: "#3B82F6" },
+        { name: "Opus", value: 16, unit: "%", color: "#22C55E" },
+        { name: "Haiku", value: 28, unit: "%", color: "#06B6D4" },
+        { name: "Cache", value: 16, unit: "%", color: "#F97316" },
+      ],
+    },
+    layout: { summary: "top", stats: "hide", legend: "hide" },
+  };
+}`
+	perItemSrc := `export function meta() { return { name: "点阵进度", icon: "zap", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵进度",
+    icon: "zap",
+    big: "72%",
+    sub: "独立目标完成度",
+    lines: [],
+    progressBar: {
+      style: "matrix",
+      stacked: false,
+      rows: 5,
+      track: "dark",
+      items: [
+        { name: "本月额度", value: 72, max: 100, unit: "%", color: "#3B82F6" },
+        { name: "周任务", value: 14, max: 20, unit: "项", color: "#22C55E" },
+      ],
+    },
+    layout: { summary: "top", stats: "hide", legend: "hide" },
+  };
+}`
+	a.store.SaveScript(store.Script{ID: "matrix-quota", Name: "点阵配额", Home: true, Origin: store.OriginUser, Source: matrixSrc})
+	a.store.SaveScript(store.Script{ID: "matrix-goals", Name: "点阵进度", Home: true, Origin: store.OriginUser, Source: perItemSrc})
+	a.setSize("matrix-quota", 2)
+	a.setSize("matrix-goals", 2)
+	tt := ui.NewTester(a.view, 1100, 760)
+	settle(tt)
+	settle(tt)
+
+	requireText(t, tt, "点阵配额")
+	requireText(t, tt, "Sonnet")
+	requireText(t, tt, "Opus")
+	requireText(t, tt, "Haiku")
+	requireText(t, tt, "Cache")
+	requireText(t, tt, "点阵进度")
+	requireText(t, tt, "本月额度")
+	savePNG(t, tt, "26-matrix-progress-home")
+
+	a.router.Push("/full/matrix-quota")
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "点阵配额")
+	absent(t, tt, "折线", "大图", "悬浮图表查看详情")
+	savePNG(t, tt, "27-matrix-progress-full")
+}
+
+func TestMatrixFamilyShowcase(t *testing.T) {
+	a := newTestApp(t)
+	for _, sc := range a.store.Scripts() {
+		sc.Home = false
+		a.store.SaveScript(sc)
+	}
+	donutSrc := `export function meta() { return { name: "点阵占比", icon: "circle-dollar-sign", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵占比",
+    icon: "circle-dollar-sign",
+    big: "",
+    sub: "本月 Token 模型分布",
+    lines: [],
+    chart: {
+      type: "donut",
+      donut: { center: "84.2M", sub: "本月总计", thickness: 0.34, style: "matrix" },
+      slices: [
+        { name: "Sonnet", value: 32, unit: "M", color: "#3B82F6" },
+        { name: "Opus", value: 18, unit: "M", color: "#22C55E" },
+        { name: "Haiku", value: 24, unit: "M", color: "#06B6D4" },
+        { name: "Cache", value: 10.2, unit: "M", color: "#F97316" },
+      ],
+    },
+    layout: { legend: "hide", summary: "top", stats: "hide" },
+  };
+}`
+	ringSrc := `export function meta() { return { name: "点阵圆环", icon: "gauge", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵圆环",
+    icon: "gauge",
+    big: "",
+    sub: "今日活动完成度",
+    lines: [],
+    chart: {
+      type: "progressRing",
+      ring: { layout: "concentric", fill: "matrix", size: 120 },
+      progress: [
+        { name: "专注", value: 82, max: 100, unit: "%", color: "#3B82F6" },
+        { name: "运动", value: 68, max: 100, unit: "%", color: "#22C55E" },
+        { name: "阅读", value: 94, max: 100, unit: "%", color: "#F97316" },
+      ],
+    },
+    layout: { legend: "hide", summary: "top", stats: "hide" },
+  };
+}`
+	gaugeSrc := `export function meta() { return { name: "点阵仪表", icon: "zap", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵仪表",
+    icon: "zap",
+    big: "",
+    sub: "API 月度剩余配额",
+    lines: [],
+    chart: {
+      type: "gauge",
+      gauge: { used: 36, limit: 120, unit: "USD", label: "月度额度", reset: "9 天后重置", style: "matrix" },
+    },
+    layout: { legend: "hide", summary: "top", stats: "hide" },
+  };
+}`
+	contribSrc := `export function meta() { return { name: "点阵热力", icon: "sparkles", sources: {} }; }
+export function render() {
+  const cells = [];
+  for (let i = 0; i < 112; i++) {
+    const v = (i * 7 + (i % 5) * 3) % 10;
+    cells.push({ date: "2026-10-" + String((i % 28) + 1).padStart(2, "0"), value: v > 2 ? v : 0 });
+  }
+  return {
+    title: "点阵热力",
+    icon: "sparkles",
+    big: "",
+    sub: "近 16 周活跃灯阵",
+    lines: [],
+    chart: {
+      type: "contrib",
+      contrib: { weeks: 16, unit: "次", style: "matrix", cells },
+    },
+    layout: { legend: "hide", summary: "top", stats: "hide" },
+  };
+}`
+	clockSrc := `export function meta() { return { name: "点阵时钟", icon: "calendar-days", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵时钟",
+    icon: "calendar-days",
+    big: "",
+    sub: "",
+    lines: [],
+    chart: {
+      type: "clock",
+      clock: { style: "matrix", seconds: true, color: "#00F5D4" },
+    },
+    layout: { legend: "hide", summary: "hide", stats: "hide" },
+  };
+}`
+	scripts := []struct {
+		id, name, src string
+		size          int
+	}{
+		{"mx-donut", "点阵占比", donutSrc, 2},
+		{"mx-ring", "点阵圆环", ringSrc, 2},
+		{"mx-gauge", "点阵仪表", gaugeSrc, 2},
+		{"mx-contrib", "点阵热力", contribSrc, 2},
+		{"mx-clock", "点阵时钟", clockSrc, 2},
+	}
+	for _, s := range scripts {
+		a.store.SaveScript(store.Script{ID: s.id, Name: s.name, Home: true, Origin: store.OriginUser, Source: s.src})
+		a.setSize(s.id, s.size)
+	}
+
+	tt := ui.NewTester(a.view, 1180, 900)
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "84.2M")
+	requireText(t, tt, "Sonnet")
+	requireText(t, tt, "专注")
+	requireText(t, tt, "剩余 70%")
+	savePNG(t, tt, "28-matrix-family-home")
+
+	// Open donut detail view and verify matrix style picker works.
+	a.router.Push("/full/mx-donut")
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "点阵灯")
+	requireText(t, tt, "经典")
+	savePNG(t, tt, "29-matrix-donut-full")
+
+	// Open clock detail view and verify matrix clock style picker works.
+	a.router.Replace("/full/mx-clock")
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "点阵灯")
+	requireText(t, tt, "时钟样式")
+	savePNG(t, tt, "30-matrix-clock-full")
+
+	// Open gauge & contrib detail views and save visual snapshots.
+	a.router.Replace("/full/mx-gauge")
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "点阵灯")
+	savePNG(t, tt, "31-matrix-gauge-full")
+
+	a.router.Replace("/full/mx-contrib")
+	settle(tt)
+	settle(tt)
+	requireText(t, tt, "点阵灯")
+	savePNG(t, tt, "32-matrix-contrib-full")
 }

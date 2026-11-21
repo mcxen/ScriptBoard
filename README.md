@@ -137,7 +137,7 @@ Chart(c, ChartProps{
 | `panels` | **面板叠放**：价格和指标各占一块，共用一根时间轴，悬浮时十字线同时出现在每个面板上。参考线是虚线的常数序列 | `panels: [{title, style, weight, series}]` |
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
 | `progressRing` | **完成度环**：数据同 `progress`，每项一个环，环里是百分比，下面是名字和「已完成 / 总数」。可调：`ring: {layout, size, thickness, cap, track, fill, center, align, valign}`，每项还能给 `color` 和 `to`（见下）。中等卡片画前三项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
-| `progress` / `progressBar` | **进度条**（推荐直接写在结果顶层的 `progressBar`，无需 `chart`，卡片与全屏页均不出现图表样式/大图/悬浮详情）：支持 `solid`、`gradient`、`neon`（霓虹发光灯管）、`segmented`（分段格）四种风格 | 顶层 `progressBar: {style, height, track, glow, segments, hideLabel, items: [{name, value, max, unit, color, to}]}` 或直接数组 `[{...}]`（亦兼容 `chart: {type: "progress", ...}`） |
+| `progress` / `progressBar` | **进度条**（推荐直接写在结果顶层的 `progressBar`，无需 `chart`，卡片与全屏页均不出现图表样式/大图/悬浮详情）：支持 `solid`、`gradient`、`neon`（霓虹发光灯管）、`matrix`（LED 点阵发光矩阵，支持多段合并与呼吸流光）、`segmented`（分段格）五种风格 | 顶层 `progressBar: {style, height, track, glow, segments, rows, cols, total, stacked, animate, hideLabel, items: [{name, value, max, unit, color, to}]}` 或直接数组 `[{...}]`（亦兼容 `chart: {type: "progress", ...}`） |
 | `donut` | **环形占比图**：多分类占比扇区、中心总计/说明、可选霓虹微光与右侧图例 | `slices: [{name, value, color, unit}]`，可选 `donut: {center, sub, thickness, neon}` |
 | `checklist` | **待办 / 打卡清单**：勾选圆圈、完成度徽章、备注与彩色标签 | `checklist: [{label, done, note, badge, color}]` |
 | `kv` | **状态键值面板**：指标名、粗体数值、状态指示灯（`ok` / `warn` / `err` / `info`）与徽章 | `kv: [{label, value, sub, badge, status, color}]` |
@@ -147,7 +147,7 @@ Chart(c, ChartProps{
 | `table` | **交互数据表格**：结构化多列表格，支持列对齐、数字/涨跌/徽章/状态着色、表头点击排序、实时搜索、单击复制与 CSV 导出 | `table: {columns: [{title, align, format, width}], rows: [[...]], searchable, striped, compact}` |
 | `calendar` | **月视图日历**：由宿主填充农历、干支、生肖、节气与国际/中国节日；全屏页支持点选或用方向键 / Home 切换日期并查看当天详情（内置的「日历」脚本就是这样） | 无需 `series`，只需 `{type: "calendar"}` |
 
-**独立进度条（含霓虹灯风格）：`progressBar`。** 在 `render(ctx)` 返回值顶层直接写 `progressBar`（不需要 `chart`）：支持简写数组 `[{name, value, max, unit, color, to}]`，或对象 `{style: "neon"|"gradient"|"solid"|"segmented", height, track: "dark"|"tint"|"neutral"|"none", glow, segments, hideLabel, items: [...]}`。进度条及其他非坐标组件（`donut`、`checklist`、`kv`、`countdown`、`clock`、`contrib`、`progressRing`）在卡片、预览与全屏页中都不会显示折线/柱状等图表样式切换、「大图」开关或悬浮图表详情提示。
+**独立进度条（含霓虹灯 / LED 点阵灯风格）：`progressBar`。** 在 `render(ctx)` 返回值顶层直接写 `progressBar`（不需要 `chart`）：支持简写数组 `[{name, value, max, unit, color, to}]`，或对象 `{style: "neon"|"matrix"|"gradient"|"solid"|"segmented", height, track: "dark"|"tint"|"neutral"|"none", glow, segments, rows, cols, total, stacked, animate, hideLabel, items: [...]}`。其中 `style: "matrix"` 为深色 LED 点阵发光矩阵（默认 7 行，支持多段同条合并与轻微呼吸/流光动效）。进度条及其他非坐标组件（`donut`、`checklist`、`kv`、`countdown`、`clock`、`contrib`、`progressRing`）在卡片、预览与全屏页中都不会显示折线/柱状等图表样式切换、「大图」开关或悬浮图表详情提示。
 
 K 线的周期由宿主统一聚合（`src/internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
