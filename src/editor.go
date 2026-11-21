@@ -280,7 +280,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsSmall).TextColor(p.up)
 		default:
-			pb, hasPB := progressBarOf(st.res)
+			_, hasPB := progressBarOf(st.res)
 			if isCalendar(st.res.Chart) {
 				a.calendarPreview(c, a.selOf(draftKey), 280)
 			} else {
@@ -302,16 +302,14 @@ func (a *app) editor(c *ui.Context, compact bool) {
 				if st.res.Sub != "" {
 					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
 				}
-				switch {
-				case hasPB:
-					// progressBar needs no chart component or chart detail in preview.
-					progressBarView(c, pb, 0)
-				case isWidget(st.res.Chart):
-					widgetView(c, st.res.Chart, 180, a.selOf(draftKey), false, a.now(), 0)
-				case st.res.Chart != nil:
-					Chart(c, ChartProps{Data: st.res.Chart, Height: 170, Selected: a.selOf(draftKey), Now: a.now()})
-					if hasChartDetail(st.res.Chart) {
-						Detail(c, st.res.Chart, a.selOf(draftKey))
+				comp, viewRes, subStyle := resolveComponent(st.res, "")
+				if comp != nil {
+					comp.RenderCard(c, ComponentRenderReq{
+						App: a, Script: a.draft, Result: viewRes, Style: subStyle,
+						Size: 2, Height: 175, Selected: a.selOf(draftKey), Now: a.now(),
+					})
+					if comp.Spec().Capabilities.HasDetail {
+						Detail(c, viewRes.Chart, a.selOf(draftKey))
 					}
 				}
 				if len(st.res.Stats) > 0 {

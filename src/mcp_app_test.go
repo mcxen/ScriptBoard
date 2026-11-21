@@ -120,8 +120,9 @@ func TestMCPSettingsPage(t *testing.T) {
 	if err := a.store.SetSettings(withMCP(a, m)); err != nil {
 		t.Fatal(err)
 	}
-	tt := ui.NewTester(a.view, 960, 2400)
+	tt := ui.NewTester(a.view, 960, 1200)
 	click(t, tt, "设置")
+	click(t, tt, "MCP 服务器")
 	requireText(t, tt, "MCP 服务器")
 	requireText(t, tt, "复制提示词")
 	click(t, tt, "复制密钥")

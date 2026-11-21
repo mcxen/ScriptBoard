@@ -58,11 +58,16 @@ type app struct {
 	// runs holds the latest run of each card and of the editor's draft. A run
 	// is keyed by script ID, then by the values of its dimensions, as
 	// "id|range=30|period=1"; the draft uses draftKey. Main thread only.
-	runs   map[string]*runState
-	metas  map[string]metaEntry // compiled meta of each script, by ID and source
-	dims   map[string][]int     // selected option of each dimension, by key
-	styles map[string]string    // chart style chosen for each script, by ID
-	sels   map[string]*int      // chart selection, by chart key; -1 is none
+	runs           map[string]*runState
+	metas          map[string]metaEntry         // compiled meta of each script, by ID and source
+	dims           map[string][]int             // selected option of each dimension, by key
+	styles         map[string]string            // chart style chosen for each script, by ID
+	sels           map[string]*int              // chart selection, by chart key; -1 is none
+	pinnedSels     map[string]*int              // pinned chart index per full-view key; -1 when unpinned
+	hiddenSeries   map[string]map[int]bool      // hidden series indices per script ID for interactive legends
+	checkOverrides map[string]map[int]bool      // interactive local checklist toggle overrides per script
+	tableViews     map[string]*tableWidgetState // per-view sort/search state for table widgets
+	fullModes      map[string]int               // full-view mode per script: 0 visual, 1 table, 2 raw
 
 	width    float32 // width of the window, from the last frame
 	height   float32 // height of the window, from the last frame
@@ -75,11 +80,14 @@ type app struct {
 	// confirmDelete is the script whose delete button was clicked once.
 	confirmDelete string
 	draft         store.Script
-	tablePage     int  // the page of rows the table editor shows
-	tableAppend   int  // an import: 0 replaces the rows, 1 joins them
-	tableCols     bool // the phone editor shows the columns to edit
-	editTab       int  // the phone editor: 0 visual, 1 source, 2 preview (table: 0 table, 1 preview)
-	editMode      int  // the desktop script editor: 0 visual config, 1 source
+	tablePage     int    // the page of rows the table editor shows
+	tableAppend   int    // an import: 0 replaces the rows, 1 joins them
+	tableCols     bool   // the phone editor shows the columns to edit
+	tableFilter   string // live row filter in the table editor
+	tableSortCol  int    // sorted column in the table editor (-1 none)
+	tableSortDesc bool   // sort direction in the table editor
+	editTab       int    // the phone editor: 0 visual, 1 source, 2 preview (table: 0 table, 1 preview)
+	editMode      int    // the desktop script editor: 0 visual config, 1 source
 	visual        visualEditor
 	status        string // one line of feedback: saved, recorded, errors
 
@@ -96,10 +104,11 @@ type app struct {
 	transferErr  string
 
 	// Settings. set is the working copy; it is saved on every change.
-	set     store.Settings
-	unitIdx int
-	langIdx int // the language row of the settings: 0 auto, 1 中文, 2 English
-	skinIdx int // the appearance row of the settings: 0 default, 1 Mac OS 9
+	set         store.Settings
+	settingsTab string // active left-sidebar tab key in the settings UI
+	unitIdx     int
+	langIdx     int // the language row of the settings: 0 auto, 1 中文, 2 English
+	skinIdx     int // the appearance row of the settings: 0 default, 1 Mac OS 9
 	// cardMenus are the open states of the cards' right-click menus, by script.
 	cardMenus map[string]*bool
 	themeIdx  int // the light and dark row of the settings: 0 system, 1 light, 2 dark
@@ -228,6 +237,9 @@ func newApp(dir string, offline bool) (*app, error) {
 	}
 	a.syncPlugins()
 	a.set = st.Settings()
+	for id, style := range a.set.CardStyles {
+		a.styles[id] = style
+	}
 	if offline {
 		a.set.Offline = true
 		if err := st.SetSettings(a.set); err != nil {
@@ -804,7 +816,7 @@ func defaultHomeBuiltin(id string) bool {
 		"ai-claude-neon", "ai-balance-neon",
 		"goldacc-kv", "fxcny-kv", "gold-kv",
 		"aqi-neon", "cnwx-kv", "weight-contrib",
-		"year-countdown", "world-clock":
+		"year-countdown", "world-clock", "fxcny-table":
 		return false
 	}
 	return true

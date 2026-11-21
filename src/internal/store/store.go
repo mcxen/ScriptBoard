@@ -147,6 +147,9 @@ type Settings struct {
 	CardOrder []string `json:"cardOrder"`
 	// LegendHidden are the home cards whose legend the user hid, by script ID.
 	LegendHidden map[string]bool `json:"legendHidden"`
+	// CardStyles keeps the user-chosen chart style or swapped component view
+	// (such as "grid", "neon", or "view:progressRing"), by script ID.
+	CardStyles map[string]string `json:"cardStyles,omitempty"`
 	// MenuBar are the cards the user put in the menu bar, by script ID, in the
 	// order they were added. Only a script that asks for the menu bar can be
 	// here.

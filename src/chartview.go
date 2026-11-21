@@ -248,6 +248,9 @@ type ChartProps struct {
 	// Selected, when set, is the chosen point: the pointer picks the nearest
 	// one and the index is kept here (-1 for none). Nil makes the chart inert.
 	Selected *int
+	// Pinned, when set (>= 0), locks the highlighted point even when the
+	// pointer leaves the plot; clicking toggles or updates the pinned index.
+	Pinned *int
 	// Full adds a label at every few points of the x axis, and a crosshair
 	// that reads out the value under the pointer. It is for the full-screen
 	// view. A calendar's days are buttons only when Full is set.
@@ -270,10 +273,10 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 	if isWidget(p.Data) {
 		return widgetView(c, p.Data, h, p.Selected, p.Full, p.Now, 0)
 	}
-	return chartWith(c, p.Data, p.Style, h, p.Selected, p.Full)
+	return chartWith(c, p.Data, p.Style, h, p.Selected, p.Pinned, p.Full)
 }
 
-func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, pinned *int, full bool) ui.Element {
 	if ch != nil && (ch.Type == "progress" || ch.Type == "progressBar") {
 		pb := &engine.ProgressBar{Items: ch.Progress}
 		if ch.Bar != nil {
@@ -288,13 +291,13 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 		return widgetView(c, ch, h, sel, full, time.Now(), 0)
 	}
 	if isCombo(ch) {
-		return comboView(c, ch, style, h, sel, full)
+		return comboView(c, ch, style, h, sel, pinned, full)
 	}
 	if isHeat(ch) {
 		return heatView(c, ch, sel)
 	}
 	if isPanels(ch) {
-		return panelsView(c, ch, style, h, sel, full)
+		return panelsView(c, ch, style, h, sel, pinned, full)
 	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
@@ -340,6 +343,18 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 
 		if sel != nil {
 			chart.Select(c, area, sel, xs, func(i int) string { return readout(ch, i) })
+			if pinned != nil {
+				if area.Clicked() && *sel >= 0 {
+					if *pinned == *sel {
+						*pinned = -1
+					} else {
+						*pinned = *sel
+					}
+				}
+				if *sel < 0 && *pinned >= 0 && *pinned < s.n {
+					*sel = *pinned
+				}
+			}
 			highlight(c, ch, s, xs, *sel, style)
 		}
 		if full {
@@ -373,7 +388,7 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 		return widgetView(c, ch, h, nil, false, time.Now(), 3)
 	}
 	if isCombo(ch) {
-		return comboView(c, ch, "", h, nil, false)
+		return comboView(c, ch, "", h, nil, nil, false)
 	}
 	if isHeat(ch) {
 		// A card shows the average of the table; the table is for the full view.
@@ -770,7 +785,13 @@ func readout(ch *engine.Chart, i int) string {
 			text = sr.Name + " " + text
 		}
 		if i > 0 && i-1 < len(sr.Points) {
-			text += fmt.Sprintf("（%+.2f）", v-sr.Points[i-1])
+			prev := sr.Points[i-1]
+			diff := v - prev
+			if prev != 0 {
+				text += fmt.Sprintf("（%+.2f · %+.2f%%）", diff, diff/prev*100)
+			} else {
+				text += fmt.Sprintf("（%+.2f）", diff)
+			}
 		}
 		parts = append(parts, text)
 	}

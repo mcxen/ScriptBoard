@@ -213,3 +213,39 @@ func TestDuplicateATable(t *testing.T) {
 		t.Error("editing the copy changed the original")
 	}
 }
+
+// The upgraded table editor filters non-destructively, shows numeric column
+// summaries, duplicates rows, and copies JSON.
+func TestTableEditorFilterSummaryAndJSON(t *testing.T) {
+	a := newTestApp(t)
+	var copied string
+	oldCopy := copyText
+	copyText = func(s string) { copied = s }
+	defer func() { copyText = oldCopy }()
+
+	saveTable(t, a, "t-rich", []string{"日期", "金额", "备注"}, [][]string{
+		{"2026-11-01", "100", "午餐"},
+		{"2026-11-02", "250", "书籍"},
+		{"2026-11-03", "50", "咖啡"},
+	})
+	tt := ui.NewTester(a.view, 1400, 900)
+	a.router.Push("/edit/t-rich")
+	settle(tt)
+	requireText(t, tt, "列汇总")
+	requireText(t, tt, "合计 400")
+
+	// Filter to a single matching row without losing underlying rows.
+	a.tableFilter = "书籍"
+	settle(tt)
+	requireText(t, tt, "匹配 1 / 共 3 行")
+	requireText(t, tt, "合计 250")
+	a.tableFilter = ""
+	settle(tt)
+
+	// Copy JSON produces a valid array of objects.
+	click(t, tt, "复制 JSON")
+	if !strings.Contains(copied, `"午餐"`) || !strings.Contains(copied, `"250"`) {
+		t.Fatalf("unexpected JSON copy: %q", copied)
+	}
+	savePNG(t, tt, "28-table-editor-upgraded")
+}

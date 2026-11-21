@@ -30,6 +30,8 @@ func Parse(name string, data []byte) ([][]string, error) {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".xlsx", ".xlsm":
 		return ParseXLSX(data)
+	case ".json":
+		return ParseJSON(data)
 	case ".xls":
 		return nil, errors.New("不支持旧的 .xls 格式，请在 Excel 里另存为 .xlsx 或 .csv")
 	}

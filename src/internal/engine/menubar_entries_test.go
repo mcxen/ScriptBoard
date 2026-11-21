@@ -58,6 +58,18 @@ func TestMenuBarProblems(t *testing.T) {
 		{"a submenu in a submenu", asked, Result{Menu: []MenuEntry{{Label: "a", Items: []MenuEntry{{Label: "b", Items: []MenuEntry{{Label: "c"}}}}}}}, "子菜单"},
 		{"a title that will be cut", asked, Result{MenuBar: &MenuBar{Title: "一二三四五六七八九十十一十二十三"}}, "截短"},
 		{"a click that does not exist", asked, Result{MenuBar: &MenuBar{Click: "double"}}, "click"},
+		{"valid new tray options", Meta{Menubar: true, Vars: []Var{{Key: "city"}}}, Result{
+			MenuBar: &MenuBar{Title: "22°", Icon: "pulse", Color: "#10B981", RefreshSec: 30},
+			Menu: []MenuEntry{
+				{Label: "Beijing", Action: "set_var:city=bj"},
+				{Label: "Copy", Action: "copy_headline"},
+				{Label: "Settings", Action: "settings"},
+			},
+		}, ""},
+		{"invalid tray icon", asked, Result{MenuBar: &MenuBar{Icon: "rocket"}}, "menubar.icon"},
+		{"invalid tray color", asked, Result{MenuBar: &MenuBar{Color: "red"}}, "menubar.color"},
+		{"too fast refresh", asked, Result{MenuBar: &MenuBar{RefreshSec: 5}}, "refreshSec"},
+		{"undeclared set_var", asked, Result{Menu: []MenuEntry{{Label: "x", Action: "set_var:city=bj"}}}, "set_var"},
 	}
 	for _, c := range cases {
 		got := strings.Join(MenuBarProblems(c.meta, c.res), "；")

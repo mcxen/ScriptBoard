@@ -161,10 +161,20 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		inputs = nil
 	}
 	ready := st.err == nil && !st.loading
-	pb, hasPB := progressBarOf(st.res)
+	var comp ComponentView
+	var viewRes engine.Result
+	var subStyle string
+	if ready {
+		comp, viewRes, subStyle = resolveComponent(st.res, a.styles[sc.ID])
+	}
+	pb, hasPB := progressBarOf(viewRes)
 	hasPB = ready && hasPB
 	// A card keeps the height its box gives it: a size is what the user chose.
-	hasChart := ready && st.res.Chart != nil && !hasPB
+	hasChart := ready && viewRes.Chart != nil && !hasPB
+	compSpec := engine.WidgetSpec{}
+	if comp != nil {
+		compSpec = comp.Spec()
+	}
 	h := b.Height*s + float32(len(inputs))*44*s
 	accent := p.accent
 	if ready {
@@ -344,50 +354,41 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				}
 				switch size {
 				case 0:
-					if hasPB && len(pb.Items) > 0 {
-						compactPB := *pb
-						compactPB.HideLabel = true
-						if compactPB.Height <= 0 || compactPB.Height > 7 {
-							compactPB.Height = 6
-						}
-						compactPB.Items = []engine.Progress{{Value: pb.Items[0].Value, Max: pb.Items[0].Max, Color: pb.Items[0].Color, To: pb.Items[0].To}}
-						progressBarView(c, &compactPB, 1)
+					if comp != nil && hasPB && len(pb.Items) > 0 {
+						comp.RenderCard(c, ComponentRenderReq{
+							App: a, Script: sc, Result: viewRes, Style: subStyle,
+							Size: 0, Limit: 1, Now: a.now(),
+						})
 					}
 				case 1:
 					if hasPB {
-						progressBarView(c, pb, 2)
+						comp.RenderCard(c, ComponentRenderReq{
+							App: a, Script: sc, Result: viewRes, Style: subStyle,
+							Size: 1, Limit: 2, Now: a.now(),
+						})
 						for _, in := range inputs {
 							a.quickEntry(c, sc.ID, in)
 						}
 						break
 					}
-					if !hasChart {
+					if comp == nil || !hasChart {
 						for _, in := range inputs {
 							a.quickEntry(c, sc.ID, in)
 						}
 						break
 					}
-					if !isProgress(st.res.Chart) && !isWidget(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
+					if !compSpec.Capabilities.TopAligned || ringVAlign(viewRes.Chart) == "middle" || ringVAlign(viewRes.Chart) == "bottom" {
 						ui.Spacer(c)
 					}
-					if isProgress(st.res.Chart) {
-						// A completion ring sits cleanly right under the summary.
-						progressRingView(c, st.res.Chart, 3, 46)
-					} else if isWidget(st.res.Chart) {
-						sparkH := max(54, b.Height-154)*s + lift
-						widgetView(c, st.res.Chart, sparkH, nil, false, a.now(), 3)
-					} else {
-						sparkH := max(54, b.Height-154)*s + lift
-						if len(st.res.Stats) > 0 && !isCalendar(st.res.Chart) {
-							// The stat strip takes the room a curve would have had.
-							sparkH = max(28, b.Height-210)*s + lift
-						}
-						if isCalendar(st.res.Chart) {
-							Chart(c, ChartProps{Data: st.res.Chart, Height: sparkH, Now: a.now()})
-						} else {
-							SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
-						}
+					sparkH := max(54, b.Height-154)*s + lift
+					if !compSpec.Capabilities.TopAligned && len(st.res.Stats) > 0 && !isCalendar(viewRes.Chart) {
+						// The stat strip takes the room a curve would have had.
+						sparkH = max(28, b.Height-210)*s + lift
 					}
+					comp.RenderCard(c, ComponentRenderReq{
+						App: a, Script: sc, Result: viewRes, Style: subStyle,
+						Size: 1, Height: sparkH, Limit: 3, Now: a.now(),
+					})
 					for _, in := range inputs {
 						a.quickEntry(c, sc.ID, in)
 					}
@@ -395,7 +396,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					if hasPB {
 						a.dimRow(c, idx, meta.Dims)
 						a.varRow(c, sc, meta)
-						progressBarView(c, pb, 0)
+						comp.RenderCard(c, ComponentRenderReq{
+							App: a, Script: sc, Result: viewRes, Style: subStyle,
+							Size: size, Limit: 0, Now: a.now(),
+						})
 						for _, in := range inputs {
 							a.quickEntry(c, sc.ID, in)
 						}
@@ -403,7 +407,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					}
 					// A completion chart or widget sits right under the summary; a curve is
 					// pushed down to fill the card.
-					if !hasChart || (!isProgress(st.res.Chart) && !isWidget(st.res.Chart)) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
+					if !hasChart || !compSpec.Capabilities.TopAligned || ringVAlign(viewRes.Chart) == "middle" || ringVAlign(viewRes.Chart) == "bottom" {
 						ui.Spacer(c)
 					}
 					a.dimRow(c, idx, meta.Dims)
@@ -413,20 +417,20 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					if size == 3 {
 						chartH = wideChart
 					}
-					if hasChart {
-						if isWidget(st.res.Chart) {
-							widgetView(c, st.res.Chart, chartH, a.selOf("card:"+sc.ID), false, a.now(), 0)
-						} else {
-							Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID), Now: a.now()})
-							if hasChartDetail(st.res.Chart) && !isCalendar(st.res.Chart) {
-								Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
-							}
-							if showLegend && isPlotChart(st.res.Chart) {
-								legendRow(c, st.res.Chart)
-							}
-							if isProgress(st.res.Chart) && ringVAlign(st.res.Chart) != "bottom" {
-								ui.Spacer(c)
-							}
+					if comp != nil && hasChart {
+						sel := a.selOf("card:" + sc.ID)
+						comp.RenderCard(c, ComponentRenderReq{
+							App: a, Script: sc, Result: viewRes, Style: subStyle,
+							Size: size, Height: chartH, Selected: sel, Now: a.now(), Legend: showLegend,
+						})
+						if compSpec.Capabilities.HasDetail && !isCalendar(viewRes.Chart) {
+							Detail(c, viewRes.Chart, sel)
+						}
+						if showLegend && compSpec.Capabilities.Plot {
+							legendRow(c, viewRes.Chart)
+						}
+						if isProgress(viewRes.Chart) && ringVAlign(viewRes.Chart) != "bottom" {
+							ui.Spacer(c)
 						}
 					}
 					for _, in := range inputs {
@@ -436,7 +440,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				// The stats are their own block at the foot of the card, when the
 				// layout keeps them. A medium card with bars or widgets has no room for them;
 				// its full view has them.
-				barsOnMedium := size == 1 && (hasPB || (hasChart && (isProgress(st.res.Chart) || isCalendar(st.res.Chart) || isWidget(st.res.Chart))))
+				barsOnMedium := size == 1 && (hasPB || (hasChart && compSpec.Capabilities.TopAligned))
 				if size > 0 && lay.Stats != "hide" && !barsOnMedium {
 					cardStats(c, st.res.Stats)
 				}
@@ -481,6 +485,26 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				if btn(c, bar).Clicked() {
 					a.toggleMenuBar(sc.ID)
 					*open = false
+				}
+			}
+			// Runtime component swapping directly from the card's context menu.
+			if swaps := engine.SwappableTypes(st.res); len(swaps) > 1 {
+				ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
+				baseType := engine.ResultWidgetType(st.res)
+				for _, target := range swaps {
+					target := target
+					if target == compSpec.Type {
+						continue
+					}
+					label := tr("切换为 ") + widgetDisplayName(target)
+					if btn(c, label).Clicked() {
+						if target == baseType {
+							a.setCardStyle(sc.ID, "")
+						} else {
+							a.setCardStyle(sc.ID, "view:"+target)
+						}
+						*open = false
+					}
 				}
 			}
 		})

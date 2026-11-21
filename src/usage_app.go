@@ -117,7 +117,7 @@ type usageForm struct {
 
 // usageGroups are the settings of the AI usage providers: a key for each
 // remote one, and the budgets that turn a count into "how much is left".
-func (a *app) usageGroups(c *ui.Context, compact bool) {
+func (a *app) usageGroups(c *ui.Context, compact, titled bool) {
 	rows := []row{}
 	for _, p := range usage.List() {
 		p := p
@@ -162,5 +162,9 @@ func (a *app) usageGroups(c *ui.Context, compact bool) {
 			}
 		}})
 	}
-	group(c, tr("AI 用量"), compact, rows...)
+	title := ""
+	if titled {
+		title = tr("AI 用量")
+	}
+	group(c, title, compact, rows...)
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/display"
 
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/plugins"
@@ -13,15 +14,163 @@ import (
 // appVersion is what a build that did not get a version reports (versionString).
 const appVersion = "dev"
 
+// settingsNavWidth is the width of the left tab list in the settings UI.
+const settingsNavWidth = 176
+
 var unitNames = []string{"kg", "斤"}
 
-// settings is the settings page: groups of rows, each with a title, a line of
-// explanation and its control. Every change is saved at once.
+type settingsTabItem struct {
+	key, icon, label string
+}
+
+// settingsTabs are the sections shown in the left tab list of Settings.
+var settingsTabs = []settingsTabItem{
+	{key: "appearance", icon: "sun", label: "外观"},
+	{key: "data", icon: "file-spreadsheet", label: "数据"},
+	{key: "usage", icon: "sparkles", label: "AI 用量"},
+	{key: "feeds", icon: "globe", label: "数据源"},
+	{key: "mcp", icon: "bot", label: "MCP 服务器"},
+	{key: "community", icon: "users", label: "社区"},
+	{key: "about", icon: "info", label: "关于"},
+}
+
+func settingsTabByKey(key string) settingsTabItem {
+	for _, t := range settingsTabs {
+		if t.key == key {
+			return t
+		}
+	}
+	return settingsTabs[0]
+}
+
+// settings is the settings page: a left list of tabs beside the active tab's
+// groups of rows (or a horizontal tab strip on phones). Every change is saved
+// at once.
 func (a *app) settings(c *ui.Context, compact bool) { a.settingsBody(c, compact, true) }
 
-// settingsBody is the settings page; titled says whether it has a title of its
-// own (the settings window has its title in its title row).
+// settingsBody builds the settings UI; titled says whether it renders its own
+// page heading (the standalone settings window puts "设置" in its title row).
 func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
+	p := pal(c)
+	tab := settingsTabByKey(a.settingsTab)
+	a.settingsTab = tab.key
+
+	winW, _ := c.Size()
+	sideNav := !compact && (winW == 0 || winW >= 540)
+
+	if sideNav {
+		// Inside the main window (tests/fallback), the main sidebar already
+		// uses sidebarWidth, so estimate the pane width from what remains.
+		availW := float32(winW)
+		if titled && availW > sidebarWidth {
+			availW -= sidebarWidth
+		}
+		paneCompact := availW > 0 && (availW-settingsNavWidth) < 520
+
+		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
+			a.settingsNav(c, p, tab.key)
+			skinSurface(c, ui.Column(c).Grow(1).MinWidth(0)).Children(func() {
+				page(c.Key("settings-pane:"+tab.key), paneCompact, func() {
+					if titled {
+						header(c, tr("设置"), "", nil)
+					}
+					a.settingsTabContent(c, tab, paneCompact)
+				})
+			})
+		})
+		return
+	}
+
+	// Narrow window or phone: horizontal scrollable tab bar over the active tab.
+	skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
+		if titled {
+			ui.Column(c).Padding(padPhone, padPhone, 6, padPhone).Children(func() {
+				header(c, tr("设置"), "", nil)
+			})
+		}
+		a.settingsTabStrip(c, p, tab.key)
+		page(c.Key("settings-pane:"+tab.key), true, func() {
+			a.settingsTabContent(c, tab, true)
+		})
+	})
+}
+
+// settingsNav is the left tab sidebar of Settings on desktop.
+func (a *app) settingsNav(c *ui.Context, p palette, activeKey string) {
+	borderColor := p.hairline
+	if isMac() {
+		borderColor = macBlack
+	}
+	ui.Column(c).
+		Width(settingsNavWidth).
+		Shrink(0).
+		Background(p.sidebar).
+		BorderWidth(0, 1, 0, 0).
+		BorderColor(borderColor).
+		Padding(14, 10).
+		Gap(2).
+		Children(func() {
+			if isMac() {
+				for _, t := range settingsTabs {
+					if macSidebarItem(c, tr(t.label), t.icon, t.key == activeKey, settingsNavWidth-20) {
+						a.settingsTab = t.key
+					}
+				}
+				return
+			}
+			items := make([]display.ListItem, len(settingsTabs))
+			for i, t := range settingsTabs {
+				items[i] = display.ListItem{Key: t.key, Label: tr(t.label), Icon: icon(t.icon)}
+			}
+			if key := display.List(c, display.ListProps{Items: items, Active: activeKey}); key != "" {
+				a.settingsTab = key
+			}
+		})
+}
+
+// settingsTabStrip is the horizontal tab bar used on phones and narrow windows.
+func (a *app) settingsTabStrip(c *ui.Context, p palette, activeKey string) {
+	ui.ScrollHorizontal(c).
+		Shrink(0).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(p.hairline).
+		Padding(8, padPhone).
+		Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				for _, t := range settingsTabs {
+					t := t
+					chosen := t.key == activeKey
+					fg := p.muted
+					if chosen {
+						fg = p.text
+					}
+					el := ui.ButtonBase(c.Key("stab:"+t.key)).
+						Padding(6, 10).
+						Radius(radControl).
+						Gap(6).
+						AlignItems(ui.Center).
+						Shrink(0)
+					if chosen {
+						el = el.Background(p.rowSel)
+					} else if el.Hovered() {
+						el = el.Background(p.hover)
+					}
+					if el.Children(func() {
+						ui.Icon(c, icon(t.icon)).FontSize(14).TextColor(fg)
+						txt := ui.Text(c, tr(t.label)).FontSize(fsSmall).TextColor(fg).NoWrap()
+						if chosen {
+							txt.FontWeight(600)
+						}
+					}).Clicked() {
+						a.settingsTab = t.key
+					}
+				}
+			})
+		})
+}
+
+// settingsTabContent renders the groups belonging to tab.
+func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact bool) {
 	p := pal(c)
 	inputW := float32(260)
 	if compact {
@@ -31,12 +180,23 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 		return func() { ui.Text(c, text).FontSize(fsCaption).TextColor(p.muted) }
 	}
 
-	page(c, compact, func() {
-		if titled {
-			header(c, tr("设置"), "", nil)
+	// Default skin shows a crisp tab heading once at the top of the right pane
+	// so single-group tabs do not repeat the label directly underneath it.
+	// Mac OS 9 keeps its classic category bar on every group.
+	groupTitled := isMac()
+	if !isMac() {
+		ui.Text(c, tr(tab.label)).FontSize(fsHeading).FontWeight(650).Padding(0, 4)
+	}
+	singleTitle := func(name string) string {
+		if groupTitled {
+			return tr(name)
 		}
+		return ""
+	}
 
-		group(c, tr("外观"), compact,
+	switch tab.key {
+	case "appearance":
+		group(c, singleTitle("外观"), compact,
 			row{stack: true, title: tr("风格"), note: tr("切换后所有页面立即换成所选的风格。"), control: func() {
 				if choose(c, &a.skinIdx, tr("默认"), "Mac OS 9") {
 					a.set.Skin = skinNames[a.skinIdx]
@@ -74,7 +234,8 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 			}},
 		)
 
-		group(c, tr("数据"), compact,
+	case "data":
+		group(c, singleTitle("数据"), compact,
 			row{title: tr("体重单位"), note: tr("首页和图表按这个单位显示"), control: func() {
 				if choose(c, &a.unitIdx, unitNames...) {
 					a.set.WeightUnit = unitNames[a.unitIdx]
@@ -97,9 +258,11 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 			}},
 		)
 
-		a.usageGroups(c, compact)
+	case "usage":
+		a.usageGroups(c, compact, groupTitled)
 
-		group(c, tr("数据源"), compact,
+	case "feeds":
+		group(c, singleTitle("数据源"), compact,
 			row{title: tr("允许 exec 协议"), note: tr("数据源可以运行本机程序取数（exec:）。只在你信任的数据源上开启"), control: func() {
 				if toggle(c, &a.set.AllowExec) {
 					a.saveSettings()
@@ -112,11 +275,11 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 			}},
 		)
 
-		a.updateGroup(c, compact)
+	case "mcp":
+		a.mcpGroups(c, compact, groupTitled)
 
-		a.mcpGroups(c, compact)
-
-		group(c, tr("社区"), compact,
+	case "community":
+		group(c, singleTitle("社区"), compact,
 			row{title: tr("社区地址"), note: tr("Cloudflare Worker 的地址，留空则不用社区"), control: func() {
 				if textInput(c, &a.set.CommunityURL, "https://…workers.dev").Width(inputW).Changed() {
 					a.saveSettings()
@@ -124,6 +287,7 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 			}},
 		)
 
+	case "about":
 		aboutRows := []row{
 			{title: appName(), control: muted(versionString())},
 			{title: tr("数据文件"), note: a.store.Path()},
@@ -137,6 +301,7 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 				quitApp()
 			}
 		}})
-		group(c, tr("关于"), compact, aboutRows...)
-	})
+		group(c, singleTitle("关于"), compact, aboutRows...)
+		a.updateGroup(c, compact)
+	}
 }

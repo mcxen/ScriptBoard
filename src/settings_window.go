@@ -13,8 +13,8 @@ import (
 
 // settingsWidth and settingsHeight are the window's first size.
 const (
-	settingsWidth  = 640
-	settingsHeight = 780
+	settingsWidth  = 780
+	settingsHeight = 640
 )
 
 // goTo is where a click on a place of the sidebar or the tab bar goes: the page,
@@ -44,8 +44,8 @@ func (a *app) openSettings() {
 		Title:     tr("设置"),
 		Width:     settingsWidth,
 		Height:    settingsHeight,
-		MinWidth:  460,
-		MinHeight: 420,
+		MinWidth:  560,
+		MinHeight: 440,
 		// Opens where the user left it last time.
 		StateKey: "settings",
 		Content:  ui.View(a.settingsView),
@@ -82,9 +82,7 @@ func (a *app) settingsView(c *ui.Context) {
 				ui.Text(c, tr("设置")).FontSize(fsCaption).TextColor(pal(c).muted).Padding(0, 8)
 			})
 		}
-		skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
-			a.settingsBody(c, true, false)
-		})
+		a.settingsBody(c, false, false)
 	})
 }
 

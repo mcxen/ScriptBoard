@@ -73,20 +73,36 @@ func readableTextColor(col ui.Color, dark bool) ui.Color {
 
 // widgetView draws any of the six widget components in this file.
 func widgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
+	return widgetViewWith(c, nil, "", ch, "", h, sel, full, now, limit)
+}
+
+// widgetViewWith draws a widget component with optional app context, script ID,
+// and runtime sub-style override (for interactive checklist toggles, KV copy
+// feedback, donut slice selection, and clock style switching).
+func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, subStyle string, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
 	if now.IsZero() {
 		now = time.Now()
 	}
 	switch ch.Type {
 	case "donut":
-		return donutWidgetView(c, ch, h, full)
+		return donutWidgetView(c, ch, h, sel, full)
 	case "checklist":
-		return checklistView(c, ch.Checklist, limit)
+		return checklistViewWith(c, a, scriptID, ch.Checklist, limit, full)
 	case "kv":
-		return kvView(c, ch.KV, limit, full)
+		return kvViewWith(c, a, ch.KV, limit, full)
 	case "countdown":
 		return countdownView(c, ch.Countdown, now, limit, full)
 	case "clock":
-		return clockView(c, ch.Clock, now, h, full)
+		spec := ch.Clock
+		if subStyle == "analog" || subStyle == "digital" || subStyle == "world" {
+			var cp engine.ClockSpec
+			if spec != nil {
+				cp = *spec
+			}
+			cp.Style = subStyle
+			spec = &cp
+		}
+		return clockView(c, spec, now, h, full)
 	case "contrib":
 		return contribView(c, ch.Contrib, sel, full)
 	}
@@ -102,7 +118,7 @@ var donutPalette = []ui.Color{
 	ui.Hex("#F43F5E"), ui.Hex("#8B5CF6"), ui.Hex("#06B6D4"), ui.Hex("#EC4899"),
 }
 
-func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, full bool) ui.Element {
+func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full bool) ui.Element {
 	p := pal(c)
 	var items []engine.Slice
 	total := 0.0
@@ -129,8 +145,17 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, full bool) ui.E
 	if !full {
 		d = clampF(h*0.95, 92, 148)
 	}
+	activeIdx := -1
+	if full && sel != nil && *sel >= 0 && *sel < len(items) {
+		activeIdx = *sel
+	}
 	center := st.Center
-	if center == "" {
+	centerSub := st.Sub
+	if activeIdx >= 0 {
+		it := items[activeIdx]
+		center = fmt.Sprintf("%.0f%%", math.Round(it.Value/total*100))
+		centerSub = it.Name
+	} else if center == "" {
 		center = formatAmount(total)
 	}
 	centerFS := clampF(d*0.17, 11, 22)
@@ -153,31 +178,57 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, full bool) ui.E
 		ui.Column(c).Size(d, d).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
 			Draw(func(pt *ui.Painter, r ui.Rect) {
 				cx, cy := r.X+r.W/2, r.Y+r.H/2
-				outer := min(r.W, r.H)/2 - 3
+				outer := min(r.W, r.H)/2 - 5
 				inner := outer * (1 - thick)
 				slices := chart.Pie(vals, 0.016)
 				for i, sl := range slices {
-					if st.Neon {
-						pt.FillPath(chart.Sector(cx, cy, inner-2, outer+2.5, sl), cols[i].Alpha(0.24))
+					col := cols[i]
+					outR := outer
+					if activeIdx >= 0 {
+						if i == activeIdx {
+							outR = outer + 3.5
+						} else {
+							col = col.Alpha(0.38)
+						}
 					}
-					pt.FillPath(chart.Sector(cx, cy, inner, outer, sl), cols[i])
+					if st.Neon || i == activeIdx {
+						pt.FillPath(chart.Sector(cx, cy, inner-2, outR+2.5, sl), cols[i].Alpha(0.24))
+					}
+					pt.FillPath(chart.Sector(cx, cy, inner, outR, sl), col)
 				}
 			}).Children(func() {
 			ui.Text(c, center).FontSize(centerFS).FontWeight(700).NoWrap()
-			if st.Sub != "" {
-				ui.Text(c, st.Sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			if centerSub != "" {
+				ui.Text(c, centerSub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
 			}
 		})
-		ui.Column(c).Gap(6).Grow(1).MinWidth(110).Children(func() {
+		ui.Column(c).Gap(4).Grow(1).MinWidth(110).Children(func() {
 			for i := 0; i < maxLegend; i++ {
+				i := i
 				it := items[i]
 				pct := it.Value / total * 100
-				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				rowEl := ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(3, 6).Radius(6)
+				if full && sel != nil {
+					if i == activeIdx {
+						rowEl = rowEl.Background(p.rowSel)
+					} else if rowEl.Hovered() {
+						rowEl = rowEl.Background(p.hover)
+					}
+					rowEl = rowEl.Cursor(ui.CursorPointer)
+				}
+				built := rowEl.Children(func() {
 					ui.Box(c).Size(8, 8).Radius(4).Background(cols[i]).Shrink(0)
 					ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
 					valStr := trimNum(it.Value) + it.Unit
 					ui.Text(c, fmt.Sprintf("%s · %.0f%%", valStr, math.Round(pct))).FontSize(fsSmall).FontWeight(600).NoWrap()
 				})
+				if full && sel != nil && built.Clicked() {
+					if *sel == i {
+						*sel = -1
+					} else {
+						*sel = i
+					}
+				}
 			}
 			if len(items) > maxLegend {
 				ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), len(items)-maxLegend)).FontSize(fsTiny).TextColor(p.muted)
@@ -191,13 +242,27 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, full bool) ui.E
 // ---------------------------------------------------------------------------
 
 func checklistView(c *ui.Context, items []engine.CheckItem, limit int) ui.Element {
+	return checklistViewWith(c, nil, "", items, limit, false)
+}
+
+func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.CheckItem, limit int, interactive bool) ui.Element {
 	p := pal(c)
 	if len(items) == 0 {
 		return ui.Text(c, tr("暂无待办项")).FontSize(fsSmall).TextColor(p.muted)
 	}
+	isDone := func(idx int, orig bool) bool {
+		if a != nil && scriptID != "" && a.checkOverrides != nil {
+			if m := a.checkOverrides[scriptID]; m != nil {
+				if v, ok := m[idx]; ok {
+					return v
+				}
+			}
+		}
+		return orig
+	}
 	done := 0
-	for _, it := range items {
-		if it.Done {
+	for i, it := range items {
+		if isDone(i, it.Done) {
 			done++
 		}
 	}
@@ -210,10 +275,19 @@ func checklistView(c *ui.Context, items []engine.CheckItem, limit int) ui.Elemen
 			pct := float64(done) / float64(len(items)) * 100
 			chip(c, fmt.Sprintf(tr("已完成 %d / %d · %.0f%%"), done, len(items), math.Round(pct)), p.accent, p.accentSoft)
 		})
-		for _, it := range shown {
+		for i, it := range shown {
+			i, it := i, it
+			checked := isDone(i, it.Done)
 			col := parseColor(it.Color, p.down)
-			ui.Row(c).AlignItems(ui.Center).Gap(9).Children(func() {
-				if it.Done {
+			rowEl := ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(3, 4).Radius(6)
+			if interactive && a != nil && scriptID != "" {
+				if rowEl.Hovered() {
+					rowEl = rowEl.Background(p.hover)
+				}
+				rowEl = rowEl.Cursor(ui.CursorPointer)
+			}
+			built := rowEl.Children(func() {
+				if checked {
 					ui.Row(c).Size(18, 18).Radius(9).Background(col).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 						ui.Text(c, "✓").FontSize(11).Bold().TextColor(ui.Hex("#FFFFFF")).NoWrap()
 					})
@@ -222,7 +296,7 @@ func checklistView(c *ui.Context, items []engine.CheckItem, limit int) ui.Elemen
 				}
 				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
 					t := ui.Text(c, it.Label).FontSize(fsSmall).NoWrap()
-					if it.Done {
+					if checked {
 						t.TextColor(p.muted)
 					} else {
 						t.FontWeight(500)
@@ -236,6 +310,15 @@ func checklistView(c *ui.Context, items []engine.CheckItem, limit int) ui.Elemen
 					chip(c, it.Badge, bc, bc.Alpha(0.13))
 				}
 			})
+			if interactive && a != nil && scriptID != "" && built.Clicked() {
+				if a.checkOverrides == nil {
+					a.checkOverrides = map[string]map[int]bool{}
+				}
+				if a.checkOverrides[scriptID] == nil {
+					a.checkOverrides[scriptID] = map[int]bool{}
+				}
+				a.checkOverrides[scriptID][i] = !checked
+			}
 		}
 		if more > 0 {
 			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
@@ -265,6 +348,10 @@ func kvStatusColor(p palette, status, custom string) (ui.Color, bool) {
 }
 
 func kvView(c *ui.Context, items []engine.KVItem, limit int, full bool) ui.Element {
+	return kvViewWith(c, nil, items, limit, full)
+}
+
+func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bool) ui.Element {
 	p := pal(c)
 	if len(items) == 0 {
 		return ui.Text(c, tr("暂无指标")).FontSize(fsSmall).TextColor(p.muted)
@@ -279,12 +366,19 @@ func kvView(c *ui.Context, items []engine.KVItem, limit int, full bool) ui.Eleme
 	}
 	return ui.Column(c).Gap(0).Children(func() {
 		for i, it := range shown {
-			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 0)
+			it := it
+			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 6).Radius(6)
 			if i > 0 {
 				row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
 			}
+			if full {
+				if row.Hovered() {
+					row = row.Background(p.hover)
+				}
+				row = row.Cursor(ui.CursorPointer)
+			}
 			col, hasDot := kvStatusColor(p, it.Status, it.Color)
-			row.Children(func() {
+			built := row.Children(func() {
 				if hasDot {
 					ui.Box(c).Size(8, 8).Radius(4).Background(col).Shrink(0)
 				}
@@ -306,6 +400,12 @@ func kvView(c *ui.Context, items []engine.KVItem, limit int, full bool) ui.Eleme
 					vt.TextColor(col)
 				}
 			})
+			if full && built.Clicked() {
+				copyText(it.Value)
+				if a != nil {
+					a.status = tr("已复制：") + it.Value
+				}
+			}
 		}
 		if more > 0 {
 			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted).Padding(3, 0, 0, 0)

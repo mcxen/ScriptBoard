@@ -64,7 +64,13 @@ export function render(ctx) {
       tooltip: t("本地时间 ", "Local time ") + hhmm,
       mono: true,
       click: "open",
+      icon: "ring",
     },
+    menu: [
+      { label: t("复制当前时间", "Copy time"), action: "copy_headline" },
+      { separator: true },
+      { label: t("打开设置", "Open Settings"), action: "settings" },
+    ],
     chart: {
       type: "clock",
       clock: {

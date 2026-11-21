@@ -153,12 +153,12 @@ func (s Server) handle(req request) (any, *rpcError) {
 		return map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "scriptboard", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "scriptboard", "version": "0.1.10"},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": Tools()}, nil
+		return map[string]any{"tools": append(Tools(), extraTools()...)}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -270,7 +270,7 @@ func Tools() []Tool {
 func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	dataDir := s.DataDir
 	switch name {
-	case "plugin_save", "plugin_delete", "icon_add":
+	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}
@@ -378,6 +378,9 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "没有自定义图标（内置图标见应用的 icons 目录）\n", nil
 		}
 		return strings.Join(names, "\n") + "\n", nil
+	}
+	if out, handled, err := s.callExtra(name, a); handled {
+		return out, err
 	}
 	return "", fmt.Errorf("没有这个工具：%s", name)
 }

@@ -224,6 +224,8 @@ type Chart struct {
 	Clock *ClockSpec `json:"clock,omitempty"`
 	// Contrib is a "contrib" GitHub-style activity grid component.
 	Contrib *ContribSpec `json:"contrib,omitempty"`
+	// Table is a "table" structured data table component.
+	Table *TableSpec `json:"table,omitempty"`
 }
 
 // BarStyle styles a progressBar / progress component.
@@ -419,13 +421,9 @@ type RingStyle struct {
 	VAlign string `json:"valign,omitempty"`
 }
 
-// ChartTypes are the chart and component types a result can draw. A script that
-// names another draws nothing useful, so script_check reports it.
-var ChartTypes = []string{
-	"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels",
-	"progress", "progressBar", "progressRing", "calendar",
-	"donut", "checklist", "kv", "countdown", "clock", "contrib",
-}
+// ChartTypes are the chart and component types a result can draw, derived from
+// WidgetSpecs so the engine, UI registry, and MCP guide stay in sync.
+var ChartTypes = widgetTypeNames()
 
 // UnknownChartType reports whether t is not one of ChartTypes (an empty type is
 // a line).
@@ -433,12 +431,8 @@ func UnknownChartType(t string) bool {
 	if t == "" {
 		return false
 	}
-	for _, k := range ChartTypes {
-		if k == t {
-			return false
-		}
-	}
-	return true
+	_, ok := WidgetSpecOf(t)
+	return !ok
 }
 
 // Layout says how a result's card is laid out: whether its legend shows, where
@@ -494,6 +488,15 @@ type MenuBar struct {
 	// menu, "open" opens the card in the window, and the menu is on a right
 	// click.
 	Click string `json:"click,omitempty"`
+	// Icon picks a tray icon glyph: "bars" (default), "dot", "ring", "up",
+	// "down", or "pulse".
+	Icon string `json:"icon,omitempty"`
+	// Color sets an optional "#RRGGBB" tint for the tray icon (turning off
+	// monochrome template mode so status colors show in the bar).
+	Color string `json:"color,omitempty"`
+	// RefreshSec requests a custom menu-bar refresh cadence in seconds (min 15;
+	// 0 defaults to 60s).
+	RefreshSec int `json:"refreshSec,omitempty"`
 }
 
 // MenuEntry is one item of a card's menu in the menu bar. What it does, first

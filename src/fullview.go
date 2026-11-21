@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
@@ -32,14 +34,37 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		a.watchLive(sc.ID, meta)
 	}
 	sel := a.selOf("full:" + sc.ID)
+	pinned := a.pinnedSelOf(sc.ID)
 
 	// The whole window, as the home page: the tiles and the chart are sized to it.
-	pageFull(c, compact, func() {
+	pageEl := pageFull(c, compact, func() {
+		comp, viewRes, subStyle := resolveComponent(st.res, a.styles[sc.ID])
+		compSpec := engine.WidgetSpec{}
+		if comp != nil {
+			compSpec = comp.Spec()
+		}
+		// Apply interactive series visibility filter for multi-series plots.
+		rawChart := viewRes.Chart
+		if compSpec.Capabilities.Plot && rawChart != nil && len(rawChart.Series) >= 2 {
+			viewRes.Chart = a.filterVisibleSeries(sc.ID, rawChart)
+		}
 		cal := isCalendar(st.res.Chart)
-		pb, hasPB := progressBarOf(st.res)
+		_, hasPB := progressBarOf(viewRes)
 		shown := shownImages(st.res.Images)
 		gallery := len(shown) > 0 && !hasPB && st.res.Chart == nil
-		plot := !hasPB && isPlotChart(st.res.Chart)
+		plot := !hasPB && compSpec.Capabilities.Plot
+		viewMode := a.fullModeOf(sc.ID)
+		extractedTable := engine.ExtractTable(st.res, curLang())
+		canTableMode := !cal && !isTableWidget(st.res.Chart) && extractedTable != nil
+		// Keep selection synchronized with pinned index when pointer is outside.
+		if plot && viewMode == 0 && *pinned >= 0 {
+			if n := count(viewRes.Chart); *pinned >= n {
+				*pinned = n - 1
+			}
+			if *sel < 0 && *pinned >= 0 {
+				*sel = *pinned
+			}
+		}
 		sub := st.res.Title
 		if cal || sub == tr(sc.Name) {
 			sub = ""
@@ -69,7 +94,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				}
 				return
 			}
-			if plot {
+			if plot && viewMode == 0 {
 				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 					if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
 						a.big = !a.big
@@ -102,6 +127,35 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			a.infoBlock(c, sc, meta, compact)
 			return
 		}
+
+		// Data view mode switcher: Visual | Data Table | Raw Data Inspector.
+		if !gallery || viewMode > 0 {
+			a.fullViewModeBar(c, sc.ID, canTableMode, compact)
+		}
+		viewMode = a.fullModeOf(sc.ID)
+		if !canTableMode && viewMode == 1 {
+			viewMode = 0
+		}
+
+		if viewMode == 1 && extractedTable != nil {
+			card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
+				if len(meta.Dims) > 0 || len(meta.Vars) > 0 {
+					ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
+						a.dimRow(c, idx, meta.Dims)
+						a.varRow(c, sc, meta)
+					})
+				}
+				a.tableWidgetView(c, "fullmode:"+sc.ID, extractedTable, true, 0)
+			})
+			a.infoBlock(c, sc, meta, compact)
+			return
+		}
+		if viewMode == 2 {
+			a.rawInspectorCard(c, sc, meta, res, compact)
+			a.infoBlock(c, sc, meta, compact)
+			return
+		}
+
 		if gallery {
 			// Image-centric script (such as Bing wallpapers): photo-first
 			// gallery layout with text as quiet secondary metadata and Save.
@@ -126,26 +180,26 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 
 		// The hero: the headline number, the controls, and the component or chart.
 		card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
-			selfHero := isClock(res.Chart) || (isCountdown(res.Chart) && len(res.Chart.Countdown) == 1)
+			selfHero := isClock(viewRes.Chart) || (isCountdown(viewRes.Chart) && len(viewRes.Chart.Countdown) == 1)
 			showHeroHead := !selfHero && (res.Big != "" || res.Sub != "" || plot)
 			if showHeroHead {
 				ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
 					iconBadge(c, firstNonEmpty(res.Icon, meta.Icon), accent, 44)
 					ui.Column(c).Gap(2).Children(func() {
 						if res.Big != "" || plot {
-							ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(res, sel))).FontSize(36).Bold().NoWrap()
+							ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(viewRes, sel))).FontSize(36).Bold().NoWrap()
 						} else if res.Title != "" {
 							ui.Text(c, res.Title).FontSize(fsHeading).Bold().NoWrap()
 						}
 						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 							if plot {
-								if cs := summarize(res.Chart); cs.ok && len(res.Stats) == 0 {
+								if cs := summarize(viewRes.Chart); cs.ok && len(res.Stats) == 0 {
 									deltaChip(c, cs.pct)
 								}
 							}
 							if plot {
-								if i := hoveredIndex(res.Chart, sel); i >= 0 {
-									detailRow(c, res.Chart, i)
+								if i := hoveredIndex(viewRes.Chart, sel); i >= 0 {
+									detailRow(c, viewRes.Chart, i)
 								} else if res.Sub != "" {
 									ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
 								}
@@ -160,19 +214,25 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				ui.Text(c, a.status).FontSize(fsTiny).TextColor(p.accent)
 			}
 
-			if plot || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
-				opts := stylesFor(res.Chart)
-				labels := make([]string, len(opts))
-				cur := 0
-				want := resolveStyle(res.Chart, a.styles[sc.ID])
-				for i, o := range opts {
-					labels[i] = tr(o.label)
-					if o.key == want {
-						cur = i
-					}
-				}
+			swaps := visualSwapOptions(res)
+			showBarStylePicker := hasPB
+			showClockStylePicker := isClock(viewRes.Chart)
+			if plot || showBarStylePicker || showClockStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
 				ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
+					if len(swaps) > 1 {
+						a.componentSwapPicker(c, sc.ID, swaps, compSpec.Type, compact)
+					}
 					if plot {
+						opts := stylesFor(viewRes.Chart)
+						labels := make([]string, len(opts))
+						cur := 0
+						want := resolveStyle(viewRes.Chart, subStyle)
+						for i, o := range opts {
+							labels[i] = tr(o.label)
+							if o.key == want {
+								cur = i
+							}
+						}
 						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 							ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
 							pick := choose
@@ -180,9 +240,13 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 								pick = dropdown
 							}
 							if pick(c, &cur, labels...) {
-								a.styles[sc.ID] = opts[cur].key
+								a.setCardStyle(sc.ID, opts[cur].key)
 							}
 						})
+					} else if showBarStylePicker {
+						a.progressBarStylePicker(c, sc.ID, viewRes, subStyle)
+					} else if showClockStylePicker {
+						a.clockStylePicker(c, sc.ID, viewRes.Chart.Clock, subStyle)
 					}
 					a.dimRow(c, idx, meta.Dims)
 					a.varRow(c, sc, meta)
@@ -196,16 +260,26 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			if compact {
 				h = min(h, 300)
 			}
-			switch {
-			case hasPB:
-				// progressBar is a standalone component: no Chart wrapper, no chart Detail.
-				progressBarView(c, pb, 0)
-			case isWidget(res.Chart):
-				widgetView(c, res.Chart, h, sel, true, a.now(), 0)
-			case res.Chart != nil:
-				Chart(c, ChartProps{Data: res.Chart, Style: a.styles[sc.ID], Height: h, Selected: sel, Full: true, Now: a.now()})
-				if hasChartDetail(res.Chart) {
-					Detail(c, res.Chart, sel)
+			if comp != nil {
+				comp.RenderFull(c, ComponentRenderReq{
+					App: a, Script: sc, Result: viewRes, Style: subStyle,
+					Size: -1, Height: h, Selected: sel, Pinned: pinned, Now: a.now(), Full: true,
+				})
+				if compSpec.Capabilities.HasDetail {
+					ui.Row(c).AlignItems(ui.Center).Gap(10).Wrap().Children(func() {
+						Detail(c, viewRes.Chart, sel)
+						if plot && *pinned >= 0 {
+							if btn(c.Key("unpin:"+sc.ID), tr("取消固定")).Clicked() {
+								*pinned = -1
+								*sel = -1
+							}
+						} else if plot && !compact && count(viewRes.Chart) > 1 {
+							ui.Text(c, tr("←/→ 逐点查看 · 点击固定")).FontSize(fsTiny).TextColor(p.faint)
+						}
+					})
+				}
+				if plot && rawChart != nil && len(rawChart.Series) >= 2 {
+					a.interactiveLegendRow(c, sc.ID, rawChart)
 				}
 			}
 			if len(meta.Inputs) > 0 {
@@ -235,11 +309,12 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		switch {
 		case len(res.Stats) > 0:
 			a.statsTiles(c, res.Stats)
+		case comp != nil && comp.SummaryTiles(a, c, viewRes):
 		case hasPB:
 			// progressBar has no chart statistics tiles.
-		case a.widgetTiles(c, res.Chart):
-		case !a.kindTiles(c, res.Chart):
-			a.statTiles(c, summarize(res.Chart))
+		case a.widgetTiles(c, viewRes.Chart):
+		case !a.kindTiles(c, viewRes.Chart):
+			a.statTiles(c, summarize(viewRes.Chart))
 		}
 
 		if len(res.Lines) > 0 || len(res.Logs) > 0 {
@@ -254,6 +329,41 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		}
 		a.infoBlock(c, sc, meta, compact)
 	})
+	// Keyboard scrubbing for plot charts in Visual mode: Left/Right/Home/End.
+	if a.fullModeOf(sc.ID) == 0 && st.err == nil && !st.loading {
+		comp, viewRes, _ := resolveComponent(st.res, a.styles[sc.ID])
+		if comp != nil && comp.Spec().Capabilities.Plot {
+			if n := count(viewRes.Chart); n > 0 {
+				stepTo := func(idx int) {
+					idx = min(max(idx, 0), n-1)
+					*pinned = idx
+					*sel = idx
+				}
+				switch {
+				case pageEl.OverlayShortcut(0, ui.KeyLeft):
+					cur := *sel
+					if cur < 0 {
+						cur = n - 1
+					} else {
+						cur--
+					}
+					stepTo(cur)
+				case pageEl.OverlayShortcut(0, ui.KeyRight):
+					cur := *sel
+					if cur < 0 {
+						cur = 0
+					} else {
+						cur++
+					}
+					stepTo(cur)
+				case pageEl.OverlayShortcut(0, ui.KeyHome):
+					stepTo(0)
+				case pageEl.OverlayShortcut(0, ui.KeyEnd):
+					stepTo(n - 1)
+				}
+			}
+		}
+	}
 }
 
 func compactPad(compact bool) float32 {
@@ -441,5 +551,363 @@ func detailRow(c *ui.Context, ch *engine.Chart, i int) {
 				field(sr.Name, fmt.Sprintf("%.2f", sr.Points[i]), p.text)
 			}
 		}
+	})
+}
+
+func (a *app) fullModeOf(id string) int {
+	if a.fullModes == nil {
+		return 0
+	}
+	return a.fullModes[id]
+}
+
+func (a *app) setFullMode(id string, mode int) {
+	if a.fullModes == nil {
+		a.fullModes = map[string]int{}
+	}
+	a.fullModes[id] = mode
+}
+
+func (a *app) setCardStyle(id, style string) {
+	if a.styles == nil {
+		a.styles = map[string]string{}
+	}
+	if style == "" {
+		delete(a.styles, id)
+	} else {
+		a.styles[id] = style
+	}
+	if a.set.CardStyles == nil {
+		a.set.CardStyles = map[string]string{}
+	}
+	if style == "" {
+		delete(a.set.CardStyles, id)
+	} else {
+		a.set.CardStyles[id] = style
+	}
+	if err := a.store.SetSettings(a.set); err != nil {
+		a.set = a.store.Settings()
+	}
+}
+
+func (a *app) pinnedSelOf(id string) *int {
+	if a.pinnedSels == nil {
+		a.pinnedSels = map[string]*int{}
+	}
+	if p, ok := a.pinnedSels[id]; ok {
+		return p
+	}
+	v := -1
+	a.pinnedSels[id] = &v
+	return &v
+}
+
+// filterVisibleSeries returns a shallow copy of ch containing only series not
+// hidden by the user's interactive legend toggles.
+func (a *app) filterVisibleSeries(id string, ch *engine.Chart) *engine.Chart {
+	if ch == nil || len(ch.Series) < 2 || a.hiddenSeries == nil {
+		return ch
+	}
+	hidden := a.hiddenSeries[id]
+	if len(hidden) == 0 {
+		return ch
+	}
+	var kept []engine.Series
+	for i, sr := range ch.Series {
+		if !hidden[i] {
+			kept = append(kept, sr)
+		}
+	}
+	if len(kept) == 0 {
+		return ch
+	}
+	cp := *ch
+	cp.Series = kept
+	return &cp
+}
+
+func (a *app) toggleSeriesVisible(id string, idx, total int) {
+	if a.hiddenSeries == nil {
+		a.hiddenSeries = map[string]map[int]bool{}
+	}
+	m := a.hiddenSeries[id]
+	if m == nil {
+		m = map[int]bool{}
+		a.hiddenSeries[id] = m
+	}
+	if m[idx] {
+		delete(m, idx)
+		return
+	}
+	// Never hide the last visible series.
+	if len(m) >= total-1 {
+		return
+	}
+	m[idx] = true
+}
+
+// interactiveLegendRow renders clickable series pills that toggle visibility on
+// multi-series charts and auto-rescale the Y axis.
+func (a *app) interactiveLegendRow(c *ui.Context, id string, ch *engine.Chart) {
+	if ch == nil || len(ch.Series) < 2 {
+		return
+	}
+	p := pal(c)
+	hidden := map[int]bool(nil)
+	if a.hiddenSeries != nil {
+		hidden = a.hiddenSeries[id]
+	}
+	ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+		for i, sr := range ch.Series {
+			i, sr := i, sr
+			name := sr.Name
+			if name == "" {
+				name = fmt.Sprintf("#%d", i+1)
+			}
+			isHidden := hidden[i]
+			col := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
+			dotCol := col
+			txtCol := p.text
+			bg := p.chip
+			if isHidden {
+				dotCol = p.faint
+				txtCol = p.faint
+				bg = ui.Color{}
+			}
+			el := ui.ButtonBase(c.Key(fmt.Sprintf("leg:%s:%d", id, i))).
+				Padding(4, 9).Radius(99).Gap(6).AlignItems(ui.Center).
+				BorderWidth(1).BorderColor(p.hairline).Cursor(ui.CursorPointer)
+			if !isHidden {
+				el = el.Background(bg)
+			}
+			if el.Children(func() {
+				ui.Box(c).Size(8, 8).Radius(4).Background(dotCol).Shrink(0)
+				ui.Text(c, name).FontSize(fsTiny).TextColor(txtCol).NoWrap()
+			}).Clicked() {
+				a.toggleSeriesVisible(id, i, len(ch.Series))
+			}
+		}
+		if len(hidden) > 0 {
+			if ui.Text(c, tr("全部显示")).FontSize(fsTiny).TextColor(p.accent).Cursor(ui.CursorPointer).Clicked() {
+				delete(a.hiddenSeries, id)
+			}
+		}
+	})
+}
+
+// fullViewModeBar lets the user inspect any script as Visual, Data Table, or Raw Data.
+func (a *app) fullViewModeBar(c *ui.Context, id string, hasTable, compact bool) {
+	mode := a.fullModeOf(id)
+	labels := []string{tr("可视化")}
+	modes := []int{0}
+	if hasTable {
+		labels = append(labels, tr("数据表"))
+		modes = append(modes, 1)
+	}
+	labels = append(labels, tr("原始数据"))
+	modes = append(modes, 2)
+	cur := 0
+	for i, m := range modes {
+		if m == mode {
+			cur = i
+		}
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		if choose(c, &cur, labels...) {
+			a.setFullMode(id, modes[cur])
+		}
+	})
+}
+
+// visualSwapOptions lists compatible non-table visual components for res.
+func visualSwapOptions(res engine.Result) []string {
+	base := engine.ResultWidgetType(res)
+	if base == "" || base == "line" || base == "dot" || base == "candle" || base == "combo" || base == "panels" {
+		// Plot charts already have their dedicated style switcher (折线/面积/柱状/网格…).
+		return nil
+	}
+	all := engine.SwappableTypes(res)
+	out := make([]string, 0, len(all))
+	for _, t := range all {
+		if t == "table" && base != "table" {
+			// Table inspection already has its own top-level "数据表" mode tab.
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func widgetDisplayName(typ string) string {
+	s, ok := engine.WidgetSpecOf(typ)
+	if !ok {
+		return typ
+	}
+	if curLang() == langEN {
+		return s.EnName
+	}
+	return s.ZhName
+}
+
+// componentSwapPicker lets the user swap between compatible component views at runtime.
+func (a *app) componentSwapPicker(c *ui.Context, id string, swaps []string, activeType string, compact bool) {
+	p := pal(c)
+	labels := make([]string, len(swaps))
+	cur := 0
+	for i, t := range swaps {
+		labels[i] = widgetDisplayName(t)
+		if t == activeType {
+			cur = i
+		}
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		ui.Text(c, tr("视图")).FontSize(fsSmall).TextColor(p.muted)
+		pick := choose
+		if compact && len(labels) > 3 {
+			pick = dropdown
+		}
+		if pick(c, &cur, labels...) {
+			chosen := swaps[cur]
+			if cur == 0 {
+				a.setCardStyle(id, "")
+			} else {
+				a.setCardStyle(id, "view:"+chosen)
+			}
+		}
+	})
+}
+
+// progressBarStylePicker switches a progressBar between neon / gradient / solid / segmented.
+func (a *app) progressBarStylePicker(c *ui.Context, id string, res engine.Result, subStyle string) {
+	p := pal(c)
+	pb, ok := progressBarOf(res)
+	if !ok {
+		return
+	}
+	opts := []struct{ key, label string }{
+		{"neon", "霓虹灯"},
+		{"gradient", "渐变"},
+		{"solid", "纯色"},
+		{"segmented", "分段"},
+	}
+	curStyle := subStyle
+	if curStyle == "" {
+		curStyle = pb.Style
+	}
+	if curStyle == "" {
+		curStyle = "solid"
+	}
+	cur := 0
+	labels := make([]string, len(opts))
+	for i, o := range opts {
+		labels[i] = tr(o.label)
+		if o.key == curStyle {
+			cur = i
+		}
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		ui.Text(c, tr("进度条风格")).FontSize(fsSmall).TextColor(p.muted)
+		if choose(c, &cur, labels...) {
+			swap, _ := parseViewOverride(a.styles[id])
+			if swap != "" {
+				a.setCardStyle(id, "view:"+swap+":"+opts[cur].key)
+			} else {
+				a.setCardStyle(id, opts[cur].key)
+			}
+		}
+	})
+}
+
+// clockStylePicker switches a clock widget between analog, digital, and world styles.
+func (a *app) clockStylePicker(c *ui.Context, id string, spec *engine.ClockSpec, subStyle string) {
+	p := pal(c)
+	opts := []struct{ key, label string }{
+		{"analog", "指针表盘"},
+		{"digital", "数字"},
+	}
+	if spec != nil && len(spec.Zones) > 0 {
+		opts = append(opts, struct{ key, label string }{"world", "世界时钟"})
+	}
+	curStyle := subStyle
+	if curStyle == "" && spec != nil {
+		curStyle = spec.Style
+	}
+	if curStyle == "" {
+		curStyle = "analog"
+	}
+	cur := 0
+	labels := make([]string, len(opts))
+	for i, o := range opts {
+		labels[i] = tr(o.label)
+		if o.key == curStyle {
+			cur = i
+		}
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		ui.Text(c, tr("时钟样式")).FontSize(fsSmall).TextColor(p.muted)
+		if choose(c, &cur, labels...) {
+			a.setCardStyle(id, opts[cur].key)
+		}
+	})
+}
+
+// rawInspectorCard displays structured diagnostic metadata, source fallback
+// chains, and formatted JSON output for a script's latest result.
+func (a *app) rawInspectorCard(c *ui.Context, sc store.Script, meta engine.Meta, res engine.Result, compact bool) {
+	p := pal(c)
+	rawBytes, _ := json.MarshalIndent(res, "", "  ")
+	rawJSON := string(rawBytes)
+
+	typ := engine.ResultWidgetType(res)
+	if typ == "" {
+		typ = "—"
+	} else {
+		typ = fmt.Sprintf("%s (%s)", widgetDisplayName(typ), typ)
+	}
+	dataTime := tr("未记录")
+	if res.DataAt > 0 {
+		dataTime = fmtTime(res.DataAt)
+	}
+	cacheState := tr("实时数据")
+	if res.Stale {
+		cacheState = tr("缓存回退")
+	}
+
+	card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(10).Wrap().Children(func() {
+			ui.Text(c, tr("原始数据")).FontSize(fsHeading).FontWeight(650)
+			chip(c, typ, p.accent, p.accent.Alpha(0.14))
+			chip(c, cacheState, p.muted, p.chip)
+			ui.Text(c, tr("数据时间")+" · "+dataTime).FontSize(fsTiny).TextColor(p.muted)
+			ui.Spacer(c)
+			if btn(c, tr("复制 JSON")).Clicked() {
+				copyText(rawJSON)
+				a.status = tr("已复制 JSON")
+			}
+		})
+		if a.status != "" {
+			ui.Text(c, a.status).FontSize(fsTiny).TextColor(p.accent)
+		}
+		if len(meta.Sources) > 0 {
+			keys := make([]string, 0, len(meta.Sources))
+			for k := range meta.Sources {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			ui.Column(c).Gap(4).Padding(10, 12).Radius(radControl).Background(p.chip).Children(func() {
+				ui.Text(c, tr("数据来源")).FontSize(fsTiny).FontWeight(650).TextColor(p.muted)
+				for _, k := range keys {
+					src := meta.Sources[k]
+					line := fmt.Sprintf("%s: %s", k, src.URL)
+					if len(src.Fallbacks) > 0 {
+						line += fmt.Sprintf(tr("（+%d 个备选源）"), len(src.Fallbacks))
+					}
+					ui.Text(c, line).FontSize(fsTiny).TextColor(p.text)
+				}
+			})
+		}
+		ui.Scroll(c.Key("raw-json:" + sc.ID)).Height(360).Padding(12).Radius(radControl).Background(p.chip).Children(func() {
+			ui.Text(c, rawJSON).Font("monospace").FontSize(fsTiny).TextColor(p.text)
+		})
 	})
 }

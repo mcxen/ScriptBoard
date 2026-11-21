@@ -134,6 +134,7 @@ func TestSettingsPage(t *testing.T) {
 	a := newTestApp(t)
 	tt := ui.NewTester(a.view, 960, 640)
 	click(t, tt, "设置")
+	click(t, tt, "数据")
 	requireText(t, tt, "不请求网络，用缓存的数据，没有缓存就显示示例")
 	savePNG(t, tt, "3-settings")
 

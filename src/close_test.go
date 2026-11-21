@@ -33,9 +33,10 @@ func TestSettingsHaveAQuit(t *testing.T) {
 	old := quitApp
 	quitApp = func() { quits++ }
 	defer func() { quitApp = old }()
-	tt := ui.NewTester(a.settingsView, 700, 3000)
+	tt := ui.NewTester(a.settingsView, 780, 640)
 	settle(tt)
 	settle(tt)
+	click(t, tt, "关于")
 	click(t, tt, "退出应用")
 	if quits != 1 {
 		t.Errorf("quit %d times, want once", quits)

@@ -84,7 +84,7 @@ func TestBuiltinNeedsMatchTheirUse(t *testing.T) {
 		"ai-claude-neon": false, "ai-balance-neon": true,
 		"goldacc-kv": true, "fxcny-kv": true, "gold-kv": true,
 		"aqi-neon": true, "cnwx-kv": true,
-		"weight-contrib": false, "year-countdown": false, "world-clock": false,
+		"weight-contrib": false, "year-countdown": false, "world-clock": false, "fxcny-table": true,
 	}
 	for _, b := range engine.Builtins() {
 		s, err := engine.Compile(b.ID+".js", b.Source)

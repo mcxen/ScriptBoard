@@ -204,14 +204,14 @@ func (a *app) kindTiles(c *ui.Context, ch *engine.Chart) bool {
 // comboView is a curve on the left and rings on the right. The curve is drawn
 // as a chart is (a bare curve on a card, the full chart in full view); each
 // ring is a share of 100 percent, with its label under it.
-func comboView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+func comboView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, pinned *int, full bool) ui.Element {
 	ringSize := clampF(h*0.42, 40, 64)
 	return ui.Row(c).AlignItems(ui.Center).Gap(16).Children(func() {
 		if len(ch.Series) > 0 {
 			sub := &engine.Chart{Type: "line", Series: ch.Series, Labels: ch.Labels, XLabels: ch.XLabels}
 			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 				if full {
-					chartWith(c, sub, style, h, sel, true)
+					chartWith(c, sub, style, h, sel, pinned, true)
 				} else {
 					Spark(c, sub, h)
 				}

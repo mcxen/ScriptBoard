@@ -328,4 +328,31 @@ func TestNewStyleBuiltins(t *testing.T) {
 			t.Errorf("world-clock missing menubar: %+v", rc.MenuBar)
 		}
 	}
+
+	// 11. fxcny-table: native interactive table + fallback + menubar
+	rf := run(t, "fxcny-table", "zh", Input{
+		Sources: rawSources(map[string]any{
+			"rates": map[string]any{
+				"date":  "2026-11-21",
+				"rates": map[string]any{"USD": 0.138, "EUR": 0.129, "JPY": 21.4},
+			},
+		}),
+	})
+	if rf.Chart == nil || rf.Chart.Type != "table" || rf.Chart.Table == nil || len(rf.Chart.Table.Rows) != 3 {
+		t.Fatalf("fxcny-table failed: %+v", rf.Chart)
+	}
+	if rf.MenuBar == nil || len(rf.Menu) == 0 {
+		t.Errorf("fxcny-table missing menubar/menu: %+v %+v", rf.MenuBar, rf.Menu)
+	}
+	rfEn := run(t, "fxcny-table", "en", Input{
+		Sources: rawSources(map[string]any{
+			"rates": map[string]any{
+				"date":  "2026-11-21",
+				"rates": map[string]any{"USD": 0.138},
+			},
+		}),
+	})
+	if rfEn.Chart == nil || rfEn.Chart.Table == nil || rfEn.Chart.Table.Columns[0].Title != "Currency" {
+		t.Errorf("fxcny-table en columns: %+v", rfEn.Chart)
+	}
 }

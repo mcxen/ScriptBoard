@@ -72,8 +72,8 @@ func TestMCPCreatesPluginAndIcon(t *testing.T) {
 	if v := result(1)["protocolVersion"]; v != "2024-11-05" {
 		t.Errorf("protocol version %v", v)
 	}
-	if n := len(result(2)["tools"].([]any)); n != 9 {
-		t.Errorf("%d tools listed, want 9", n)
+	if n := len(result(2)["tools"].([]any)); n != len(Tools())+len(extraTools()) {
+		t.Errorf("%d tools listed, want %d", n, len(Tools())+len(extraTools()))
 	}
 	if isErr(3) {
 		t.Errorf("plugin_save failed: %s", text(3))

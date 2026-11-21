@@ -126,7 +126,7 @@ func heatView(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
 // panelsView stacks the panels of ch. Every panel has the same time axis, so
 // the chosen point (sel) is marked in each of them: a crosshair across the
 // stack. Each panel is titled and takes its share of h by its weight.
-func panelsView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
+func panelsView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, pinned *int, full bool) ui.Element {
 	p := pal(c)
 	total := 0.0
 	for _, pn := range ch.Panels {
@@ -144,7 +144,7 @@ func panelsView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *i
 				st = style
 			}
 			if full {
-				chartWith(c, sub, st, ph-18, sel, true)
+				chartWith(c, sub, st, ph-18, sel, pinned, true)
 			} else {
 				Spark(c, sub, ph-18)
 			}

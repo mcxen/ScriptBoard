@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"scriptboard/src/internal/caps"
+	"scriptboard/src/internal/engine"
 )
 
 // Guide is the reference an assistant reads before it writes a plugin. It is
@@ -74,7 +75,7 @@ func Guide() string {
 	w("| `ctx.sourceInfo` | for each source `{t, cached, stale, used, error}`: when it was fetched (ms), whether it came from the cache, whether the cache stood in for a failed or offline request, and which request answered (`0` is the main request, `1` the first fallback, and so on) |")
 	w("**Sources in full (with fallbacks).** A source is its address as a string, an object `{url, method, headers, query, body, paging, fallbacks}`, or an array `[\"https://primary…\", \"https://backup…\", {url: \"https://…\"}]` tried in order: `method` (GET by default, or POST with a `body`), `headers` (a `Cookie` header is how a login is sent), `query` (added to the address), `paging: {param, start, step, pages, items}` to read a list over several pages (the page number goes in `param`, and the lists are joined; `items` is the path of the list in each response such as `data.list`, or empty when the response is the list; reading stops at a page with no items), and `fallbacks: [...]` (each entry is a URL string that inherits the source's method, headers, query, body and paging, or a full request object of its own). When the main request fails, returns a non-2xx status, returns non-JSON (such as an HTML challenge page), or returns an error payload (`{\"error\":\"…\"}` or `{\"code\":500}` with no data), the host tries each fallback in turn and caches the working response under the source's key; only if all of them fail does the host fall back to the local cache (`stale: true`). Variables and dates fill every part, including fallbacks.")
 	w("**Home position and size.** `plugin_save` takes `position` (1 is the first card on the home page; leave it out to put it last) and `size` (mini, small, medium, large or wide; the default is medium). The user can change either later, and the size they choose wins.")
-	w("**Menu bar: `menubar`.** A script that can show in the menu bar (macOS) or the notification area (Windows, Linux) says so in `meta()`: `menubar: true`. The user chooses which cards show there, from the card's right-click menu; such a card has an icon of its own. A plugin saved with `plugin_save` `menubar: true` is put there when it first appears (its script must say `menubar: true` too). Its result may give `menubar: {title, tooltip, mono, click}`: the title shows beside the icon on macOS only, and without it the title is the headline (cut to 12 characters) and the tooltip the headline with the summary; `mono: true` draws the title in a monospaced font, so that a changing number keeps its width; `click: \"open\"` makes a click open the card in the window, with its menu on a right click. It may give `menu: [...]`: each entry is `{separator: true}` or `{label, ...}` with one of `items: [...]` (a submenu, one level), `action: \"refresh\"|\"open\"|\"window\"`, `url` (web addresses only) or `copy` (text for the clipboard); with none of them it is a line of text. An entry may also have `sub` (a second line), `badge` (short text at its end), `disabled` and `checked`. The menu ends with refresh, the window and quit. Ask for the menu bar only when a card is worth an icon: it runs every minute while it is there. `script_check` warns about what the app cannot use.")
+	w("**Menu bar: `menubar`.** A script that can show in the menu bar (macOS) or the notification area (Windows, Linux) says so in `meta()`: `menubar: true`. The user chooses which cards show there, from the card's right-click menu or `tray_set`; such a card has an icon of its own. A plugin saved with `plugin_save` `menubar: true` is put there when it first appears (its script must say `menubar: true` too). Its result may give `menubar: {title, tooltip, mono, click, icon, color, refreshSec}`: `title` shows beside the icon on macOS only (cut to 12 characters); `mono: true` draws it in a monospaced font; `click: \"open\"` opens the card on click with its menu on right click; `icon` picks a tray glyph (%s); `color` sets a `#RRGGBB` status tint; `refreshSec` sets a custom refresh cadence (at least %d seconds, default 60). It may give `menu: [...]`: each entry is `{separator: true}` or `{label, ...}` with one of `items: [...]` (a submenu, one level), `action` (%s, or `set_var:<key>=<value>`, `set_dim:<key>=<value>`), `url` (web addresses only) or `copy` (text for the clipboard). Scripts declaring `meta().vars` or `meta().dims` automatically get variable/dimension switch submenus in the tray. `script_check` and `script_run` warn about invalid entries.", quoted(engine.MenuBarIcons), engine.MenuBarMinRefreshSec, quoted(engine.MenuActions))
 	w("**Live: `live`.** A source whose value moves quickly (a price) says so in `meta()`: `live: {sources: [\"ticker\"], every: 5}`. While the card is on screen, in the menu bar or in its full view, the named sources are asked for again every `every` seconds (at least 5); the other sources keep the minute's cache. Their history is kept for the script: the live sources are in `history` already, and `ctx.history.ticker` is `[{t, v}]`, oldest first, so a line is drawn from those points. `historyLimit` is how far back the line goes: 180 answers is 15 minutes at 5 seconds. Nothing is asked for while the card is off screen or the app is offline.")
 	w("**Icons.** `icon` is one name from `icon_catalog`, which lists the shipped icons by category (weather, finance, charts, time, body, ai, data, interface). A name that is not there shows the default picture; `script_check` warns about it.")
 	w("| `ctx.vars` | the value the user chose for each of `meta().vars`, as `{key: value}`; the same value fills `{key}` in the sources, so each choice has its own data and history |")
@@ -100,8 +101,10 @@ func Guide() string {
 	w("  - `countdown`: target date countdown/anniversary (`countdown: [{label, target, start, note, color, to, style}]`).")
 	w("  - `clock`: analog dial, digital or world clock (`clock: {style: \"analog\"|\"digital\"|\"world\", seconds, color, neon, zones: [{label, offset}]}`).")
 	w("  - `contrib`: 7-row GitHub-style activity grid (`contrib: {cells: [{date, value, label}], color, max, weeks, unit, neon}`).")
+	w("  - `table`: structured interactive data table (`table: {columns: [{title, align: \"left\"|\"right\"|\"center\", format: \"text\"|\"number\"|\"delta\"|\"badge\"|\"status\"}], rows: [[...]], searchable, striped, compact}`).")
 	w("  - `calendar`: month calendar filled with lunar dates and holidays (`{type: \"calendar\"}`).")
 	w("  - `progress` / `progressBar` inside `chart` are also accepted for backward compatibility.")
+	w("  Call `widget_catalog` for the complete live schema and runtime-swappable targets of every component type (%s).", quoted(engine.ChartTypes))
 	w("  Any other `chart.type` shows nothing.")
 	w("")
 	w("- `candle`: give `candles: [{o,h,l,c}]` and `labels`, or `ticks: [{t,v}]` with `period` in seconds (`-1` is a calendar month); the host groups them.")
@@ -111,9 +114,10 @@ func Guide() string {
 	w("")
 	w("## 6. Before you save")
 	w("")
-	w("1. `script_check` with the source; fix every warning.")
-	w("2. `plugin_save`; the app shows it within a second. Local plugins need no login and no review.")
-	w("3. A plugin is marked \"Local plugin\" and is read-only in the app; change it here.")
+	w("1. `widget_catalog` & `icon_catalog` to pick valid component types and icons.")
+	w("2. `script_check` and `script_run` (with `mockSources`) to verify contract, rendered output, extracted table, and tray warnings.")
+	w("3. `plugin_save` (or `table_save` / `table_append` for data-table plugins, `tray_set` to pin/unpin menu bar cards); the app picks up changes within a second.")
+	w("4. A plugin is marked \"Local plugin\" and is read-only in the app; change it here.")
 	return b.String()
 }
 

@@ -22,15 +22,16 @@ const visualMarker = "// @visual-config"
 // script. Edits in the visual editor update this struct, serialize it back
 // into the ES module source, and immediately refresh the live preview.
 type visualConfig struct {
-	Type        string        `json:"type"` // progressBar | progressRing | donut | checklist | kv | countdown | clock | contrib | line
-	Name        string        `json:"name"`
-	Description string        `json:"description,omitempty"`
-	Icon        string        `json:"icon,omitempty"`
-	Big         string        `json:"big,omitempty"`
-	Sub         string        `json:"sub,omitempty"`
-	Menubar     bool          `json:"menubar,omitempty"`
-	Platform    string        `json:"platform,omitempty"` // "" (all) | desktop | mobile
-	Layout      engine.Layout `json:"layout,omitempty"`
+	Type        string          `json:"type"` // progressBar | progressRing | donut | checklist | kv | countdown | clock | contrib | table | line
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Icon        string          `json:"icon,omitempty"`
+	Big         string          `json:"big,omitempty"`
+	Sub         string          `json:"sub,omitempty"`
+	Menubar     bool            `json:"menubar,omitempty"`
+	MenuBarCfg  *engine.MenuBar `json:"menubarCfg,omitempty"`
+	Platform    string          `json:"platform,omitempty"` // "" (all) | desktop | mobile
+	Layout      engine.Layout   `json:"layout,omitempty"`
 
 	Bar       engine.BarStyle        `json:"bar,omitempty"`
 	Ring      engine.RingStyle       `json:"ring,omitempty"`
@@ -42,6 +43,7 @@ type visualConfig struct {
 	Countdown []engine.CountdownItem `json:"countdown,omitempty"`
 	Clock     engine.ClockSpec       `json:"clock,omitempty"`
 	Contrib   engine.ContribSpec     `json:"contrib,omitempty"`
+	Table     engine.TableSpec       `json:"table,omitempty"`
 	LineLabel string                 `json:"lineLabel,omitempty"`
 	LineColor string                 `json:"lineColor,omitempty"`
 	LinePts   string                 `json:"linePts,omitempty"`
@@ -79,7 +81,8 @@ var visualTemplates = []visualTemplate{
 	{"progressRing", "gauge", "完成度环", "Progress rings", "并排或同心活动圆环", "#F43F5E"},
 	{"donut", "circle-dollar-sign", "环形占比", "Donut share", "多分类占比环图与图例", "#3B82F6"},
 	{"checklist", "activity", "待办清单", "Checklist", "勾选状态、徽章与完成进度", "#10B981"},
-	{"kv", "database", "状态面板", "Status KV", "键值指标与状态指示灯", "#38BDF8"},
+	{"kv", "file-spreadsheet", "状态面板", "Status KV", "键值指标与状态指示灯", "#38BDF8"},
+	{"table", "file-spreadsheet", "数据表格", "Data table", "排序、筛选、徽章与涨跌着色", "#2563EB"},
 	{"countdown", "bell", "倒计时", "Countdown", "目标日期倒数与进度条", "#A855F7"},
 	{"clock", "calendar-days", "世界时钟", "World clock", "指针表盘 / 数字 / 多时区", "#F59E0B"},
 	{"contrib", "sparkles", "打卡热力格", "Activity grid", "7 行习惯打卡活跃矩阵", "#22C55E"},
@@ -174,7 +177,7 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Type:        "kv",
 			Name:        pick("服务状态", "Service status"),
 			Description: pick("核心指标与服务健康键值面板", "Key-value metrics and service health"),
-			Icon:        "database",
+			Icon:        "file-spreadsheet",
 			Big:         "99.98%",
 			Sub:         pick("全部核心服务在线", "All core services online"),
 			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
@@ -183,6 +186,32 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 				{Label: pick("主数据库", "Primary DB"), Value: "42%", Sub: pick("连接池占用", "Pool usage"), Status: "ok"},
 				{Label: pick("任务队列", "Job Queue"), Value: "18", Sub: pick("待处理任务", "Pending jobs"), Badge: pick("偏高", "Warm"), Status: "warn"},
 				{Label: pick("今日请求", "Requests today"), Value: "128.4K", Status: "info"},
+			},
+		}
+	case "table":
+		return visualConfig{
+			Type:        "table",
+			Name:        pick("行情数据表", "Market table"),
+			Description: pick("带排序、筛选与涨跌着色的结构化表格", "Sortable, searchable data table with status and delta badges"),
+			Icon:        "file-spreadsheet",
+			Big:         pick("3 项", "3 items"),
+			Sub:         pick("点击表头排序，点单元格复制", "Click header to sort, cell to copy"),
+			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
+			Table: engine.TableSpec{
+				Searchable: true,
+				Striped:    true,
+				Compact:    4,
+				Columns: []engine.TableColumn{
+					{Title: pick("名称", "Name")},
+					{Title: pick("数值", "Value"), Align: "right", Format: "number"},
+					{Title: pick("涨跌", "Change"), Align: "right", Format: "delta"},
+					{Title: pick("状态", "Status"), Format: "status"},
+				},
+				Rows: [][]string{
+					{pick("黄金", "Gold"), "638.5", "+1.24%", "ok"},
+					{pick("纳斯达克", "Nasdaq"), "19240", "+0.85%", "ok"},
+					{pick("美元/人民币", "USD/CNY"), "7.23", "-0.18%", "info"},
+				},
 			},
 		}
 	case "countdown":
@@ -347,12 +376,24 @@ func renderVisualScript(cfg visualConfig) string {
 	case "kv":
 		body = `  return {
     title: CONFIG.name,
-    icon: CONFIG.icon || "database",
+    icon: CONFIG.icon || "file-spreadsheet",
     big: CONFIG.big || "",
     sub: CONFIG.sub || "",
     lines: [],
     chart: { type: "kv", kv: CONFIG.kv || [] },
     layout: CONFIG.layout,
+    menubar: CONFIG.menubar ? CONFIG.menubarCfg : undefined,
+  };`
+	case "table":
+		body = `  return {
+    title: CONFIG.name,
+    icon: CONFIG.icon || "file-spreadsheet",
+    big: CONFIG.big || "",
+    sub: CONFIG.sub || "",
+    lines: [],
+    chart: { type: "table", table: CONFIG.table },
+    layout: CONFIG.layout,
+    menubar: CONFIG.menubar ? CONFIG.menubarCfg : undefined,
   };`
 	case "countdown":
 		body = `  return {
@@ -523,6 +564,7 @@ func (a *app) applyVisualConfig() {
 	a.draft.Source = src
 	a.visual.sourceSig = src
 	a.visual.cfg = &cfg
+	a.visual.metaMenubar = cfg.Menubar
 	a.invalidate(draftKey)
 }
 
@@ -539,6 +581,165 @@ func (a *app) applyTemplate(key string) {
 	a.draft.Name = cfg.Name
 	a.applyVisualConfig()
 	a.status = tr("已应用模板，修改后点「保存」生效")
+}
+
+// visualSwapTargets returns compatible component types that can replace cfg.Type
+// in place while migrating existing data items.
+func visualSwapTargets(typ string) []string {
+	switch typ {
+	case "progressBar":
+		return []string{"progressRing", "table"}
+	case "progressRing":
+		return []string{"progressBar", "table"}
+	case "donut":
+		return []string{"kv", "table"}
+	case "checklist":
+		return []string{"kv", "table"}
+	case "kv":
+		return []string{"table", "checklist"}
+	case "table":
+		return []string{"kv"}
+	}
+	return nil
+}
+
+// swapVisualType converts a.visual.cfg to target while preserving metadata and
+// migrating compatible items instead of resetting to blank defaults.
+func (a *app) swapVisualType(target string) {
+	if a.visual.cfg == nil || a.visual.cfg.Type == target {
+		return
+	}
+	cur := *a.visual.cfg
+	next := a.defaultVisualConfig(target)
+	next.Name = cur.Name
+	next.Description = cur.Description
+	next.Icon = cur.Icon
+	next.Big = cur.Big
+	next.Sub = cur.Sub
+	next.Menubar = cur.Menubar
+	next.MenuBarCfg = cur.MenuBarCfg
+	next.Platform = cur.Platform
+	next.Layout = cur.Layout
+
+	switch {
+	case (cur.Type == "progressBar" && target == "progressRing") || (cur.Type == "progressRing" && target == "progressBar"):
+		if len(cur.Progress) > 0 {
+			next.Progress = append([]engine.Progress(nil), cur.Progress...)
+		}
+	case (cur.Type == "progressBar" || cur.Type == "progressRing") && target == "table":
+		rows := make([][]string, 0, len(cur.Progress))
+		for _, it := range cur.Progress {
+			rows = append(rows, []string{it.Name, trimNum(it.Value) + it.Unit, trimNum(it.Max) + it.Unit, fmt.Sprintf("%.0f%%", it.Raw())})
+		}
+		if len(rows) > 0 {
+			next.Table = engine.TableSpec{
+				Searchable: true, Striped: true,
+				Columns: []engine.TableColumn{
+					{Title: tr("项目")},
+					{Title: tr("当前"), Align: "right", Format: "number"},
+					{Title: tr("目标"), Align: "right", Format: "number"},
+					{Title: tr("完成度"), Align: "right", Format: "badge"},
+				},
+				Rows: rows,
+			}
+		}
+	case cur.Type == "donut" && target == "kv":
+		var items []engine.KVItem
+		for _, sl := range cur.Slices {
+			items = append(items, engine.KVItem{Label: sl.Name, Value: trimNum(sl.Value) + sl.Unit, Color: sl.Color})
+		}
+		if len(items) > 0 {
+			next.KV = items
+		}
+	case cur.Type == "donut" && target == "table":
+		rows := make([][]string, 0, len(cur.Slices))
+		for _, sl := range cur.Slices {
+			rows = append(rows, []string{sl.Name, trimNum(sl.Value), sl.Unit})
+		}
+		if len(rows) > 0 {
+			next.Table = engine.TableSpec{
+				Searchable: true, Striped: true,
+				Columns: []engine.TableColumn{{Title: tr("分类")}, {Title: tr("数值"), Align: "right", Format: "number"}, {Title: tr("单位"), Align: "center"}},
+				Rows:    rows,
+			}
+		}
+	case cur.Type == "checklist" && target == "kv":
+		var items []engine.KVItem
+		for _, it := range cur.Checklist {
+			st, val := "warn", tr("未完成")
+			if it.Done {
+				st, val = "ok", tr("已完成")
+			}
+			items = append(items, engine.KVItem{Label: it.Label, Value: val, Sub: it.Note, Badge: it.Badge, Status: st, Color: it.Color})
+		}
+		if len(items) > 0 {
+			next.KV = items
+		}
+	case cur.Type == "checklist" && target == "table":
+		rows := make([][]string, 0, len(cur.Checklist))
+		for _, it := range cur.Checklist {
+			st := tr("未完成")
+			if it.Done {
+				st = tr("已完成")
+			}
+			rows = append(rows, []string{st, it.Label, it.Badge, it.Note})
+		}
+		if len(rows) > 0 {
+			next.Table = engine.TableSpec{
+				Searchable: true, Striped: true,
+				Columns: []engine.TableColumn{{Title: tr("状态"), Format: "badge"}, {Title: tr("项目")}, {Title: tr("标签"), Format: "badge"}, {Title: tr("备注")}},
+				Rows:    rows,
+			}
+		}
+	case cur.Type == "kv" && target == "table":
+		rows := make([][]string, 0, len(cur.KV))
+		for _, it := range cur.KV {
+			rows = append(rows, []string{it.Label, it.Value, it.Status, it.Badge, it.Sub})
+		}
+		if len(rows) > 0 {
+			next.Table = engine.TableSpec{
+				Searchable: true, Striped: true,
+				Columns: []engine.TableColumn{
+					{Title: tr("指标")},
+					{Title: tr("数值"), Align: "right"},
+					{Title: tr("状态"), Format: "status"},
+					{Title: tr("标签"), Format: "badge"},
+					{Title: tr("说明")},
+				},
+				Rows: rows,
+			}
+		}
+	case cur.Type == "kv" && target == "checklist":
+		var items []engine.CheckItem
+		for _, it := range cur.KV {
+			items = append(items, engine.CheckItem{Label: it.Label, Done: it.Status == "ok", Note: it.Value, Badge: it.Badge, Color: it.Color})
+		}
+		if len(items) > 0 {
+			next.Checklist = items
+		}
+	case cur.Type == "table" && target == "kv":
+		var items []engine.KVItem
+		for _, r := range cur.Table.Rows {
+			lbl, val, sub := "", "", ""
+			if len(r) > 0 {
+				lbl = r[0]
+			}
+			if len(r) > 1 {
+				val = r[1]
+			}
+			if len(r) > 2 {
+				sub = strings.Join(r[2:], " · ")
+			}
+			items = append(items, engine.KVItem{Label: lbl, Value: val, Sub: sub})
+		}
+		if len(items) > 0 {
+			next.KV = items
+		}
+	}
+
+	a.visual.cfg = &next
+	a.applyVisualConfig()
+	a.status = tr("已切换组件并保留已有数据")
 }
 
 // visualScriptEditor draws the visual configuration & visual editing form for
@@ -570,6 +771,19 @@ func (a *app) visualScriptEditor(c *ui.Context, compact bool) {
 					a.visual.tplOpen = !a.visual.tplOpen
 				}
 			})
+			if a.visual.cfg != nil {
+				if targets := visualSwapTargets(a.visual.cfg.Type); len(targets) > 0 {
+					ui.Row(c).AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
+						ui.Text(c, tr("原地替换（保留数据）")).FontSize(fsTiny).TextColor(p.muted)
+						for _, t := range targets {
+							t := t
+							if btn(c.Key("vswap:"+t), tr("转为 ")+templateLabel(t)).Clicked() {
+								a.swapVisualType(t)
+							}
+						}
+					})
+				}
+			}
 			if a.visual.tplOpen {
 				renderTile := func(tpl visualTemplate) {
 					active := a.visual.cfg != nil && a.visual.cfg.Type == tpl.Key
@@ -695,6 +909,43 @@ func (a *app) visualScriptEditor(c *ui.Context, compact bool) {
 				})
 			})
 		})
+		if cfg := a.visual.cfg; cfg != nil && cfg.Menubar {
+			if cfg.MenuBarCfg == nil {
+				cfg.MenuBarCfg = &engine.MenuBar{}
+			}
+			mb := cfg.MenuBarCfg
+			mbChanged := false
+			clickModes := []string{"menu", "open"}
+			clickIdx := indexOf(clickModes, mb.Click, 0)
+			ui.Column(c).Gap(8).Padding(10, 12).Radius(radControl).Background(p.chip).Children(func() {
+				label(c, tr("菜单栏显示配置"))
+				ui.Row(c).Gap(12).Wrap().AlignItems(ui.Start).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(140).Children(func() {
+						field(c, tr("菜单栏短标题"), "", func() {
+							if textInput(c, &mb.Title, tr("最多 12 字")).Changed() {
+								mbChanged = true
+							}
+						})
+					})
+					field(c, tr("点击菜单栏图标"), "", func() {
+						if choose(c, &clickIdx, tr("展开菜单"), tr("打开详情")) {
+							mb.Click = clickModes[clickIdx]
+							mbChanged = true
+						}
+					})
+					field(c, tr("等宽数字"), "", func() {
+						ui.Row(c).AlignItems(ui.Center).Height(28).Children(func() {
+							if toggle(c, &mb.Mono) {
+								mbChanged = true
+							}
+						})
+					})
+				})
+			})
+			if mbChanged {
+				a.applyVisualConfig()
+			}
+		}
 	}
 
 	// 3. Component-specific visual property & item editors (for @visual-config scripts).
@@ -832,6 +1083,8 @@ func (a *app) visualComponentControls(c *ui.Context, compact bool) {
 			a.visualClockControls(c, cfg)
 		case "contrib":
 			a.visualContribControls(c, cfg)
+		case "table":
+			a.visualTableControls(c, cfg)
 		case "line":
 			a.visualLineControls(c, cfg)
 		}
@@ -1342,6 +1595,75 @@ func (a *app) visualLineControls(c *ui.Context, cfg *visualConfig) {
 	})
 	field(c, tr("线条颜色"), "", func() {
 		a.colorSwatchRow(c, &cfg.LineColor, func() { changed = true })
+	})
+	if changed {
+		a.applyVisualConfig()
+	}
+}
+
+func (a *app) visualTableControls(c *ui.Context, cfg *visualConfig) {
+	p := pal(c)
+	label(c, tr("数据表格配置"))
+	changed := false
+	if len(cfg.Table.Columns) == 0 {
+		cfg.Table.Columns = []engine.TableColumn{{Title: tr("名称")}, {Title: tr("数值"), Align: "right", Format: "number"}}
+		changed = true
+	}
+	ui.Row(c).Gap(14).AlignItems(ui.Center).Wrap().Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Text(c, tr("允许搜索")).FontSize(fsSmall).TextColor(p.muted)
+			if toggle(c, &cfg.Table.Searchable) {
+				changed = true
+			}
+		})
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Text(c, tr("斑马纹")).FontSize(fsSmall).TextColor(p.muted)
+			if toggle(c, &cfg.Table.Striped) {
+				changed = true
+			}
+		})
+	})
+	n := len(cfg.Table.Columns)
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		for j := range cfg.Table.Columns {
+			j := j
+			if textInput(c.Key(fmt.Sprintf("vtcol-%d", j)), &cfg.Table.Columns[j].Title, tr("列名")).Grow(1).MinWidth(70).Changed() {
+				changed = true
+			}
+		}
+		ui.Spacer(c).Width(28)
+	})
+	delIdx := -1
+	for i := range cfg.Table.Rows {
+		i := i
+		for len(cfg.Table.Rows[i]) < n {
+			cfg.Table.Rows[i] = append(cfg.Table.Rows[i], "")
+		}
+		ui.Row(c.Key(fmt.Sprintf("vtrow-%d", i))).Gap(6).AlignItems(ui.Center).Children(func() {
+			for j := 0; j < n; j++ {
+				j := j
+				if textInput(c.Key(fmt.Sprintf("vtcell-%d-%d", i, j)), &cfg.Table.Rows[i][j], "").Grow(1).MinWidth(70).Changed() {
+					changed = true
+				}
+			}
+			if len(cfg.Table.Rows) > 1 && action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("删除")}).Clicked() {
+				delIdx = i
+			}
+		})
+	}
+	if delIdx >= 0 {
+		cfg.Table.Rows = append(cfg.Table.Rows[:delIdx], cfg.Table.Rows[delIdx+1:]...)
+		changed = true
+	}
+	ui.Row(c).Gap(8).Wrap().Children(func() {
+		if btn(c, tr("+ 添加一行")).Clicked() {
+			cfg.Table.Rows = append(cfg.Table.Rows, make([]string, n))
+			changed = true
+		}
+		if len(cfg.Table.Columns) < 6 && btn(c, tr("+ 添加一列")).Clicked() {
+			cfg.Table.Columns = append(cfg.Table.Columns, engine.TableColumn{Title: fmt.Sprintf(tr("列 %d"), len(cfg.Table.Columns)+1)})
+			changed = true
+		}
 	})
 	if changed {
 		a.applyVisualConfig()

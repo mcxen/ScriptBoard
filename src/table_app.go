@@ -239,6 +239,9 @@ func (a *app) afterOpenTable() {
 	a.tablePage = 0
 	a.tableAppend = 0
 	a.tableCols = false
+	a.tableFilter = ""
+	a.tableSortCol = -1
+	a.tableSortDesc = false
 	a.editTab = 0
 	if a.draft.Table != nil && a.draft.Table.Metric != "" {
 		a.tableAppend = 1 // what is imported joins the records
@@ -402,7 +405,7 @@ func (a *app) pickFile() {
 	a.background(func() (string, error) {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Title:   tr("导入表格"),
-			Filters: []mygo.FileFilter{{Name: tr("表格"), Extensions: []string{"xlsx", "csv", "tsv", "txt"}}},
+			Filters: []mygo.FileFilter{{Name: tr("表格"), Extensions: []string{"xlsx", "csv", "tsv", "txt", "json"}}},
 		})
 		if err != nil || len(paths) == 0 {
 			return "", err
@@ -424,6 +427,12 @@ func (a *app) pickFile() {
 func (a *app) csvOf() string {
 	cols, rows := a.tableData(a.draft)
 	return table.WriteCSV(cols, rows)
+}
+
+// jsonOf is the draft table as a JSON array of objects.
+func (a *app) jsonOf() string {
+	cols, rows := a.tableData(a.draft)
+	return table.WriteJSON(cols, rows)
 }
 
 // saveFile writes the draft table to a CSV file the user picks.
@@ -523,6 +532,10 @@ func (a *app) importBar(c *ui.Context, t *store.Table) {
 			copyText(a.csvOf())
 			a.status = tr("已复制")
 		}
+		if btn(c, tr("复制 JSON")).Clicked() {
+			copyText(a.jsonOf())
+			a.status = tr("已复制 JSON")
+		}
 		ui.Spacer(c)
 		if len(t.Columns) > 0 {
 			ui.Text(c, tr("导入时")).FontSize(fsSmall).TextColor(p.muted)
@@ -543,7 +556,14 @@ func (a *app) pastePanel(c *ui.Context) {
 			}
 			ui.Row(c).Gap(8).Children(func() {
 				if primaryBtn(c, tr("导入")).Clicked() {
-					rows, err := table.ParseText(a.transferText)
+					var rows [][]string
+					var err error
+					trimmed := strings.TrimSpace(a.transferText)
+					if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
+						rows, err = table.ParseJSON([]byte(trimmed))
+					} else {
+						rows, err = table.ParseText(a.transferText)
+					}
 					if err == nil {
 						err = a.importRows(rows)
 					}
@@ -568,7 +588,8 @@ func metricName(metric string) string {
 	return "金价"
 }
 
-// tableGrid draws the rows as inputs, a page at a time.
+// tableGrid draws the rows as inputs, a page at a time, with live search,
+// any-column sorting, row duplication, and numeric column summaries.
 func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32) {
 	p := pal(c)
 	cols := t.Columns
@@ -576,48 +597,166 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 		cols = a.boundColumns(t.Metric)
 	}
 	n := max(len(cols), 1)
-	colW := clampF((gridW-92)/float32(n), 96, 240)
-	size := a.pageSize()
-	pages := max(1, (len(t.Rows)+size-1)/size)
-	a.tablePage = min(max(a.tablePage, 0), pages-1)
+	colW := clampF((gridW-176-float32(n)*6)/float32(n), 76, 220)
 	changed := false
 
+	// Live filter bar over the table rows.
+	q := strings.ToLower(strings.TrimSpace(a.tableFilter))
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
+		textInput(c.Key("tbl-filter:"+a.draft.ID), &a.tableFilter, tr("筛选行…")).Width(220)
+		if a.tableFilter != "" {
+			if btn(c, tr("清空筛选")).Clicked() {
+				a.tableFilter = ""
+				a.tablePage = 0
+			}
+		}
+		if a.tableSortCol >= 0 && a.tableSortCol < len(cols) {
+			dir := "↑"
+			if a.tableSortDesc {
+				dir = "↓"
+			}
+			ui.Text(c, fmt.Sprintf(tr("已按「%s」%s 排序"), cols[a.tableSortCol], dir)).FontSize(fsTiny).TextColor(p.muted)
+		}
+	})
+
+	// Build matching underlying row indices so edits and deletes touch the real row.
+	matched := make([]int, 0, len(t.Rows))
+	matchedRows := make([][]string, 0, len(t.Rows))
+	for idx, r := range t.Rows {
+		if q == "" {
+			matched = append(matched, idx)
+			matchedRows = append(matchedRows, r)
+			continue
+		}
+		hit := false
+		for _, v := range r {
+			if strings.Contains(strings.ToLower(v), q) {
+				hit = true
+				break
+			}
+		}
+		if hit {
+			matched = append(matched, idx)
+			matchedRows = append(matchedRows, r)
+		}
+	}
+
+	size := a.pageSize()
+	pages := max(1, (len(matched)+size-1)/size)
+	a.tablePage = min(max(a.tablePage, 0), pages-1)
+
+	sortByCol := func(j int) {
+		if a.tableSortCol == j {
+			a.tableSortDesc = !a.tableSortDesc
+		} else {
+			a.tableSortCol = j
+			a.tableSortDesc = false
+		}
+		desc := a.tableSortDesc
+		sort.SliceStable(t.Rows, func(i, k int) bool {
+			cmp := compareTableCells(cell(t.Rows[i], j), cell(t.Rows[k], j))
+			if desc {
+				return cmp > 0
+			}
+			return cmp < 0
+		})
+		changed = true
+	}
+
 	ui.Column(c).Gap(4).Children(func() {
-		// Column names.
+		// Column names + per-column sort toggle.
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Text(c, "#").FontSize(fsTiny).TextColor(p.muted).Width(34)
 			for j := range cols {
-				if bound {
-					ui.Text(c, cols[j]).FontSize(fsSmall).Bold().Width(colW)
-					continue
+				j := j
+				arrow := "↕"
+				if a.tableSortCol == j {
+					if a.tableSortDesc {
+						arrow = "↓"
+					} else {
+						arrow = "↑"
+					}
 				}
-				if textInput(c, &t.Columns[j], tr("列名")).Width(colW).Changed() {
-					changed = true
-				}
+				ui.Row(c).Width(colW).AlignItems(ui.Center).Gap(4).Children(func() {
+					if bound {
+						ui.Text(c, cols[j]).FontSize(fsSmall).Bold().Grow(1).MinWidth(0).NoWrap()
+					} else {
+						if textInput(c.Key(fmt.Sprintf("tcol:%s:%d", a.draft.ID, j)), &t.Columns[j], tr("列名")).Grow(1).MinWidth(0).Changed() {
+							changed = true
+						}
+					}
+					if ui.ButtonBase(c.Key(fmt.Sprintf("tsort:%s:%d", a.draft.ID, j))).
+						Size(22, 22).Radius(4).AlignItems(ui.Center).Justify(ui.Center).
+						Tooltip(tr("按此列排序")).Children(func() {
+						ui.Text(c, arrow).FontSize(fsTiny).TextColor(p.muted)
+					}).Clicked() {
+						sortByCol(j)
+					}
+				})
 			}
-			ui.Spacer(c).Width(28)
+			ui.Spacer(c).Width(56)
 		})
+
 		from := a.tablePage * size
-		to := min(len(t.Rows), from+size)
-		for i := from; i < to; i++ {
+		to := min(len(matched), from+size)
+		deleteIdx := -1
+		dupIdx := -1
+		for vi := from; vi < to; vi++ {
+			i := matched[vi]
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Text(c, fmt.Sprintf("%d", i+1)).FontSize(fsTiny).TextColor(p.muted).Width(34)
 				for len(t.Rows[i]) < n {
 					t.Rows[i] = append(t.Rows[i], "")
 				}
 				for j := 0; j < n; j++ {
-					if textInput(c, &t.Rows[i][j], "").Width(colW).Changed() {
+					if textInput(c.Key(fmt.Sprintf("tcell:%s:%d:%d", a.draft.ID, i, j)), &t.Rows[i][j], "").Width(colW).Changed() {
 						changed = true
 					}
 				}
-				if action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("删除这一行")}).Clicked() {
-					t.Rows = append(t.Rows[:i], t.Rows[i+1:]...)
-					changed = true
+				if action.ActionIcon(c.Key(fmt.Sprintf("tdup:%s:%d", a.draft.ID, i)), icon("copy"), action.ActionIconProps{Size: theme.Small, Title: tr("复制这一行")}).Clicked() {
+					dupIdx = i
+				}
+				if action.ActionIcon(c.Key(fmt.Sprintf("tdel:%s:%d", a.draft.ID, i)), icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("删除这一行")}).Clicked() {
+					deleteIdx = i
 				}
 			})
 		}
+		if dupIdx >= 0 && dupIdx < len(t.Rows) {
+			cp := append([]string(nil), t.Rows[dupIdx]...)
+			t.Rows = append(t.Rows[:dupIdx+1], append([][]string{cp}, t.Rows[dupIdx+1:]...)...)
+			changed = true
+		} else if deleteIdx >= 0 && deleteIdx < len(t.Rows) {
+			t.Rows = append(t.Rows[:deleteIdx], t.Rows[deleteIdx+1:]...)
+			changed = true
+		}
 		if len(t.Rows) == 0 {
 			hint(c, tr("还没有数据：点「添加一行」，或导入 Excel / CSV"))
+		} else if len(matched) == 0 {
+			hint(c, tr("没有匹配的行"))
+		}
+
+		// Live numeric column summary footer over matched rows.
+		if len(matchedRows) > 0 {
+			var summaries []string
+			for j, col := range cols {
+				st := table.SummarizeColumn(matchedRows, j)
+				if st.Numeric && !kindOfColumn(matchedRows, j).dates {
+					summaries = append(summaries, fmt.Sprintf("%s：%s %s · %s %s · %s~%s",
+						col,
+						tr("合计"), table.FormatNumber(round2(st.Sum)),
+						tr("均值"), table.FormatNumber(round2(st.Avg)),
+						table.FormatNumber(round2(st.Min)), table.FormatNumber(round2(st.Max)),
+					))
+				}
+			}
+			if len(summaries) > 0 {
+				ui.Row(c).AlignItems(ui.Center).Gap(12).Wrap().Padding(6, 10).Radius(radControl).Background(p.chip).Children(func() {
+					ui.Text(c, tr("列汇总")).FontSize(fsTiny).FontWeight(650).TextColor(p.muted)
+					for _, s := range summaries {
+						ui.Text(c, s).FontSize(fsTiny).TextColor(p.text)
+					}
+				})
+			}
 		}
 	})
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
@@ -627,6 +766,7 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 				row[0] = a.now().Format(boundTimeFormat)
 			}
 			t.Rows = append(t.Rows, row)
+			a.tableFilter = ""
 			a.tablePage = (len(t.Rows) - 1) / size
 			changed = true
 		}
@@ -652,6 +792,7 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 				tk, _ := table.Time(cell(t.Rows[k], 0))
 				return ti.Before(tk)
 			})
+			a.tableSortCol, a.tableSortDesc = 0, false
 			changed = true
 		}
 		ui.Spacer(c)
@@ -664,7 +805,11 @@ func (a *app) tableGrid(c *ui.Context, t *store.Table, bound bool, gridW float32
 				a.tablePage++
 			}
 		}
-		ui.Text(c, fmt.Sprintf(tr("共 %d 行"), len(t.Rows))).FontSize(fsSmall).TextColor(p.muted)
+		if q != "" {
+			ui.Text(c, fmt.Sprintf(tr("匹配 %d / 共 %d 行"), len(matched), len(t.Rows))).FontSize(fsSmall).TextColor(p.muted)
+		} else {
+			ui.Text(c, fmt.Sprintf(tr("共 %d 行"), len(t.Rows))).FontSize(fsSmall).TextColor(p.muted)
+		}
 	})
 	if changed {
 		a.invalidate(draftKey)

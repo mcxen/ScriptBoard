@@ -193,7 +193,7 @@ func maskedKey(key string) string {
 }
 
 // mcpGroups are the settings groups of the MCP server.
-func (a *app) mcpGroups(c *ui.Context, compact bool) {
+func (a *app) mcpGroups(c *ui.Context, compact, titled bool) {
 	m := a.store.Settings().MCP
 	on := m.Enabled
 	lan, ro := m.LAN, m.ReadOnly
@@ -286,7 +286,11 @@ func (a *app) mcpGroups(c *ui.Context, compact bool) {
 			}},
 		)
 	}
-	group(c, tr("MCP 服务器"), compact, rows...)
+	title := ""
+	if titled {
+		title = tr("MCP 服务器")
+	}
+	group(c, title, compact, rows...)
 	if a.mcpNote != "" {
 		notice(c, a.mcpNote, feedback.Info)
 	}

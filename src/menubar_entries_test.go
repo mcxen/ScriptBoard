@@ -103,3 +103,91 @@ export function render(ctx) { return { title: "栏插件", big: "1", sub: "", li
 		t.Errorf("kept %v", got)
 	}
 }
+
+// Rich tray actions (settings, toggle_offline, copy_headline, refresh_all,
+// set_var, set_dim), auto var/dim submenus, and custom tray icon rendering.
+func TestRichTrayActionsSubmenusAndCustomIcons(t *testing.T) {
+	a := newTestApp(t)
+	var copied string
+	oldCopy := copyText
+	copyText = func(s string) { copied = s }
+	defer func() { copyText = oldCopy }()
+
+	settingsOpened := 0
+	a.openSettingsHook = func() { settingsOpened++ }
+
+	sc, ok := a.store.Script("cnwx")
+	if !ok {
+		t.Fatal("cnwx builtin missing")
+	}
+	st := &runState{res: engine.Result{
+		Title: "国内实况",
+		Big:   "22°",
+		Sub:   "上海 · 晴",
+		MenuBar: &engine.MenuBar{
+			Title: "22°", Icon: "pulse", Color: "#10B981", RefreshSec: 30,
+		},
+		Menu: []engine.MenuEntry{
+			{Label: "复制读数", Action: "copy_headline"},
+			{Label: "切换北京", Action: "set_var:city=beijing"},
+			{Label: "打开设置", Action: "settings"},
+			{Label: "切换离线", Action: "toggle_offline"},
+			{Label: "全部刷新", Action: "refresh_all"},
+		},
+	}}
+
+	// Custom colored icon disables template mode and draws valid 32x32 PNG.
+	pngData, tpl := menuBarIconFor(st.res.MenuBar)
+	if tpl || len(pngData) == 0 {
+		t.Fatalf("expected non-template colored tray icon, tpl=%v len=%d", tpl, len(pngData))
+	}
+	// Custom monochrome shape keeps template mode true.
+	_, tpl2 := menuBarIconFor(&engine.MenuBar{Icon: "dot"})
+	if !tpl2 {
+		t.Fatalf("expected monochrome custom shape to remain template=true")
+	}
+
+	items := a.menuBarMenu(sc, st).Items()
+	clickLabel := func(lbl string) {
+		for _, it := range items {
+			if it.Label == lbl {
+				if it.Click == nil || it.Disabled {
+					t.Fatalf("menu item %q is disabled or has no click handler", lbl)
+				}
+				it.Click(it, nil)
+				return
+			}
+		}
+		t.Fatalf("menu item %q not found", lbl)
+	}
+
+	clickLabel("复制读数")
+	if copied != "22°" {
+		t.Fatalf("copy_headline copied %q, want 22°", copied)
+	}
+	clickLabel("打开设置")
+	if settingsOpened != 1 {
+		t.Fatalf("settings action opened=%d, want 1", settingsOpened)
+	}
+	wasOffline := a.set.Offline
+	clickLabel("切换离线")
+	if a.set.Offline == wasOffline {
+		t.Fatal("toggle_offline did not flip offline flag")
+	}
+	clickLabel("切换北京")
+	if a.set.ScriptVars["cnwx"]["city"] != "beijing" {
+		t.Fatalf("set_var did not update city: %+v", a.set.ScriptVars)
+	}
+
+	// Auto var submenu for cnwx ("城市") must exist with selectable city entries.
+	var citySub []*mygo.MenuItem
+	for _, it := range items {
+		if len(it.Submenu) > 0 && it.Label == "城市" {
+			citySub = it.Submenu
+			break
+		}
+	}
+	if len(citySub) == 0 {
+		t.Fatal("expected automatic 城市 submenu for cnwx vars")
+	}
+}

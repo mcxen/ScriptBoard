@@ -22,7 +22,7 @@ func Builtins() []Builtin {
 		"ai-claude", "ai-deepseek", "ai-openrouter",
 		// New component style variants & companions
 		"ai-claude-neon", "ai-balance-neon", "goldacc-kv", "fxcny-kv", "gold-kv",
-		"aqi-neon", "cnwx-kv", "weight-contrib", "year-countdown", "world-clock",
+		"aqi-neon", "cnwx-kv", "weight-contrib", "year-countdown", "world-clock", "fxcny-table",
 	}
 	out := make([]Builtin, 0, len(order))
 	for _, id := range order {
