@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.10
+
+- Universal source fallback: any entry in `meta.sources` can declare an ordered fallback chain (array of sources or `{url, ..., fallback: [...]}`) so scripts automatically try secondary endpoints on failure across regular fetches, caching, live polling and MCP checks; built-in `gold`, `fx`, `fxcny`, `btc` and `cnwx` use fallback endpoints.
+- Standalone `progressBar` widget and 6 new non-plot widgets: `progressBar` renders without chart chrome on cards and full views and supports `neon`, `gradient`, `solid` and `segmented` bar styles; new widget types `kv`, `statGrid`, `countdown`, `clock` (digital and analog), `contrib` (activity heatmap) and `sparkGrid` expand non-chart dashboards.
+- Visual script editor: desktop and phone script editors now offer a visual configuration mode alongside source code to choose widget types, progress styles, layout options and colors directly.
+- 10 new built-in showcase scripts (`ai-claude-neon`, `ai-balance-neon`, `goldacc-kv`, `fxcny-kv`, `gold-kv`, `aqi-neon`, `cnwx-kv`, `weight-contrib`, `year-countdown`, `world-clock`), plus calendar cards (`cal` with lunar dates, solar terms and holidays), China live weather (`cnwx`) and Android home-screen script widgets (`ScriptWidgets`).
+- Home layout drag-to-resize fix: edit mode hides the hover bar, anchors a dedicated bottom-right resize handle with stable keys and uses a flat wrapping grid so dragging across row wraps or size classes never loses pointer capture.
+- Image detail gallery & component detail polish: Bing wallpaper and image full views are photo-first on a dark cinema stage with native Save Image support and a horizontal filmstrip; detail pages across all 18 widget types were audited and refined (analog clock slanted hands, quick-entry bar in detail view, enhanced `contrib`/`countdown`/`clock`/`panels`/`gauge`/`barh` views, and a cleaner compact `grid` chart style).
+- Standalone Settings window fix: clicking Settings in the default desktop sidebar now opens the dedicated Settings window instead of navigating inside the main window; Settings sits cleanly in the sidebar utility footer with `⌘,` / `Ctrl+,` shortcut, applies skin and light/dark theme modes, closes on `Esc`, and fixes the main container height under the title bar.
+
 ## 0.1.9
 
 - Menu bar, more to build with: a menu entry can be a submenu, run an action (`refresh`, `open` the card, `window`), open a web link or copy text, and can have a subtitle, a badge, a check mark, or be disabled. An item can draw its title in a monospaced font (`menubar.mono`), and open the card on a click with the menu on a right click (`menubar.click: "open"`).
