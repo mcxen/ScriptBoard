@@ -71,8 +71,14 @@ export function meta(a) {
       },
     ],
     sources: {
-      now: "https://60s.viki.moe/v2/weather?query={city}",
-      fc: "https://60s.viki.moe/v2/weather/forecast?query={city}&days=7",
+      now: {
+        url: "https://60s.viki.moe/v2/weather?query={city}",
+        fallbacks: ["https://60s.crystelf.top/v2/weather?query={city}"],
+      },
+      fc: {
+        url: "https://60s.viki.moe/v2/weather/forecast?query={city}&days=7",
+        fallbacks: ["https://60s.crystelf.top/v2/weather/forecast?query={city}&days=7"],
+      },
     },
   };
 }

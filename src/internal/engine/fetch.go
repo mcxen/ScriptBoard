@@ -114,7 +114,7 @@ type CachedBody struct {
 }
 
 // SourceInfo says where a source's data came from, so that a script can show
-// that it is old: ctx.sourceInfo[name].
+// that it is old or came from a fallback: ctx.sourceInfo[name].
 type SourceInfo struct {
 	// At is when the data was fetched, in Unix milliseconds.
 	At int64 `json:"t"`
@@ -123,6 +123,9 @@ type SourceInfo struct {
 	// Stale: the cache stood in for a request that failed or was not allowed
 	// (offline mode), so the data may be old.
 	Stale bool `json:"stale"`
+	// Used is the index of the request that answered: 0 is the main one,
+	// 1 the first fallback, and so on.
+	Used int `json:"used,omitempty"`
 	// Error is why the request failed or was not made.
 	Error string `json:"error,omitempty"`
 }
@@ -200,14 +203,20 @@ func FetchRequests(ctx context.Context, client *http.Client, reqs map[string]Req
 	for i := range names {
 		r := reqs[names[i]]
 		if len(opt.Headers[names[i]]) > 0 {
-			merged := map[string]string{}
-			for k, v := range r.Headers {
-				merged[k] = v
+			mergeHeaders := func(dst map[string]string) map[string]string {
+				merged := map[string]string{}
+				for k, v := range dst {
+					merged[k] = v
+				}
+				for k, v := range opt.Headers[names[i]] {
+					merged[k] = v
+				}
+				return merged
 			}
-			for k, v := range opt.Headers[names[i]] {
-				merged[k] = v
+			r.Headers = mergeHeaders(r.Headers)
+			for j := range r.Fallbacks {
+				r.Fallbacks[j].Headers = mergeHeaders(r.Fallbacks[j].Headers)
 			}
-			r.Headers = merged
 		}
 		o := opt
 		if ttl, ok := opt.LiveTTL[names[i]]; ok {
@@ -252,16 +261,7 @@ func fetchOne(ctx context.Context, client *http.Client, r Request, now time.Time
 	if have && !opt.Force && opt.TTL > 0 && now.Sub(cached.At) < opt.TTL {
 		return fromCache(false, nil)
 	}
-	var body []byte
-	var err error
-	if r.Paging != nil {
-		body, err = fetchPaged(ctx, client, r)
-	} else {
-		body, err = send(ctx, client, r)
-	}
-	if err == nil && !json.Valid(body) {
-		err = errors.New("response is not JSON")
-	}
+	body, used, err := doRequest(ctx, client, r)
 	if err != nil {
 		if have {
 			return fromCache(true, err)
@@ -271,7 +271,78 @@ func fetchOne(ctx context.Context, client *http.Client, r Request, now time.Time
 	if opt.Cache != nil {
 		opt.Cache.Put(key, body, now)
 	}
-	return body, SourceInfo{At: now.UnixMilli()}
+	return body, SourceInfo{At: now.UnixMilli(), Used: used}
+}
+
+func doRequest(ctx context.Context, client *http.Client, r Request) ([]byte, int, error) {
+	tryOne := func(req Request) ([]byte, error) {
+		var body []byte
+		var err error
+		if req.Paging != nil {
+			body, err = fetchPaged(ctx, client, req)
+		} else {
+			body, err = send(ctx, client, req)
+		}
+		if err == nil && !json.Valid(body) {
+			err = errors.New("response is not JSON")
+		}
+		return body, err
+	}
+	candidates := r.Requests()
+	var lastBody []byte
+	var lastUsed int
+	var lastErr error
+	for i, req := range candidates {
+		body, err := tryOne(req)
+		if err != nil {
+			if i == 0 || lastErr != nil {
+				lastErr = err
+			}
+			continue
+		}
+		// When fallbacks are configured and this candidate returned an API-level
+		// error payload (e.g. {"error":"..."} or {"code":500}), keep trying the
+		// remaining fallbacks; if none works, still return this JSON body so the
+		// script can inspect it.
+		if len(candidates) > 1 && isAPIErrorPayload(body) {
+			if lastBody == nil {
+				lastBody, lastUsed = body, i
+			}
+			continue
+		}
+		return body, i, nil
+	}
+	if lastBody != nil {
+		return lastBody, lastUsed, nil
+	}
+	return nil, 0, lastErr
+}
+
+// isAPIErrorPayload reports whether a JSON response looks like an application
+// error wrapper with no data, so that a configured fallback is given a chance.
+func isAPIErrorPayload(body []byte) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(body, &obj) != nil {
+		return false
+	}
+	if rawErr, ok := obj["error"]; ok {
+		var s string
+		if json.Unmarshal(rawErr, &s) == nil && s != "" {
+			return true
+		}
+		if string(rawErr) != "null" && string(rawErr) != "false" && string(rawErr) != `""` {
+			return true
+		}
+	}
+	if rawCode, ok := obj["code"]; ok {
+		var code float64
+		if json.Unmarshal(rawCode, &code) == nil && code != 0 && code != 200 {
+			if d, hasData := obj["data"]; !hasData || string(d) == "null" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // HistoryOf is the history of the sources a script asked for (the names in
@@ -288,9 +359,18 @@ func HistoryOf(cache SourceCache, sources map[string]string, want []string, limi
 		if !ok {
 			continue
 		}
+		key := Expand(tmpl, now)
 		var pts []HistoryPoint
-		for _, e := range cache.History(Expand(tmpl, now), limit) {
+		for _, e := range cache.History(key, limit) {
 			pts = append(pts, HistoryPoint{T: e.At.UnixMilli(), V: e.Body})
+		}
+		if len(pts) > 0 {
+			if latest, ok := cache.Get(key); ok && latest.At.UnixMilli() > pts[len(pts)-1].T {
+				pts = append(pts, HistoryPoint{T: latest.At.UnixMilli(), V: latest.Body})
+				if limit > 0 && len(pts) > limit {
+					pts = pts[len(pts)-limit:]
+				}
+			}
 		}
 		out[name] = pts
 	}

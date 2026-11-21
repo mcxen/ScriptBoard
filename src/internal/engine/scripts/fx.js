@@ -36,7 +36,12 @@ export function meta(a) {
         options: BASES.map((b) => ({ value: b, label: b + " / CNY" })),
       },
     ],
-    sources: { fx: "https://api.frankfurter.dev/v1/{start}..{end}?from={base}&to=CNY" },
+    sources: {
+      fx: {
+        url: "https://api.frankfurter.dev/v1/{start}..{end}?from={base}&to=CNY",
+        fallbacks: ["https://api.frankfurter.app/{start}..{end}?from={base}&to=CNY"],
+      },
+    },
   };
 }
 

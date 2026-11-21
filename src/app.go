@@ -39,9 +39,12 @@ type app struct {
 	shown map[string]engine.Result
 	// settingsWin is the settings window, while it is open (settings_window.go).
 	settingsWin *mygo.Window
-	router      *ui.Router
-	store       *store.Store
-	dataDir     string // the folder of data.json; plugins and icons live under it
+	// openSettingsHook, when non-nil in tests, intercepts opening the separate
+	// settings window so tests can assert desktop clicks do not route in-window.
+	openSettingsHook func()
+	router           *ui.Router
+	store            *store.Store
+	dataDir          string // the folder of data.json; plugins and icons live under it
 	// cache keeps the responses of the sources, their history and the last
 	// result of each card, for offline use and for opening quickly.
 	cache *cache.Store
@@ -72,10 +75,12 @@ type app struct {
 	// confirmDelete is the script whose delete button was clicked once.
 	confirmDelete string
 	draft         store.Script
-	tablePage     int    // the page of rows the table editor shows
-	tableAppend   int    // an import: 0 replaces the rows, 1 joins them
-	tableCols     bool   // the phone editor shows the columns to edit
-	editTab       int    // the phone editor: 0 the editor, 1 the preview
+	tablePage     int  // the page of rows the table editor shows
+	tableAppend   int  // an import: 0 replaces the rows, 1 joins them
+	tableCols     bool // the phone editor shows the columns to edit
+	editTab       int  // the phone editor: 0 visual, 1 source, 2 preview (table: 0 table, 1 preview)
+	editMode      int  // the desktop script editor: 0 visual config, 1 source
+	visual        visualEditor
 	status        string // one line of feedback: saved, recorded, errors
 
 	// Quick entry on the home cards: the value typed for each input, and the
@@ -263,8 +268,7 @@ func (a *app) seed() error {
 		if err != nil {
 			return fmt.Errorf("builtin %s: %w", b.ID, err)
 		}
-		// Scripts that need a key start off the home page.
-		home := b.ID == "ai-claude" || !strings.HasPrefix(b.ID, "ai-")
+		home := defaultHomeBuiltin(b.ID)
 		scripts = append(scripts, store.Script{
 			ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin,
 		})
@@ -397,6 +401,12 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 		return st
 	}
 	meta, _ := a.metaOf(sc)
+	if meta.Live != nil {
+		if a.live.at == nil {
+			a.live.at = map[string]time.Time{}
+		}
+		a.live.at[sc.ID] = a.now()
+	}
 	st := a.startState(sc, key, meta)
 	a.runs[key] = st
 	// The run reads the table off the main thread, and the editor changes it.
@@ -414,9 +424,12 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 				return // superseded by a newer run
 			}
 			st.loading, st.updating = false, false
-			if err != nil && st.old {
+			if (err != nil || (len(meta.Sources) > 0 && !hasResult(res))) && st.old && hasResult(saved) {
 				st.res, st.res.Stale = saved, true
 				return
+			}
+			if !hasResult(res) {
+				res.Stale, res.DataAt = false, 0
 			}
 			st.old = false
 			st.res = res
@@ -456,9 +469,10 @@ func (a *app) keepShown(key string, st *runState) {
 	a.shown[key] = st.res
 }
 
-// hasResult says whether a result has anything a card shows.
+// hasResult says whether a result has real content worth keeping on screen or
+// on disk, not an empty run or a "--" placeholder from a failed source.
 func hasResult(r engine.Result) bool {
-	return r.Big != "" || r.Title != "" || r.Chart != nil || len(r.Images) > 0 || len(r.Stats) > 0
+	return (r.Big != "" && r.Big != "--") || r.Chart != nil || r.ProgressBar != nil || len(r.Images) > 0 || len(r.Stats) > 0
 }
 
 // cardMenuOpen is the open state of a card's right-click menu.
@@ -593,8 +607,11 @@ func (a *app) saveSettings() {
 		a.set = a.store.Settings()
 	}
 	a.invalidateAll()
-	// A setting may be changed in the settings window: this one redraws.
+	// A setting may be changed in either window: redraw both.
 	a.post(func() {})
+	if a.settingsWin != nil {
+		a.settingsWin.Update(func() {})
+	}
 }
 
 // fmtTime formats a Unix millisecond time for lists: local month, day, hour
@@ -636,7 +653,7 @@ func (a *app) ensureBuiltins() error {
 		if err != nil {
 			return fmt.Errorf("builtin %s: %w", b.ID, err)
 		}
-		home := b.ID == "ai-claude" || !strings.HasPrefix(b.ID, "ai-")
+		home := defaultHomeBuiltin(b.ID)
 		if ok {
 			home = sc.Home
 		}
@@ -662,6 +679,9 @@ func refreshBuiltin(id, source string) bool {
 			return true
 		}
 	}
+	if s, err := engine.Compile(id+".js", source); err == nil && s.Meta.Version == "" {
+		return true
+	}
 	if fingerprints := previousBuiltins[id]; len(fingerprints) > 0 {
 		sum := sha256.Sum256([]byte(source))
 		for _, f := range fingerprints {
@@ -680,50 +700,85 @@ func refreshBuiltin(id, source string) bool {
 }
 
 // previousBuiltins are the SHA-256 fingerprints of the built-in scripts as they
-// shipped before they took switchable variables (and, for weather and fx,
-// before the chart colors changed). A stored copy with one of them was never
-// edited, so it takes the new script on start; an edited copy is kept.
+// shipped in earlier versions. A stored copy with one of them was never edited,
+// so it takes the new script on start; an edited copy is kept.
 var previousBuiltins = map[string][]string{
 	"ai-claude": {
 		"01d43a22fa4a5468002ae210e564ca9478e71d3b0c30b904e5e26323ef7dcc3e",
+		"57920d75fca8033b91f46c783d68ccdc23713b206433db1ae4897853ab87be9a",
 		"b6dce9d3d583d884c8010e5c480dafd8bab228d7954ae5356789abc65289a6dc",
+		"f6b1d04666479750bc1700fb62b8597c922bdd8156e2361283d07bdd2cfda411",
 	},
 	"ai-deepseek": {
+		"17979bf307a1e9a5a21ffef0ce78e29736b08b54e5fae00dd308d73911c8a77e",
+		"6af299d782e7d4bc9c18cd73499b7648477acca2e2a46304944d52c860732e4b",
 		"f5f55d13f2a56ee57f03f35a5cd648fb925b988960744a7da992177c8ad3e0fa",
 	},
 	"ai-openrouter": {
+		"9ca38d8df202545e5910a78387fe029bebaa7d6b00927823d4de3fc081775e2e",
+		"c4df543586af278eb2c74bd32ab04ba81591ce713ca6dc3a2b0c20eaab2cad38",
 		"d8471910d8aa99cd3d12526009842700b568b3fe9b0b5ce0e81cc9de4a6d1eb3",
 	},
 	"gold": {
-		"5f7e420061fd66e6450d66cc0332f2da22fa747d7f356653996bd536c50f510e",
+		"0277a3e4520967925e85a84ab230fd42976bb96c83823e9d29ff0fcfbdf53d74",
+		"18b7d852d6d4215d88c1dc50dded64bda84598f840c5992e01802dfc6944143c",
 		"4b0ed00df43b50c9128e73e8e0a38c47883b96e1527f807fc4173fd307da8f48",
+		"5f7e420061fd66e6450d66cc0332f2da22fa747d7f356653996bd536c50f510e",
+		"bf7b399b3581617ddcd24ee6f2670efc92842e3dc6524e8c4a7d2d512cdb3601",
 	},
 	"goldacc": {
-		"69995db57cbee0af1ef11c4a3265862385cf775f0bdc6920fd5f2751c1820755",
 		"59d9d236c5a0df22d1a36ebebbcff871e9c1c9de27763d996cad451915f72f90",
+		"69995db57cbee0af1ef11c4a3265862385cf775f0bdc6920fd5f2751c1820755",
+		"adfccf450de4d4b75a823080718b51c5371eae0a930367ca2b0aff453a6a674c",
+		"bb29525848fc3436cdacc9bfdb0fac6d2355f30b58f2cca24a6c25b3c912fac1",
 	},
 	"goldk": {
+		"21474d818d19cf6e0102b3845d3bbad43e45ab791fd10c9cf958c5643eb5a3ca",
+		"aceb6870c1ef7a46ab6b0a8a844a7019a72c889703b414a16f8413f9dc3e387f",
+		"bc34812902296c0800b6c995d7695447a1f3fc7dfc4150030fc4928837c53526",
+		"d5822e515716e7897db2c56f25fb739e8e2ec8f75a7a7e2eed60af8e104eb7c7",
 		"f680c5fe268f5fefd8f75094611dbfceedeb557302800fc8446327ab480abb0e",
 	},
 	"weight": {
-		"e8d2bcaa0e5f41badc0fe7b8f0f230df2bd5a090547fecd157a26f05f3e90578",
 		"0f43a5ce93da26669fb0c5b462257d093695fa31d9558afb9a2ad7062d3617af",
+		"2dddafbc1938f5294f9d73c207ed5ff7e16c1f81d13a67687601809d162f8944",
+		"4cc49d899f15ab6c805525f5d4330ca0524ce51cd828ff8fff65eb35f165e99e",
+		"e8d2bcaa0e5f41badc0fe7b8f0f230df2bd5a090547fecd157a26f05f3e90578",
 	},
 	"fxcny": {
-		"deaf30589c4cbdb5f65446f58f319cfae4c8e3aea697f50b74aa04f3163766b7",
 		"4efe2a6d4d67206c4b8b92d5d7eae023d9560e70bab67684fbbc6b6d8c03c35e",
+		"bf9de9193b07055e571f89ad903f681fa2f9ad98a33910ef627d1b9e030167e9",
+		"deaf30589c4cbdb5f65446f58f319cfae4c8e3aea697f50b74aa04f3163766b7",
 	},
 	"fx": {
+		"0d878adca9d18e653d30d766289e01adeb8db6dac7f19f7f64caee3e53c57468",
 		"bef1d20129a0faa4d8ee06c34319bdc80746996bc2b52b9fba60794b11b9fed6",
 		"e1c51dfb3ea10b04344eafd0327876f56b5f0465e9d581a3db9849c06e1a6907",
+		"ec33aecef15f8e5f418b0411b88ee65fcb17ab076386fa89c34aab3c0b727938",
 	},
 	"weather": {
 		"0098ead3b6349df77d9ddb91495179ff02d1b07a6a460c9d25d3d484e355b56a",
+		"61d32c7ea19e34e37492597deaabcc9e3e8701ea86240f0344fec04966abb30c",
+		"bb2691362cba6f5a58efe1b72ec03fdf0b1a5c70037d33c1b689b98cfb2c2471",
 		"df88f52041b64e51c335b67c86de9818178d13c4acde824ce6b799dc5b1abd84",
 	},
-	"aqi":   {"8577e85043f4d9529b62ecb2abe1a28ec4de9d213a8afe77e4912ae671f84289"},
-	"btc":   {"8a04a645d916fe443f0b450518db27a4fcbeec5324122bae51da2c97cf117f6e", "abe59a2b07c31ef986f3af058828b88865afc623fcafb003519a3ccdaba5ec4d"},
-	"hs300": {"30482a41f0ffca6f1becda31e97abd690ea0bc2963910c5370218ae0be6b9adb"},
+	"aqi": {
+		"8577e85043f4d9529b62ecb2abe1a28ec4de9d213a8afe77e4912ae671f84289",
+		"dd3f05d81d39ca4e57c341e8035c38e6221d4f736bafb64c8f730c9b0fb00d30",
+	},
+	"btc": {
+		"26b36f771479fdc59daadff7c70cdb6d86a10cc17ce935569cf4b51563d60e16",
+		"8a04a645d916fe443f0b450518db27a4fcbeec5324122bae51da2c97cf117f6e",
+		"abe59a2b07c31ef986f3af058828b88865afc623fcafb003519a3ccdaba5ec4d",
+	},
+	"cnwx": {
+		"d46fda97fcf2256357d352919bfbeb555b1f3e3a6fee491ddb4f169fe7bc53ee",
+	},
+	"hs300": {
+		"30482a41f0ffca6f1becda31e97abd690ea0bc290ea0bc2963910c5370218ae0be6b9adb",
+		"30482a41f0ffca6f1becda31e97abd690ea0bc2963910c5370218ae0be6b9adb",
+		"d87f8755bd9cb8a05dcfc91a7c300b18f4c43e4641da24e4e83e316742d9c50d",
+	},
 }
 
 // legacyColors writes a built-in script with the pastel chart colors it had
@@ -737,6 +792,22 @@ func legacyColors(src string) string {
 		src = strings.ReplaceAll(src, c[0], c[1])
 	}
 	return src
+}
+
+// defaultHomeBuiltin reports whether a newly added built-in script starts on
+// the home page. Scripts that require an API key, as well as the extra style
+// variants and companions, start off-home so users can enable the ones they
+// want without crowding their existing grid.
+func defaultHomeBuiltin(id string) bool {
+	switch id {
+	case "ai-deepseek", "ai-openrouter",
+		"ai-claude-neon", "ai-balance-neon",
+		"goldacc-kv", "fxcny-kv", "gold-kv",
+		"aqi-neon", "cnwx-kv", "weight-contrib",
+		"year-countdown", "world-clock":
+		return false
+	}
+	return true
 }
 
 // builtinIDs are the ids of the scripts that ship with the app.

@@ -45,6 +45,11 @@ func summarize(ch *engine.Chart) stats {
 			vals = append(vals, cd.C)
 			consider(i, cd.H, cd.L)
 		}
+	case isPanels(ch) && len(ch.Panels[0].Series) > 0:
+		for i, v := range ch.Panels[0].Series[0].Points {
+			vals = append(vals, v)
+			consider(i, v, v)
+		}
 	case len(ch.Series) > 0:
 		for i, v := range ch.Series[0].Points {
 			vals = append(vals, v)

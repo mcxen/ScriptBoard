@@ -48,7 +48,7 @@ func (a *app) touchUI() bool { return isAndroid() }
 func (a *app) coverCard(c *ui.Context, sc store.Script, cv *cover, res engine.Result, lay engine.Layout, title string, size int, show bool) {
 	p := pal(c)
 	ui.Image(c, cv.bm).Fit(ui.Cover).Absolute().Fill().Radius(radCard)
-	over := ui.Column(c).Absolute().Fill().Padding(10).Gap(6)
+	over := ui.Column(c).Absolute().Fill().Padding(10).Gap(6).PassThrough()
 	if !show {
 		over = over.Opacity(0).IgnoreInput(true)
 	}
@@ -93,18 +93,13 @@ func (a *app) sizeButton(c *ui.Context, sc store.Script, size int, show bool) {
 // there for assistive technology.
 func (a *app) hoverBar(c *ui.Context, sc store.Script, title string, size int, show bool, w float32) {
 	p := pal(c)
-	over := ui.Column(c).Absolute().Fill().Padding(8)
+	bar := ui.Row(c).Absolute().Top(8).Right(8).AlignItems(ui.Center).Gap(4).Padding(2, 6).Radius(radControl).Background(p.card.Alpha(0.92))
 	if !show {
-		over = over.Opacity(0).IgnoreInput(true)
+		bar = bar.Opacity(0).IgnoreInput(true)
 	}
-	over.Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Spacer(c)
-			ui.Row(c).AlignItems(ui.Center).Gap(4).Padding(2, 6).Radius(radControl).Background(p.card.Alpha(0.92)).Children(func() {
-				ui.Text(c, fitText(title, clampF(w*0.4, 60, 180), fsTiny)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-				a.refreshButton(c, sc, true)
-				a.sizeButton(c, sc, size, true)
-			})
-		})
+	bar.Children(func() {
+		ui.Text(c, fitText(title, clampF(w*0.4, 60, 180), fsTiny)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+		a.refreshButton(c, sc, true)
+		a.sizeButton(c, sc, size, true)
 	})
 }

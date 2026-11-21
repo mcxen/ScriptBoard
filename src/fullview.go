@@ -36,9 +36,15 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	// The whole window, as the home page: the tiles and the chart are sized to it.
 	pageFull(c, compact, func() {
 		cal := isCalendar(st.res.Chart)
+		pb, hasPB := progressBarOf(st.res)
+		shown := shownImages(st.res.Images)
+		gallery := len(shown) > 0 && !hasPB && st.res.Chart == nil
+		plot := !hasPB && isPlotChart(st.res.Chart)
 		sub := st.res.Title
-		if cal {
+		if cal || sub == tr(sc.Name) {
 			sub = ""
+		} else if gallery {
+			sub = fmt.Sprintf(tr("共 %d 张"), len(shown))
 		}
 		subheader(c, a, tr(sc.Name), sub, func() {
 			if cal {
@@ -63,12 +69,14 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				}
 				return
 			}
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
-					a.big = !a.big
-				}
-				sw(c, &a.big)
-			})
+			if plot {
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					if ui.Text(c, tr("大图")).FontSize(fsCaption).Cursor(ui.CursorPointer).Clicked() {
+						a.big = !a.big
+					}
+					sw(c, &a.big)
+				})
+			}
 			if btn(c, tr("刷新")).Clicked() {
 				a.refreshScript(sc)
 			}
@@ -94,63 +102,120 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			a.infoBlock(c, sc, meta, compact)
 			return
 		}
+		if gallery {
+			// Image-centric script (such as Bing wallpapers): photo-first
+			// gallery layout with text as quiet secondary metadata and Save.
+			a.imageGalleryFull(c, sc, res, compact)
+			if len(res.Stats) > 0 {
+				a.statsTiles(c, res.Stats)
+			}
+			if len(res.Lines) > 0 || len(res.Logs) > 0 {
+				card(c).Padding(16).Gap(4).Children(func() {
+					for _, line := range res.Lines {
+						ui.Text(c, line).FontSize(fsCaption)
+					}
+					for _, l := range res.Logs {
+						ui.Text(c, "log: "+l).FontSize(fsTiny).TextColor(p.muted)
+					}
+				})
+			}
+			a.infoBlock(c, sc, meta, compact)
+			return
+		}
 		accent := accentOf(res, p.accent)
 
-		// The hero: the headline number, the controls, and the chart.
+		// The hero: the headline number, the controls, and the component or chart.
 		card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
-				iconBadge(c, firstNonEmpty(res.Icon, meta.Icon), accent, 44)
-				ui.Column(c).Gap(2).Children(func() {
-					ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(res, sel))).FontSize(36).Bold().NoWrap()
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						if cs := summarize(res.Chart); cs.ok && len(res.Stats) == 0 {
-							deltaChip(c, cs.pct)
+			selfHero := isClock(res.Chart) || (isCountdown(res.Chart) && len(res.Chart.Countdown) == 1)
+			showHeroHead := !selfHero && (res.Big != "" || res.Sub != "" || plot)
+			if showHeroHead {
+				ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
+					iconBadge(c, firstNonEmpty(res.Icon, meta.Icon), accent, 44)
+					ui.Column(c).Gap(2).Children(func() {
+						if res.Big != "" || plot {
+							ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(res, sel))).FontSize(36).Bold().NoWrap()
+						} else if res.Title != "" {
+							ui.Text(c, res.Title).FontSize(fsHeading).Bold().NoWrap()
 						}
-						if i := hoveredIndex(res.Chart, sel); i >= 0 {
-							detailRow(c, res.Chart, i)
-						} else {
-							ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
-						}
+						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+							if plot {
+								if cs := summarize(res.Chart); cs.ok && len(res.Stats) == 0 {
+									deltaChip(c, cs.pct)
+								}
+							}
+							if plot {
+								if i := hoveredIndex(res.Chart, sel); i >= 0 {
+									detailRow(c, res.Chart, i)
+								} else if res.Sub != "" {
+									ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
+								}
+							} else if res.Sub != "" {
+								ui.Text(c, res.Sub).FontSize(fsCaption).TextColor(p.muted)
+							}
+						})
 					})
 				})
-			})
-
-			opts := stylesFor(res.Chart)
-			labels := make([]string, len(opts))
-			cur := 0
-			want := resolveStyle(res.Chart, a.styles[sc.ID])
-			for i, o := range opts {
-				labels[i] = tr(o.label)
-				if o.key == want {
-					cur = i
-				}
 			}
-			ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
-				if !isGaugeOrBars(res.Chart) {
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
-						pick := choose
-						if compact && len(labels) > 3 {
-							pick = dropdown
-						}
-						if pick(c, &cur, labels...) {
-							a.styles[sc.ID] = opts[cur].key
-						}
-					})
+			if a.status != "" {
+				ui.Text(c, a.status).FontSize(fsTiny).TextColor(p.accent)
+			}
+
+			if plot || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
+				opts := stylesFor(res.Chart)
+				labels := make([]string, len(opts))
+				cur := 0
+				want := resolveStyle(res.Chart, a.styles[sc.ID])
+				for i, o := range opts {
+					labels[i] = tr(o.label)
+					if o.key == want {
+						cur = i
+					}
 				}
-				a.dimRow(c, idx, meta.Dims)
-				a.varRow(c, sc, meta)
-			})
+				ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
+					if plot {
+						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+							ui.Text(c, tr("样式")).FontSize(fsSmall).TextColor(p.muted)
+							pick := choose
+							if compact && len(labels) > 3 {
+								pick = dropdown
+							}
+							if pick(c, &cur, labels...) {
+								a.styles[sc.ID] = opts[cur].key
+							}
+						})
+					}
+					a.dimRow(c, idx, meta.Dims)
+					a.varRow(c, sc, meta)
+				})
+			}
 
 			h := float32(340)
-			if a.big {
+			if a.big && plot {
 				h = max(340, a.height-340)
 			}
 			if compact {
 				h = min(h, 300)
 			}
-			Chart(c, ChartProps{Data: res.Chart, Style: a.styles[sc.ID], Height: h, Selected: sel, Full: true, Now: a.now()})
-			Detail(c, res.Chart, sel)
+			switch {
+			case hasPB:
+				// progressBar is a standalone component: no Chart wrapper, no chart Detail.
+				progressBarView(c, pb, 0)
+			case isWidget(res.Chart):
+				widgetView(c, res.Chart, h, sel, true, a.now(), 0)
+			case res.Chart != nil:
+				Chart(c, ChartProps{Data: res.Chart, Style: a.styles[sc.ID], Height: h, Selected: sel, Full: true, Now: a.now()})
+				if hasChartDetail(res.Chart) {
+					Detail(c, res.Chart, sel)
+				}
+			}
+			if len(meta.Inputs) > 0 {
+				ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
+				ui.Column(c).Gap(8).MaxWidth(420).Children(func() {
+					for _, in := range meta.Inputs {
+						a.quickEntry(c, sc.ID, in)
+					}
+				})
+			}
 		})
 
 		// The pictures of the script, as a carousel, with the history cleared by the
@@ -170,6 +235,9 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		switch {
 		case len(res.Stats) > 0:
 			a.statsTiles(c, res.Stats)
+		case hasPB:
+			// progressBar has no chart statistics tiles.
+		case a.widgetTiles(c, res.Chart):
 		case !a.kindTiles(c, res.Chart):
 			a.statTiles(c, summarize(res.Chart))
 		}
@@ -322,6 +390,12 @@ func heroText(res engine.Result, sel *int) string {
 		return res.Big
 	case ch.Type == "candle" && i < len(ch.Candles):
 		return fmt.Sprintf("%.2f", ch.Candles[i].C)
+	case isPanels(ch):
+		for _, sr := range ch.Panels[0].Series {
+			if i < len(sr.Points) {
+				return fmt.Sprintf("%.2f", sr.Points[i])
+			}
+		}
 	}
 	for _, sr := range ch.Series {
 		if i < len(sr.Points) {
@@ -358,7 +432,11 @@ func detailRow(c *ui.Context, ch *engine.Chart, i int) {
 			field("C", fmt.Sprintf("%.2f", cd.C), up)
 			return
 		}
-		for _, sr := range ch.Series {
+		series := ch.Series
+		if isPanels(ch) {
+			series = ch.Panels[0].Series
+		}
+		for _, sr := range series {
 			if i < len(sr.Points) {
 				field(sr.Name, fmt.Sprintf("%.2f", sr.Points[i]), p.text)
 			}

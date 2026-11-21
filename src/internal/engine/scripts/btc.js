@@ -41,8 +41,14 @@ export function meta(a) {
       },
     ],
     sources: {
-      ticker: "https://api.binance.com/api/v3/ticker/24hr?symbol={coin}USDT",
-      klines: "https://api.binance.com/api/v3/klines?symbol={coin}USDT&interval=1d&limit=60",
+      ticker: {
+        url: "https://api.binance.com/api/v3/ticker/24hr?symbol={coin}USDT",
+        fallbacks: ["https://data-api.binance.vision/api/v3/ticker/24hr?symbol={coin}USDT"],
+      },
+      klines: {
+        url: "https://api.binance.com/api/v3/klines?symbol={coin}USDT&interval=1d&limit=60",
+        fallbacks: ["https://data-api.binance.vision/api/v3/klines?symbol={coin}USDT&interval=1d&limit=60"],
+      },
       funding: "https://fapi.binance.com/fapi/v1/premiumIndex?symbol={coin}USDT",
     },
     // The ticker is asked for every 5 seconds while the card is on screen; its

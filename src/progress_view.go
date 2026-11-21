@@ -11,32 +11,128 @@ import (
 )
 
 // progressView draws a "progress" chart: one bar per item, each with its name,
-// its value out of its maximum, and how full it is. The bars share the card's
-// width, so the same chart reads the same on a phone and on a window.
-// limit is how many bars show (0 is all); a card too short for them all shows
-// the first and counts the rest.
+// its value out of its maximum, and how full it is.
 func progressView(c *ui.Context, items []engine.Progress, limit int) ui.Element {
+	return progressBarView(c, &engine.ProgressBar{Items: items}, limit)
+}
+
+// progressBarOf extracts a ProgressBar from res: either its standalone
+// res.ProgressBar field (preferred: no Chart object needed) or a Chart of type
+// "progress" / "progressBar".
+func progressBarOf(res engine.Result) (*engine.ProgressBar, bool) {
+	if res.ProgressBar != nil {
+		return res.ProgressBar, true
+	}
+	if res.Chart != nil && (res.Chart.Type == "progress" || res.Chart.Type == "progressBar") {
+		pb := &engine.ProgressBar{Items: res.Chart.Progress}
+		if res.Chart.Bar != nil {
+			pb.BarStyle = *res.Chart.Bar
+		}
+		return pb, true
+	}
+	return nil, false
+}
+
+// neonPalette are vivid colors suited for neon progress bars when an item
+// leaves its color unset.
+var neonPalette = []ui.Color{
+	ui.Hex("#00F5D4"), ui.Hex("#38BDF8"), ui.Hex("#FF2A85"), ui.Hex("#A855F7"), ui.Hex("#22C55E"), ui.Hex("#FB923C"),
+}
+
+// progressBarView draws a standalone progressBar component: solid, gradient,
+// neon (glowing neon tube) or segmented blocks. It needs no chart wrapper or
+// chart detail controls.
+func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Element {
 	p := pal(c)
+	if pb == nil {
+		return ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	items := pb.Items
 	shown, more := items, 0
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
 	}
-	return ui.Column(c).Gap(10).Children(func() {
+	style := pb.Style
+	if style == "" {
+		style = "solid"
+	}
+	isNeon := style == "neon"
+	barH := pb.Height
+	if barH <= 0 {
+		barH = 8
+		if isNeon {
+			barH = 10
+		}
+	}
+	barH = clampF(barH, 4, 24)
+	glow := pb.Glow
+	if glow <= 0 {
+		if isNeon {
+			glow = 1.0
+		}
+	} else {
+		glow = clampF(glow, 0.2, 1.5)
+	}
+	segs := pb.Segments
+	if segs <= 0 {
+		segs = 10
+	}
+	segs = min(max(segs, 4), 30)
+
+	gap := float32(10)
+	if isNeon {
+		gap = 12
+	}
+	return ui.Column(c).Gap(gap).Children(func() {
 		if len(items) == 0 {
 			ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
 		}
-		for _, it := range shown {
+		for i, it := range shown {
+			i, it := i, it
 			pct := it.Percent()
+			frac := float32(pct / 100)
+			base := p.accent
+			if isNeon {
+				base = neonPalette[i%len(neonPalette)]
+			}
+			from := parseColor(it.Color, base)
+			to := from
+			if hexColor.MatchString(it.To) {
+				to = ui.Hex(it.To)
+			} else if isNeon || style == "gradient" {
+				to = from.Mix(ui.Hex("#FFFFFF"), 0.28)
+			}
+			trackColor, hasTrack := barTrackColor(p, pb.Track, from, isNeon)
+
 			ui.Column(c).Gap(4).Children(func() {
-				ui.Row(c).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
-					ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).NoWrap()
-				})
-				// The fill and the rest of the track share the row by their
-				// percentages, so the bar is exactly as full as the value says.
-				ui.Row(c).Height(8).Radius(4).Background(p.chip).Children(func() {
-					ui.Box(c).Height(8).Radius(4).Background(parseColor(it.Color, p.accent)).Grow(float32(max(pct, 0.0001))).Shrink(0)
-					ui.Box(c).Height(8).Grow(float32(max(100-pct, 0.0001))).Shrink(0)
+				if it.Name != "" || !pb.HideLabel {
+					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+						if !pb.HideLabel {
+							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).NoWrap()
+							if isNeon && p.dark {
+								lbl.TextColor(from)
+							}
+						}
+					})
+				}
+				padY := float32(0)
+				if isNeon || glow > 0 {
+					padY = 6
+				}
+				ui.Box(c).Height(barH + padY*2).Draw(func(pt *ui.Painter, r ui.Rect) {
+					track := ui.Rect{X: r.X, Y: r.Y + padY, W: r.W, H: barH}
+					rad := barH / 2
+					switch style {
+					case "segmented":
+						paintSegmentedBar(pt, track, segs, frac, from, to, trackColor, hasTrack, glow)
+					case "neon":
+						paintNeonBar(pt, track, rad, frac, from, to, trackColor, hasTrack, glow)
+					case "gradient":
+						paintGradientBar(pt, track, rad, frac, from, to, trackColor, hasTrack)
+					default:
+						paintSolidBar(pt, track, rad, frac, from, trackColor, hasTrack)
+					}
 				})
 			})
 		}
@@ -44,6 +140,160 @@ func progressView(c *ui.Context, items []engine.Progress, limit int) ui.Element 
 			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
 		}
 	})
+}
+
+func barTrackColor(p palette, track string, accent ui.Color, neon bool) (ui.Color, bool) {
+	switch track {
+	case "none":
+		return ui.Color{}, false
+	case "dark":
+		return ui.Hex("#0F172A").Alpha(0.9), true
+	case "tint":
+		return accent.Alpha(0.16), true
+	case "neutral":
+		return p.chip, true
+	}
+	if neon {
+		if p.dark {
+			return ui.Hex("#0B1120").Alpha(0.95), true
+		}
+		return ui.Hex("#0F172A").Alpha(0.86), true
+	}
+	return p.chip, true
+}
+
+func roundedRectPath(r ui.Rect, rad float32) *ui.Path {
+	rad = min(rad, min(r.W, r.H)/2)
+	p := &ui.Path{}
+	if r.W <= 0 || r.H <= 0 {
+		return p
+	}
+	const k = 0.5522847498
+	x0, y0, x1, y1 := r.X, r.Y, r.X+r.W, r.Y+r.H
+	p.MoveTo(x0+rad, y0)
+	p.LineTo(x1-rad, y0)
+	p.CubeTo(x1-rad*(1-k), y0, x1, y0+rad*(1-k), x1, y0+rad)
+	p.LineTo(x1, y1-rad)
+	p.CubeTo(x1, y1-rad*(1-k), x1-rad*(1-k), y1, x1-rad, y1)
+	p.LineTo(x0+rad, y1)
+	p.CubeTo(x0+rad*(1-k), y1, x0, y1-rad*(1-k), x0, y1-rad)
+	p.LineTo(x0, y0+rad)
+	p.CubeTo(x0, y0+rad*(1-k), x0+rad*(1-k), y0, x0+rad, y0)
+	p.Close()
+	return p
+}
+
+func paintSolidBar(pt *ui.Painter, track ui.Rect, rad, frac float32, color, trackCol ui.Color, hasTrack bool) {
+	if hasTrack {
+		pt.Fill(track, trackCol, rad)
+	}
+	if frac <= 0 {
+		return
+	}
+	w := max(track.W*frac, min(track.H, track.W))
+	pt.Fill(ui.Rect{X: track.X, Y: track.Y, W: w, H: track.H}, color, rad)
+}
+
+func paintGradientBar(pt *ui.Painter, track ui.Rect, rad, frac float32, from, to, trackCol ui.Color, hasTrack bool) {
+	if hasTrack {
+		pt.Fill(track, trackCol, rad)
+	}
+	if frac <= 0 {
+		return
+	}
+	w := max(track.W*frac, min(track.H, track.W))
+	bar := ui.Rect{X: track.X, Y: track.Y, W: w, H: track.H}
+	pt.FillPathGradient(roundedRectPath(bar, rad), ui.LinearGradient{From: from, To: to, Angle: 90})
+}
+
+// paintNeonBar draws a luminous neon progress tube: a deep housing track,
+// multi-layered outer neon halo, gradient tube body, bright inner core
+// filament, and a leading hotspot spark.
+func paintNeonBar(pt *ui.Painter, track ui.Rect, rad, frac float32, from, to, trackCol ui.Color, hasTrack bool, glow float32) {
+	if hasTrack {
+		pt.Fill(track, trackCol, rad)
+		pt.StrokePath(roundedRectPath(track, rad), 1, from.Alpha(0.24))
+	}
+	if frac <= 0 {
+		return
+	}
+	w := max(track.W*frac, min(track.H, track.W))
+	bar := ui.Rect{X: track.X, Y: track.Y, W: w, H: track.H}
+
+	// Concentric outer neon glow layers.
+	layers := [4][2]float32{
+		{5.5, 0.08},
+		{3.6, 0.16},
+		{2.0, 0.28},
+		{0.9, 0.44},
+	}
+	glowColor := from.Mix(to, 0.5)
+	for _, l := range layers {
+		spread := l[0] * glow
+		alpha := min(l[1]*glow, 0.72)
+		halo := ui.Rect{
+			X: bar.X - spread*0.6,
+			Y: bar.Y - spread,
+			W: bar.W + spread*1.2,
+			H: bar.H + spread*2,
+		}
+		pt.Fill(halo, glowColor.Alpha(alpha), rad+spread)
+	}
+
+	// Vibrant neon tube body.
+	pt.FillPathGradient(roundedRectPath(bar, rad), ui.LinearGradient{From: from, To: to, Angle: 90})
+
+	// Incandescent white-hot inner filament along the tube center.
+	coreH := clampF(bar.H*0.28, 1.5, 4)
+	coreInset := min(rad*0.45, bar.W*0.2)
+	if bar.W > coreInset*2+2 {
+		core := ui.Rect{
+			X: bar.X + coreInset,
+			Y: bar.Y + (bar.H-coreH)/2,
+			W: bar.W - coreInset*2,
+			H: coreH,
+		}
+		pt.Fill(core, ui.Hex("#FFFFFF").Alpha(0.72), coreH/2)
+	}
+
+	// Leading tip flare when in progress.
+	if frac > 0.02 && frac < 0.995 {
+		tipX := bar.X + bar.W - rad*0.5
+		tipY := bar.Y + bar.H/2
+		tipR := rad * 0.9
+		pt.Fill(ui.Rect{X: tipX - tipR*1.6, Y: tipY - tipR*1.6, W: tipR * 3.2, H: tipR * 3.2}, to.Alpha(0.45*glow), tipR*1.6)
+		pt.Fill(ui.Rect{X: tipX - tipR*0.55, Y: tipY - tipR*0.55, W: tipR * 1.1, H: tipR * 1.1}, ui.Hex("#FFFFFF").Alpha(0.92), tipR*0.55)
+	}
+}
+
+func paintSegmentedBar(pt *ui.Painter, track ui.Rect, segs int, frac float32, from, to, trackCol ui.Color, hasTrack bool, glow float32) {
+	gap := float32(3)
+	if segs > 18 {
+		gap = 2
+	}
+	w := (track.W - gap*float32(segs-1)) / float32(segs)
+	if w < 2 {
+		w = 2
+	}
+	rad := min(track.H*0.35, w*0.35)
+	lit := frac * float32(segs)
+	for i := 0; i < segs; i++ {
+		cell := ui.Rect{X: track.X + float32(i)*(w+gap), Y: track.Y, W: w, H: track.H}
+		if hasTrack {
+			pt.Fill(cell, trackCol, rad)
+		}
+		fill := clampF(lit-float32(i), 0, 1)
+		if fill <= 0 {
+			continue
+		}
+		t := float32(i) / float32(max(segs-1, 1))
+		col := from.Mix(to, t)
+		if glow > 0 && fill > 0.2 {
+			sp := 2.5 * glow
+			pt.Fill(ui.Rect{X: cell.X - sp*0.5, Y: cell.Y - sp, W: cell.W + sp, H: cell.H + sp*2}, col.Alpha(0.28*fill*glow), rad+sp)
+		}
+		pt.Fill(cell, col.Alpha(0.25+0.75*fill), rad)
+	}
 }
 
 // progressLabel is "3 / 10 · 30%", or "30%" for a bar given as a percentage.
@@ -60,9 +310,9 @@ func progressCount(it engine.Progress) string {
 	return fmt.Sprintf("%s / %s%s", trimNum(it.Value), trimNum(it.Max), it.Unit)
 }
 
-// isProgress says whether a chart is a completion chart, as bars or as rings.
+// isProgress says whether a chart is a completion component, as bars or rings.
 func isProgress(ch *engine.Chart) bool {
-	return ch != nil && (ch.Type == "progress" || ch.Type == "progressRing")
+	return ch != nil && (ch.Type == "progress" || ch.Type == "progressBar" || ch.Type == "progressRing")
 }
 
 // ringPalette is the colors of the rings of a concentric chart, one each:

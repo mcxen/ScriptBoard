@@ -141,3 +141,70 @@ func TestEditModeDragMovesACard(t *testing.T) {
 		t.Errorf("order %v after dropping weather on weight, want weather first", a.set.CardOrder)
 	}
 }
+
+// Dragging the bottom-right corner handle resizes cards whose handle sits
+// inside the card bounds (e.g. fx, cal), and keeps working seamlessly across
+// height classes (medium -> large and medium -> mini) without hoverBar
+// intercepting the drag or losing handle identity.
+func TestEditModeDragResizesInsideCardAndAcrossSizeClasses(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 1280, 900)
+	settle(tt)
+	click(t, tt, "编辑布局")
+	settle(tt)
+	savePNG(t, tt, "27-home-edit-mode")
+
+	// Drag fx corner right and down: span grows AND height crosses into large (>= 300).
+	before := a.boxOf("fx")
+	h, ok := tt.Access("resize:fx")
+	if !ok {
+		t.Fatal("no corner handle on fx card in edit mode")
+	}
+	card, ok := tt.Access("card:fx")
+	if !ok {
+		t.Fatal("no fx card in edit mode")
+	}
+	// Handle must sit inside its card's bounds (bottom-right corner), not pushed outside.
+	if h.Bounds.Y+h.Bounds.H > card.Bounds.Y+card.Bounds.H+1 {
+		t.Errorf("resize:fx bottom %v overflows card bottom %v", h.Bounds.Y+h.Bounds.H, card.Bounds.Y+card.Bounds.H)
+	}
+	x, y := h.Bounds.X+h.Bounds.W/2, h.Bounds.Y+h.Bounds.H/2
+	tt.Press(x, y)
+	settle(tt)
+	for i := 1; i <= 12; i++ {
+		tt.Move(x+float32(i)*22, y+float32(i)*12)
+		settle(tt)
+	}
+	tt.Release(x+264, y+144)
+	settle(tt)
+	settle(tt)
+	after := a.boxOf("fx")
+	if after.Span <= before.Span {
+		t.Errorf("fx span %d after dragging right, want > %d", after.Span, before.Span)
+	}
+	if after.Height < 300 {
+		t.Errorf("fx height %v after dragging down +144, want >= 300 (large)", after.Height)
+	}
+
+	// Now drag fx corner UP across medium -> small -> mini (< 120) in one continuous drag.
+	h2, ok := tt.Access("resize:fx")
+	if !ok {
+		t.Fatal("no corner handle on fx after first resize")
+	}
+	x2, y2 := h2.Bounds.X+h2.Bounds.W/2, h2.Bounds.Y+h2.Bounds.H/2
+	tt.Press(x2, y2)
+	settle(tt)
+	for i := 1; i <= 16; i++ {
+		tt.Move(x2, y2-float32(i)*16)
+		settle(tt)
+	}
+	tt.Release(x2, y2-256)
+	settle(tt)
+	settle(tt)
+	if got := a.boxOf("fx").Height; got >= 120 {
+		t.Errorf("fx height %v after dragging up across size classes, want < 120 (mini)", got)
+	}
+	if a.rz != nil {
+		t.Error("resize state still active after release")
+	}
+}

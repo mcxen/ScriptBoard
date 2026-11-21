@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,7 +15,8 @@ import (
 	"scriptboard/src/internal/feed"
 )
 
-// feedForm is the form for adding a data source from a curl command.
+// feedForm is the form for adding a data source from a curl command, or for
+// changing one that exists.
 type feedForm struct {
 	name, curl, rule, names, id string
 	fallbacks                   string // one request per paragraph
@@ -21,6 +24,11 @@ type feedForm struct {
 	every                       int    // index into feedEvery
 	agg                         int    // index into feedAggs
 	note                        string
+
+	open    bool   // the form is shown
+	editing string // id of the source being changed; "" when adding
+	confirm string // id of the source whose delete waits for a second click
+	testing bool   // a test request is out
 }
 
 var (
@@ -147,14 +155,14 @@ func (a *app) feedLoop() {
 	}
 }
 
-// addFeed creates a data source from the form: the curl command, the rule that
-// reads the numbers and the interval.
-func (a *app) addFeed() {
+// formSource builds the source the form describes. When a source is being
+// changed it starts from the stored one, so that what the form does not show
+// (timeout, retries) is kept.
+func (a *app) formSource(test bool) (feed.Source, error) {
 	f := &a.feedForm
 	req, err := feed.ParseRequest(f.curl)
 	if err != nil {
-		f.note = trErr(err)
-		return
+		return feed.Source{}, errors.New(trErr(err))
 	}
 	var backups []feed.Request
 	for _, para := range strings.Split(strings.ReplaceAll(f.fallbacks, "\r\n", "\n"), "\n\n") {
@@ -163,8 +171,7 @@ func (a *app) addFeed() {
 		}
 		b, err := feed.ParseRequest(para)
 		if err != nil {
-			f.note = tr("备用请求：") + trErr(err)
-			return
+			return feed.Source{}, errors.New(tr("备用请求：") + trErr(err))
 		}
 		backups = append(backups, b)
 	}
@@ -173,16 +180,18 @@ func (a *app) addFeed() {
 		name = tr("数据源")
 	}
 	id := strings.TrimSpace(f.id)
-	if id == "" {
+	if f.editing != "" {
+		id = f.editing
+	} else if id == "" {
 		id = slugOf(name)
 	}
 	if !feed.ValidID(id) {
-		f.note = tr("id 只能用小写字母、数字和连字符，2 到 40 个字符")
-		return
+		return feed.Source{}, errors.New(tr("id 只能用小写字母、数字和连字符，2 到 40 个字符"))
 	}
-	if _, exists := a.store.Feed(id); exists {
-		f.note = tr("已经有 id 为 ") + id + tr(" 的数据源了")
-		return
+	if f.editing == "" && !test {
+		if _, exists := a.store.Feed(id); exists {
+			return feed.Source{}, errors.New(tr("已经有 id 为 ") + id + tr(" 的数据源了"))
+		}
 	}
 	ex := feed.Extract{Kind: feed.KindJSON, Path: strings.TrimSpace(f.rule)}
 	if f.kind == 1 {
@@ -194,22 +203,173 @@ func (a *app) addFeed() {
 			names = append(names, n)
 		}
 	}
-	src := feed.Source{
-		ID: id, Name: name, Request: req, Extract: ex,
-		Names: names, Every: feedEvery[f.every], Agg: feedAggs[f.agg],
-		Fallbacks: backups,
+	src := feed.Source{}
+	if old, ok := a.store.Feed(f.editing); ok && f.editing != "" {
+		src = old
 	}
+	src.ID, src.Name, src.Request, src.Extract = id, name, req, ex
+	src.Names, src.Every, src.Agg, src.Fallbacks = names, feedEvery[f.every], feedAggs[f.agg], backups
 	if err := src.Validate(); err != nil {
-		f.note = trErr(err)
+		return feed.Source{}, errors.New(trErr(err))
+	}
+	return src, nil
+}
+
+// addFeed stores the data source the form describes (a new one, or the changes
+// to the one being edited), closes the form and takes a first reading.
+func (a *app) addFeed() {
+	f := &a.feedForm
+	src, err := a.formSource(false)
+	if err != nil {
+		f.note = err.Error()
 		return
 	}
 	if err := a.store.SaveFeed(src); err != nil {
 		f.note = err.Error()
 		return
 	}
-	f.note = tr("已添加 ") + name + "（id：" + id + tr("），正在获取第一次数据…")
-	f.curl, f.rule, f.names, f.id, f.name, f.fallbacks = "", "", "", "", "", ""
+	if f.editing != "" {
+		f.note = tr("已保存 ") + src.Name
+		a.runner.Forget(src.ID)
+	} else {
+		f.note = tr("已添加 ") + src.Name + "（id：" + src.ID + tr("），正在获取第一次数据…")
+	}
+	a.closeFeedForm()
+	a.refreshFeed(src.ID)
 	a.pollInBackground(src)
+}
+
+// closeFeedForm hides the form and clears it; the note stays.
+func (a *app) closeFeedForm() {
+	f := &a.feedForm
+	note := f.note
+	*f = feedForm{note: note}
+}
+
+// editFeed fills the form with a stored source.
+func (a *app) editFeed(src feed.Source) {
+	f := &a.feedForm
+	*f = feedForm{open: true, editing: src.ID, id: src.ID, name: src.Name}
+	f.curl = requestText(src.Request)
+	var backups []string
+	for _, r := range src.Fallbacks {
+		backups = append(backups, requestText(r))
+	}
+	f.fallbacks = strings.Join(backups, "\n\n")
+	if src.Extract.Kind == feed.KindRegex {
+		f.kind, f.rule = 1, src.Extract.Pattern
+	} else {
+		f.rule = src.Extract.Path
+	}
+	f.names = strings.Join(src.Names, ",")
+	for i, e := range feedEvery {
+		if e == src.Every {
+			f.every = i
+		}
+	}
+	for i, g := range feedAggs {
+		if g == src.Agg {
+			f.agg = i
+		}
+	}
+}
+
+// testFeed makes the requests of the form once, without storing anything, and
+// says which numbers the rule reads from the first one that answers.
+func (a *app) testFeed() {
+	f := &a.feedForm
+	if a.set.Offline {
+		f.note = tr("离线模式下不请求网络，关闭离线模式后再获取")
+		return
+	}
+	src, err := a.formSource(true)
+	if err != nil {
+		f.note = err.Error()
+		return
+	}
+	if f.testing {
+		return
+	}
+	f.testing = true
+	run := func() {
+		note := a.tryFeed(src)
+		a.post(func() {
+			a.feedForm.testing = false
+			a.feedForm.note = note
+		})
+	}
+	if a.win == nil {
+		run()
+		return
+	}
+	go run()
+}
+
+// tryFeed fetches each request of src in turn, and describes what the first
+// that gives numbers reads.
+func (a *app) tryFeed(src feed.Source) string {
+	var last error
+	for i, req := range src.Requests() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		body, err := a.runner.Fetcher.Fetch(ctx, req)
+		cancel()
+		if err == nil {
+			var nums []float64
+			if nums, err = src.Extract.Numbers(body); err == nil {
+				var parts []string
+				for k, v := range nums {
+					parts = append(parts, fmt.Sprintf("%s = %g", src.NumberName(k), v))
+				}
+				from := tr("主请求")
+				if i > 0 {
+					from = fmt.Sprintf(tr("备用请求 %d"), i)
+				}
+				return tr("测试通过（") + from + tr("）：") + strings.Join(parts, tr("，"))
+			}
+		}
+		last = err
+	}
+	return tr("测试失败：") + trErr(last)
+}
+
+// requestText writes a request as the text the form takes: its address when
+// that says it all, else a curl command.
+func requestText(r feed.Request) string {
+	scheme := strings.ToLower(strings.SplitN(r.URL, ":", 2)[0])
+	method := strings.ToUpper(r.Method)
+	plain := (method == "" || method == "GET") && len(r.Headers) == 0 && len(r.Cookies) == 0 && r.Body == ""
+	if (scheme != "http" && scheme != "https") || plain {
+		return r.URL
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	parts := []string{"curl", quote(r.URL)}
+	if method != "" && method != "GET" {
+		parts = append(parts, "-X", method)
+	}
+	keys := make([]string, 0, len(r.Headers))
+	for k := range r.Headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		parts = append(parts, "-H", quote(k+": "+r.Headers[k]))
+	}
+	if len(r.Cookies) > 0 {
+		keys = keys[:0]
+		for k := range r.Cookies {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var cs []string
+		for _, k := range keys {
+			cs = append(cs, k+"="+r.Cookies[k])
+		}
+		parts = append(parts, "-b", quote(strings.Join(cs, "; ")))
+	}
+	if r.Body != "" {
+		parts = append(parts, "-d", quote(r.Body))
+	}
+	return strings.Join(parts, " ")
 }
 
 // deleteFeed removes a source. Scripts that read it show the missing source.
@@ -221,6 +381,10 @@ func (a *app) deleteFeed(id string) {
 	a.runner.Forget(id)
 	a.refreshFeed(id)
 	a.feedForm.note = tr("已删除 ") + id
+	a.feedForm.confirm = ""
+	if a.feedForm.editing == id {
+		a.closeFeedForm()
+	}
 }
 
 // slugOf turns a name into an ID: lowercase letters, digits and hyphens.
@@ -257,16 +421,24 @@ func (a *app) feedsPage(c *ui.Context, compact bool) {
 		srcs := a.store.Feeds()
 		if len(srcs) == 0 {
 			card(c).Children(func() {
-				empty(c, "activity", tr("还没有数据源"), tr("在下面粘贴一条 curl 命令添加。"))
+				empty(c, "activity", tr("还没有数据源"), tr("点下面的「添加数据源」，粘贴一条 curl 命令。"))
 			})
 		}
 		for _, src := range srcs {
 			a.feedCard(c, src)
 		}
 
-		a.feedAddForm(c, compact)
 		if a.feedForm.note != "" {
 			chip(c, a.feedForm.note, p.accent, p.accentSoft)
+		}
+		if a.feedForm.open {
+			a.feedAddForm(c, compact)
+		} else {
+			ui.Row(c).Children(func() {
+				if primaryBtn(c, tr("+ 添加数据源")).Clicked() {
+					a.feedForm = feedForm{open: true, note: a.feedForm.note}
+				}
+			})
 		}
 	})
 }
@@ -284,8 +456,19 @@ func (a *app) feedCard(c *ui.Context, src feed.Source) {
 			if btn(c, tr("立即获取")).Clicked() {
 				a.pollInBackground(src)
 			}
-			if btn(c, tr("删除")).Clicked() {
-				a.deleteFeed(src.ID)
+			if btn(c, tr("编辑")).Clicked() {
+				a.editFeed(src)
+			}
+			label := tr("删除")
+			if a.feedForm.confirm == src.ID {
+				label = tr("确认删除")
+			}
+			if btn(c, label).Clicked() {
+				if a.feedForm.confirm == src.ID {
+					a.deleteFeed(src.ID)
+				} else {
+					a.feedForm.confirm = src.ID
+				}
 			}
 		})
 		if latest, ok, _ := a.samples.Latest(src.ID); ok {
@@ -306,13 +489,16 @@ func (a *app) feedCard(c *ui.Context, src feed.Source) {
 }
 
 func (a *app) feedAddForm(c *ui.Context, compact bool) {
-	p := pal(c)
 	f := &a.feedForm
 	w := float32(380)
 	if compact {
 		w = 300
 	}
-	sectionTitle(c, tr("添加数据源"))
+	title := tr("添加数据源")
+	if f.editing != "" {
+		title = tr("编辑数据源")
+	}
+	sectionTitle(c, title)
 	card(c).Padding(18).Gap(14).Children(func() {
 		field(c, tr("名称"), "", func() {
 			textInput(c, &f.name, tr("例如 金价实时")).Width(w)
@@ -342,16 +528,38 @@ func (a *app) feedAddForm(c *ui.Context, compact bool) {
 		field(c, tr("数字的名字"), tr("可选，逗号分隔，如 金价,成交量"), func() {
 			textInput(c, &f.names, tr("金价,成交量")).Width(w)
 		})
-		field(c, "id", tr("可选，留空自动生成；脚本用它在 meta.feeds 里引用"), func() {
-			textInput(c, &f.id, "gold-live").Width(w)
-		})
-		ui.Row(c).Children(func() {
-			if primaryBtn(c, tr("添加并获取一次")).Clicked() {
+		if f.editing != "" {
+			field(c, "id", tr("id 创建后不能改，脚本用它在 meta.feeds 里引用"), func() {
+				ui.Text(c, f.editing).Font("monospace").FontSize(fsSmall)
+			})
+		} else {
+			field(c, "id", tr("可选，留空自动生成；脚本用它在 meta.feeds 里引用"), func() {
+				textInput(c, &f.id, "gold-live").Width(w)
+			})
+		}
+		ui.Row(c).Gap(8).Wrap().Children(func() {
+			okLabel := tr("添加并获取一次")
+			if f.editing != "" {
+				okLabel = tr("保存")
+			}
+			if primaryBtn(c, okLabel).Clicked() {
 				a.addFeed()
 			}
+			testLabel := tr("测试请求")
+			if f.testing {
+				testLabel = tr("测试中…")
+			}
+			if btn(c, testLabel).Clicked() {
+				a.testFeed()
+			}
+			if btn(c, tr("取消")).Clicked() {
+				note := f.note
+				a.closeFeedForm()
+				a.feedForm.note = note
+			}
 		})
+		hint(c, tr("「测试请求」只发一次请求并显示取到的数字，不保存。"))
 	})
-	_ = p
 }
 
 func everyText(sec int) string {

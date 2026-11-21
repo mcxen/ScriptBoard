@@ -363,7 +363,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 			return "", err
 		}
 		out, _ := json.MarshalIndent(meta, "", "  ")
-		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + iconReport(meta, dataDir) + chartReport(str("source")) + menubarReport(meta, str("source")), nil
+		return "脚本可以运行\n" + string(out) + "\n" + contractReport(meta) + sourceReport(meta) + iconReport(meta, dataDir) + chartReport(str("source")) + menubarReport(meta, str("source")), nil
 	case "icon_catalog":
 		return catalogText(str("category")), nil
 	case "icon_add":
@@ -469,6 +469,34 @@ func menubarReport(meta engine.Meta, source string) string {
 	var b strings.Builder
 	for _, p := range engine.MenuBarProblems(meta, res) {
 		b.WriteString("警告：" + p + "\n")
+	}
+	return b.String()
+}
+
+// sourceReport checks the script's sources and their fallbacks for addresses
+// the host cannot fetch.
+func sourceReport(meta engine.Meta) string {
+	var b strings.Builder
+	checkURL := func(label, u string) {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			fmt.Fprintf(&b, "警告：数据源 %s 的地址为空。\n", label)
+			return
+		}
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			fmt.Fprintf(&b, "警告：数据源 %s 的地址 %q 要以 http:// 或 https:// 开头。\n", label, u)
+		}
+	}
+	names := make([]string, 0, len(meta.Sources))
+	for k := range meta.Sources {
+		names = append(names, k)
+	}
+	for _, name := range names {
+		src := meta.Sources[name]
+		checkURL(name, src.URL)
+		for i, fb := range src.Fallbacks {
+			checkURL(fmt.Sprintf("%s 的备用请求 %d", name, i+1), fb.URL)
+		}
 	}
 	return b.String()
 }

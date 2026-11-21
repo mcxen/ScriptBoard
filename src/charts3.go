@@ -138,7 +138,7 @@ func panelsView(c *ui.Context, ch *engine.Chart, style string, h float32, sel *i
 			share := math.Max(pn.Weight, 1) / total
 			ph := float32(float64(h) * share)
 			ui.Text(c, strings.ToUpper(pn.Title)).FontSize(fsTiny).TextColor(p.faint).NoWrap()
-			sub := &engine.Chart{Type: "line", Series: pn.Series}
+			sub := &engine.Chart{Type: "line", Series: pn.Series, Labels: ch.Labels, XLabels: ch.XLabels}
 			st := pn.Style
 			if st == "" {
 				st = style

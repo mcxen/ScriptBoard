@@ -81,3 +81,62 @@ func TestSettingsFallBackToThePage(t *testing.T) {
 		t.Errorf("the path is %q, want /community", a.router.Path())
 	}
 }
+
+// On desktop, clicking Settings in the expanded sidebar, the folded rail, the
+// Mac OS 9 sidebar, or pressing Cmd+, opens the separate settings window
+// instead of navigating the main window away from its current page.
+func TestDesktopSidebarSettingsOpensWindow(t *testing.T) {
+	resetSkin(t)
+	a := newTestApp(t)
+	opened := 0
+	a.openSettingsHook = func() { opened++ }
+
+	tt := ui.NewTester(a.view, 1000, 700)
+	settle(tt)
+
+	// Default expanded sidebar.
+	click(t, tt, "设置")
+	if opened != 1 || a.router.Path() != "/" {
+		t.Fatalf("expanded sidebar: opened=%d path=%q, want opened=1 path=/", opened, a.router.Path())
+	}
+
+	// Cmd+, / Ctrl+, shortcut.
+	tt.Key(ui.Cmd, ui.KeyComma)
+	settle(tt)
+	if opened != 2 || a.router.Path() != "/" {
+		t.Fatalf("shortcut: opened=%d path=%q, want opened=2 path=/", opened, a.router.Path())
+	}
+
+	// Folded sidebar rail.
+	click(t, tt, "收起侧栏")
+	click(t, tt, "设置")
+	if opened != 3 || a.router.Path() != "/" {
+		t.Fatalf("folded rail: opened=%d path=%q, want opened=3 path=/", opened, a.router.Path())
+	}
+	click(t, tt, "展开侧栏")
+
+	// Mac OS 9 sidebar.
+	setSkin(skinMac9)
+	settle(tt)
+	click(t, tt, "设置")
+	if opened != 4 || a.router.Path() != "/" {
+		t.Fatalf("mac9 sidebar: opened=%d path=%q, want opened=4 path=/", opened, a.router.Path())
+	}
+}
+
+// The separate settings window applies the chosen theme mode and skin.
+func TestSettingsWindowAppliesThemeMode(t *testing.T) {
+	t.Cleanup(func() { setThemeMode(themeSystem); setSkin(skinDefault) })
+	a := newTestApp(t)
+	setThemeMode(themeDark)
+	var dark bool
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.settingsView(c)
+		dark = pal(c).dark
+	}, 640, 780)
+	settle(tt)
+	if !dark {
+		t.Errorf("settings window did not apply forced dark theme mode")
+	}
+	savePNG(t, tt, "24-settings-window-dark")
+}

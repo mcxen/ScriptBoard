@@ -1,0 +1,921 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/chart"
+
+	"scriptboard/src/internal/engine"
+)
+
+// Six rich non-plot component types:
+//   - donut:     multi-slice share breakdown with center total and legend
+//   - checklist: task / habit list with completion circles and badges
+//   - kv:        key-value status panel with status dots and pills
+//   - countdown: target date countdown / anniversary with optional progress bar
+//   - clock:     analog dial (with optional neon glow), digital or world clock
+//   - contrib:   7-row GitHub-style activity / habit contribution grid
+//
+// None of these (nor progressBar / progress / progressRing) show plot chart
+// style pickers, 大图 toggles or hover crosshair readouts.
+
+func isDonut(ch *engine.Chart) bool     { return ch != nil && ch.Type == "donut" }
+func isChecklist(ch *engine.Chart) bool { return ch != nil && ch.Type == "checklist" }
+func isKV(ch *engine.Chart) bool        { return ch != nil && ch.Type == "kv" }
+func isCountdown(ch *engine.Chart) bool { return ch != nil && ch.Type == "countdown" }
+func isClock(ch *engine.Chart) bool     { return ch != nil && ch.Type == "clock" }
+func isContrib(ch *engine.Chart) bool   { return ch != nil && ch.Type == "contrib" }
+
+// isWidget reports whether ch is one of the non-plot widget components drawn by
+// this file.
+func isWidget(ch *engine.Chart) bool {
+	return isDonut(ch) || isChecklist(ch) || isKV(ch) || isCountdown(ch) || isClock(ch) || isContrib(ch)
+}
+
+// isPlotChart reports whether ch is a coordinate plot (line, dot, candle,
+// combo, panels) that supports chart styles (折线/面积/柱状…), 大图 and
+// hover crosshairs. progressBar and all widget components return false.
+func isPlotChart(ch *engine.Chart) bool {
+	if ch == nil {
+		return false
+	}
+	switch ch.Type {
+	case "", "line", "dot", "candle", "combo", "panels":
+		return true
+	}
+	return false
+}
+
+// hasChartDetail reports whether Detail(...) should be shown under ch.
+// progressBar, progress, progressRing and non-interactive widgets have none.
+func hasChartDetail(ch *engine.Chart) bool {
+	return isPlotChart(ch) || isCalendar(ch)
+}
+
+// readableTextColor keeps neon colors vivid in dark mode while deepening
+// ultra-bright hues (like #00F5D4) on light backgrounds so text and chips stay
+// crisp and high-contrast.
+func readableTextColor(col ui.Color, dark bool) ui.Color {
+	if dark {
+		return col
+	}
+	lum := 0.299*float64(col.R) + 0.587*float64(col.G) + 0.114*float64(col.B)
+	if lum > 0.62 {
+		return col.Mix(ui.Hex("#0F172A"), 0.36)
+	}
+	return col
+}
+
+// widgetView draws any of the six widget components in this file.
+func widgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	switch ch.Type {
+	case "donut":
+		return donutWidgetView(c, ch, h, full)
+	case "checklist":
+		return checklistView(c, ch.Checklist, limit)
+	case "kv":
+		return kvView(c, ch.KV, limit, full)
+	case "countdown":
+		return countdownView(c, ch.Countdown, now, limit, full)
+	case "clock":
+		return clockView(c, ch.Clock, now, h, full)
+	case "contrib":
+		return contribView(c, ch.Contrib, sel, full)
+	}
+	return ui.Text(c, "")
+}
+
+// ---------------------------------------------------------------------------
+// 1. donut: multi-slice share breakdown
+// ---------------------------------------------------------------------------
+
+var donutPalette = []ui.Color{
+	ui.Hex("#3B82F6"), ui.Hex("#10B981"), ui.Hex("#F59E0B"),
+	ui.Hex("#F43F5E"), ui.Hex("#8B5CF6"), ui.Hex("#06B6D4"), ui.Hex("#EC4899"),
+}
+
+func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, full bool) ui.Element {
+	p := pal(c)
+	var items []engine.Slice
+	total := 0.0
+	for _, sl := range ch.Slices {
+		if sl.Value > 0 {
+			items = append(items, sl)
+			total += sl.Value
+		}
+	}
+	if len(items) == 0 {
+		return ui.Text(c, tr("暂无分布数据")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	var st engine.DonutStyle
+	if ch.Donut != nil {
+		st = *ch.Donut
+	}
+	thick := st.Thickness
+	if thick <= 0 {
+		thick = 0.26
+	}
+	thick = clampF(thick, 0.12, 0.45)
+
+	d := clampF(h*0.86, 92, 210)
+	if !full {
+		d = clampF(h*0.95, 92, 148)
+	}
+	center := st.Center
+	if center == "" {
+		center = formatAmount(total)
+	}
+	centerFS := clampF(d*0.17, 11, 22)
+	if n := len([]rune(center)); n >= 6 {
+		centerFS = clampF(d*0.13, 10, 18)
+	} else if n >= 5 {
+		centerFS = clampF(d*0.145, 10.5, 20)
+	}
+	vals := make([]float64, len(items))
+	cols := make([]ui.Color, len(items))
+	for i, it := range items {
+		vals[i] = it.Value
+		cols[i] = parseColor(it.Color, donutPalette[i%len(donutPalette)])
+	}
+	maxLegend := len(items)
+	if !full && maxLegend > 4 {
+		maxLegend = 4
+	}
+	return ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
+		ui.Column(c).Size(d, d).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
+			Draw(func(pt *ui.Painter, r ui.Rect) {
+				cx, cy := r.X+r.W/2, r.Y+r.H/2
+				outer := min(r.W, r.H)/2 - 3
+				inner := outer * (1 - thick)
+				slices := chart.Pie(vals, 0.016)
+				for i, sl := range slices {
+					if st.Neon {
+						pt.FillPath(chart.Sector(cx, cy, inner-2, outer+2.5, sl), cols[i].Alpha(0.24))
+					}
+					pt.FillPath(chart.Sector(cx, cy, inner, outer, sl), cols[i])
+				}
+			}).Children(func() {
+			ui.Text(c, center).FontSize(centerFS).FontWeight(700).NoWrap()
+			if st.Sub != "" {
+				ui.Text(c, st.Sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			}
+		})
+		ui.Column(c).Gap(6).Grow(1).MinWidth(110).Children(func() {
+			for i := 0; i < maxLegend; i++ {
+				it := items[i]
+				pct := it.Value / total * 100
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Box(c).Size(8, 8).Radius(4).Background(cols[i]).Shrink(0)
+					ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+					valStr := trimNum(it.Value) + it.Unit
+					ui.Text(c, fmt.Sprintf("%s · %.0f%%", valStr, math.Round(pct))).FontSize(fsSmall).FontWeight(600).NoWrap()
+				})
+			}
+			if len(items) > maxLegend {
+				ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), len(items)-maxLegend)).FontSize(fsTiny).TextColor(p.muted)
+			}
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// 2. checklist: task / habit check list
+// ---------------------------------------------------------------------------
+
+func checklistView(c *ui.Context, items []engine.CheckItem, limit int) ui.Element {
+	p := pal(c)
+	if len(items) == 0 {
+		return ui.Text(c, tr("暂无待办项")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	done := 0
+	for _, it := range items {
+		if it.Done {
+			done++
+		}
+	}
+	shown, more := items, 0
+	if limit > 0 && len(items) > limit {
+		shown, more = items[:limit], len(items)-limit
+	}
+	return ui.Column(c).Gap(8).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			pct := float64(done) / float64(len(items)) * 100
+			chip(c, fmt.Sprintf(tr("已完成 %d / %d · %.0f%%"), done, len(items), math.Round(pct)), p.accent, p.accentSoft)
+		})
+		for _, it := range shown {
+			col := parseColor(it.Color, p.down)
+			ui.Row(c).AlignItems(ui.Center).Gap(9).Children(func() {
+				if it.Done {
+					ui.Row(c).Size(18, 18).Radius(9).Background(col).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+						ui.Text(c, "✓").FontSize(11).Bold().TextColor(ui.Hex("#FFFFFF")).NoWrap()
+					})
+				} else {
+					ui.Box(c).Size(18, 18).Radius(9).BorderWidth(1.5).BorderColor(p.border).Shrink(0)
+				}
+				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+					t := ui.Text(c, it.Label).FontSize(fsSmall).NoWrap()
+					if it.Done {
+						t.TextColor(p.muted)
+					} else {
+						t.FontWeight(500)
+					}
+					if it.Note != "" {
+						ui.Text(c, it.Note).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+					}
+				})
+				if it.Badge != "" {
+					bc := parseColor(it.Color, p.muted)
+					chip(c, it.Badge, bc, bc.Alpha(0.13))
+				}
+			})
+		}
+		if more > 0 {
+			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// 3. kv: key-value status panel
+// ---------------------------------------------------------------------------
+
+func kvStatusColor(p palette, status, custom string) (ui.Color, bool) {
+	if hexColor.MatchString(custom) {
+		return ui.Hex(custom), true
+	}
+	switch status {
+	case "ok":
+		return p.down, true
+	case "warn":
+		return p.warn, true
+	case "err":
+		return p.up, true
+	case "info":
+		return p.accent, true
+	}
+	return ui.Color{}, false
+}
+
+func kvView(c *ui.Context, items []engine.KVItem, limit int, full bool) ui.Element {
+	p := pal(c)
+	if len(items) == 0 {
+		return ui.Text(c, tr("暂无指标")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	shown, more := items, 0
+	if limit > 0 && len(items) > limit {
+		shown, more = items[:limit], len(items)-limit
+	}
+	rowPad := float32(10)
+	if !full {
+		rowPad = 4.5
+	}
+	return ui.Column(c).Gap(0).Children(func() {
+		for i, it := range shown {
+			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 0)
+			if i > 0 {
+				row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
+			}
+			col, hasDot := kvStatusColor(p, it.Status, it.Color)
+			row.Children(func() {
+				if hasDot {
+					ui.Box(c).Size(8, 8).Radius(4).Background(col).Shrink(0)
+				}
+				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+					ui.Text(c, it.Label).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+					if it.Sub != "" && (full || len(shown) <= 2) {
+						ui.Text(c, it.Sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+					}
+				})
+				if it.Badge != "" {
+					bc := p.accent
+					if hasDot {
+						bc = col
+					}
+					chip(c, it.Badge, bc, bc.Alpha(0.13))
+				}
+				vt := ui.Text(c, it.Value).FontSize(fsBody).FontWeight(650).NoWrap()
+				if hasDot && (it.Status == "err" || it.Status == "warn") {
+					vt.TextColor(col)
+				}
+			})
+		}
+		if more > 0 {
+			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted).Padding(3, 0, 0, 0)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// 4. countdown: target date countdown / anniversary with optional progress bar
+// ---------------------------------------------------------------------------
+
+func parseTargetTime(s string, loc *time.Location) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n > 1e11 {
+			return time.UnixMilli(n).In(loc), true
+		}
+		return time.Unix(n, 0).In(loc), true
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
+		if layout == time.RFC3339 {
+			if t, err := time.Parse(layout, s); err == nil {
+				return t.In(loc), true
+			}
+			continue
+		}
+		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func countdownParts(now, target time.Time) (days int, hours int, mins int, past bool) {
+	diff := target.Sub(now)
+	if diff < 0 {
+		past = true
+		diff = -diff
+	}
+	totalMins := int(diff.Minutes())
+	days = totalMins / (60 * 24)
+	rem := totalMins % (60 * 24)
+	hours = rem / 60
+	mins = rem % 60
+	return days, hours, mins, past
+}
+
+func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, limit int, full bool) ui.Element {
+	p := pal(c)
+	if len(items) == 0 {
+		return ui.Text(c, tr("暂无倒计时")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	shown, more := items, 0
+	if limit > 0 && len(items) > limit {
+		shown, more = items[:limit], len(items)-limit
+	}
+	// Single-item hero layout: large numeric boxes + optional neon progress bar.
+	if len(shown) == 1 && more == 0 {
+		it := shown[0]
+		target, ok := parseTargetTime(it.Target, now.Location())
+		if !ok {
+			return ui.Text(c, tr("目标日期格式不对")).FontSize(fsSmall).TextColor(p.up)
+		}
+		days, hrs, mins, past := countdownParts(now, target)
+		col := parseColor(it.Color, p.accent)
+		txtCol := readableTextColor(col, p.dark)
+		tag := tr("距离目标")
+		if past {
+			tag = tr("已过去")
+		} else if days == 0 && hrs == 0 && mins == 0 {
+			tag = tr("就是今天")
+		}
+		boxMinW := float32(52)
+		boxPadY, boxPadX := float32(8), float32(12)
+		boxFS := fsCount
+		titleFS := fsBody
+		if full {
+			boxMinW = 88
+			boxPadY, boxPadX = 14, 22
+			boxFS = 34
+			titleFS = fsHeading
+		}
+		return ui.Column(c).Gap(12).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Text(c, it.Label).FontSize(titleFS).FontWeight(650).Grow(1).MinWidth(0).NoWrap()
+				chip(c, tag, txtCol, col.Alpha(0.14))
+			})
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				unitBox := func(val int, unit string) {
+					ui.Column(c).MinWidth(boxMinW).Padding(boxPadY, boxPadX).Radius(radControl + 2).Background(p.chip).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, fmt.Sprintf("%d", val)).FontSize(boxFS).FontWeight(700).TextColor(txtCol).NoWrap()
+						ui.Text(c, unit).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+					})
+				}
+				unitBox(days, tr("天"))
+				unitBox(hrs, tr("时"))
+				unitBox(mins, tr("分"))
+			})
+			if start, ok := parseTargetTime(it.Start, now.Location()); ok && target.After(start) {
+				total := target.Sub(start).Seconds()
+				elapsed := clampF(float32(now.Sub(start).Seconds()/total*100), 0, 100)
+				st := it.Style
+				if st == "" {
+					st = "neon"
+				}
+				pb := &engine.ProgressBar{
+					BarStyle: engine.BarStyle{Style: st, Height: 8},
+					Items:    []engine.Progress{{Name: it.Start + " → " + it.Target, Value: float64(elapsed), Max: 0, Color: it.Color, To: it.To}},
+				}
+				progressBarView(c, pb, 1)
+			} else if it.Note != "" || full {
+				sub := target.Format("2006-01-02")
+				if it.Note != "" {
+					sub += " · " + it.Note
+				}
+				ui.Text(c, sub).FontSize(fsTiny).TextColor(p.muted)
+			}
+		})
+	}
+
+	// Multi-item list layout.
+	return ui.Column(c).Gap(8).Children(func() {
+		for _, it := range shown {
+			target, ok := parseTargetTime(it.Target, now.Location())
+			col := parseColor(it.Color, p.accent)
+			badgeText := "—"
+			if ok {
+				days, hrs, _, past := countdownParts(now, target)
+				switch {
+				case !past && days == 0:
+					badgeText = fmt.Sprintf(tr("%d 小时"), max(hrs, 1))
+				case !past:
+					badgeText = fmt.Sprintf(tr("剩 %d 天"), days)
+				case days == 0:
+					badgeText = tr("今天")
+				default:
+					badgeText = fmt.Sprintf(tr("已过 %d 天"), days)
+				}
+			}
+			ui.Column(c).Gap(4).Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Box(c).Size(6, 18).Radius(3).Background(col).Shrink(0)
+					ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+						ui.Text(c, it.Label).FontSize(fsSmall).FontWeight(550).NoWrap()
+						sub := it.Target
+						if it.Note != "" {
+							sub += " · " + it.Note
+						}
+						ui.Text(c, sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+					})
+					chip(c, badgeText, readableTextColor(col, p.dark), col.Alpha(0.14))
+				})
+				if start, ok2 := parseTargetTime(it.Start, now.Location()); ok && ok2 && target.After(start) {
+					elapsed := clampF(float32(now.Sub(start).Seconds()/target.Sub(start).Seconds()*100), 0, 100)
+					st := it.Style
+					if st == "" {
+						st = "gradient"
+					}
+					pb := &engine.ProgressBar{
+						BarStyle: engine.BarStyle{Style: st, Height: 6, HideLabel: true},
+						Items:    []engine.Progress{{Value: float64(elapsed), Max: 100, Color: it.Color, To: it.To}},
+					}
+					progressBarView(c, pb, 1)
+				}
+			})
+		}
+		if more > 0 {
+			ui.Text(c, fmt.Sprintf(tr("另外 %d 项"), more)).FontSize(fsTiny).TextColor(p.muted)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// 5. clock: analog dial / digital / world clock
+// ---------------------------------------------------------------------------
+
+func zoneDuration(offset float64) time.Duration {
+	if math.Abs(offset) > 14 {
+		return time.Duration(offset) * time.Minute
+	}
+	return time.Duration(math.Round(offset*60)) * time.Minute
+}
+
+func zoneOffsetLabel(offset float64) string {
+	mins := int(math.Round(zoneDuration(offset).Minutes()))
+	sign := "+"
+	if mins < 0 {
+		sign = "-"
+		mins = -mins
+	}
+	if mins%60 == 0 {
+		return fmt.Sprintf("UTC%s%d", sign, mins/60)
+	}
+	return fmt.Sprintf("UTC%s%d:%02d", sign, mins/60, mins%60)
+}
+
+func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, full bool) ui.Element {
+	p := pal(c)
+	var st engine.ClockSpec
+	if spec != nil {
+		st = *spec
+	}
+	col := parseColor(st.Color, p.accent)
+	if st.Neon && !hexColor.MatchString(st.Color) {
+		col = ui.Hex("#00F5D4")
+	}
+	txtCol := readableTextColor(col, p.dark)
+	timeFmt := "15:04"
+	if st.Seconds {
+		timeFmt = "15:04:05"
+	}
+
+	if st.Style == "world" && len(st.Zones) > 0 {
+		localDay := now.Format("2006-01-02")
+		shown := st.Zones
+		more := 0
+		if !full && len(shown) > 4 {
+			shown, more = shown[:4], len(shown)-4
+		}
+		rowPad := float32(10)
+		if !full {
+			rowPad = 4
+		}
+		return ui.Column(c).Gap(0).Children(func() {
+			for i, z := range shown {
+				zt := now.UTC().Add(zoneDuration(z.Offset))
+				dayDiff := tr("今天")
+				if zDay := zt.Format("2006-01-02"); zDay > localDay {
+					dayDiff = tr("明天")
+				} else if zDay < localDay {
+					dayDiff = tr("昨天")
+				}
+				row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 0)
+				if i > 0 {
+					row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
+				}
+				row.Children(func() {
+					ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+						ui.Text(c, z.Label).FontSize(fsSmall).FontWeight(600).NoWrap()
+						ui.Text(c, dayDiff+" · "+zoneOffsetLabel(z.Offset)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+					})
+					t := ui.Text(c, zt.Format(timeFmt)).Font("monospace").FontSize(fsCount).FontWeight(700).NoWrap()
+					if st.Neon {
+						t.TextColor(txtCol)
+					}
+				})
+			}
+			if more > 0 {
+				ui.Text(c, fmt.Sprintf(tr("另外 %d 个时区"), more)).FontSize(fsTiny).TextColor(p.muted).Padding(2, 0, 0, 0)
+			}
+		})
+	}
+
+	if st.Style == "digital" {
+		padY := float32(0)
+		if full {
+			padY = 28
+		}
+		return ui.Column(c).Grow(1).Padding(padY, 0).Gap(6).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			t := ui.Text(c, now.Format(timeFmt)).Font("monospace").FontSize(clampF(h*0.32, 28, 56)).FontWeight(700).NoWrap()
+			if st.Neon {
+				t.TextColor(txtCol)
+			}
+			ui.Text(c, fmt.Sprintf("%s · %s", now.Format("2006-01-02"), tr(weekdays[now.Weekday()]))).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+		})
+	}
+
+	// Analog dial + digital readout beside it.
+	d := clampF(h*0.86, 80, 200)
+	if !full {
+		d = clampF(h*0.86, 76, 136)
+	}
+	return ui.Row(c).AlignItems(ui.Center).Gap(22).Wrap().Children(func() {
+		ui.Box(c).Size(d, d).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
+			paintAnalogClock(pt, r, now, p, col, st.Seconds, st.Neon)
+		})
+		ui.Column(c).Gap(6).MinWidth(0).Children(func() {
+			t := ui.Text(c, now.Format(timeFmt)).Font("monospace").FontSize(clampF(d*0.24, 20, 36)).FontWeight(700).NoWrap()
+			if st.Neon {
+				t.TextColor(txtCol)
+			}
+			dateStr := fmt.Sprintf("%d月%d日 %s", int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]))
+			if curLang() == langEN {
+				dateStr = fmt.Sprintf("%s · %s", now.Format("Jan 2"), tr(weekdays[now.Weekday()]))
+			}
+			ui.Text(c, dateStr).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			if len(st.Zones) > 0 {
+				limitZones := 1
+				if full {
+					limitZones = min(len(st.Zones), 5)
+				}
+				ui.Row(c).Gap(10).Wrap().Padding(4, 0, 0, 0).Children(func() {
+					for i := 0; i < limitZones; i++ {
+						z := st.Zones[i]
+						zt := now.UTC().Add(zoneDuration(z.Offset))
+						chip(c, fmt.Sprintf("%s %s", z.Label, zt.Format("15:04")), p.muted, p.chip)
+					}
+				})
+			}
+		})
+	})
+}
+
+func paintAnalogClock(pt *ui.Painter, r ui.Rect, now time.Time, p palette, accent ui.Color, seconds, neon bool) {
+	cx, cy := r.X+r.W/2, r.Y+r.H/2
+	rad := min(r.W, r.H)/2 - 4
+	if rad <= 8 {
+		return
+	}
+	face := p.chip
+	if neon {
+		face = ui.Hex("#0F172A").Alpha(0.92)
+		pt.StrokePath((&ui.Path{}).Circle(cx, cy, rad+2), 5, accent.Alpha(0.18))
+		pt.StrokePath((&ui.Path{}).Circle(cx, cy, rad), 2, accent)
+	} else {
+		pt.StrokePath((&ui.Path{}).Circle(cx, cy, rad), 1.5, p.border)
+	}
+	pt.FillPath((&ui.Path{}).Circle(cx, cy, rad-1), face)
+
+	tickCol := p.muted
+	handCol := p.text
+	if neon {
+		tickCol = accent.Alpha(0.55)
+		handCol = ui.Hex("#FFFFFF")
+	}
+	strokeSeg := func(x0, y0, x1, y1, w float32, col ui.Color) {
+		seg := &ui.Path{}
+		seg.MoveTo(x0, y0)
+		seg.LineTo(x1, y1)
+		seg.Cap(ui.RoundCap)
+		pt.StrokePath(seg, w, col)
+	}
+	for i := 0; i < 12; i++ {
+		ang := float64(i)*math.Pi/6 - math.Pi/2
+		inner := rad * 0.84
+		w := float32(1.4)
+		if i%3 == 0 {
+			inner = rad * 0.76
+			w = 2.2
+		}
+		cos, sin := float32(math.Cos(ang)), float32(math.Sin(ang))
+		strokeSeg(cx+cos*inner, cy+sin*inner, cx+cos*(rad-4), cy+sin*(rad-4), w, tickCol)
+	}
+	hr := float64(now.Hour()%12) + float64(now.Minute())/60
+	mn := float64(now.Minute()) + float64(now.Second())/60
+	sc := float64(now.Second())
+
+	drawHand := func(angle, length, tail, width float32, col ui.Color) {
+		cos, sin := float32(math.Cos(float64(angle))), float32(math.Sin(float64(angle)))
+		x0, y0 := cx-cos*tail, cy-sin*tail
+		x1, y1 := cx+cos*length, cy+sin*length
+		if neon {
+			strokeSeg(x0, y0, x1, y1, width+3.5, col.Alpha(0.24))
+		}
+		strokeSeg(x0, y0, x1, y1, width, col)
+	}
+	drawHand(float32(hr*math.Pi/6-math.Pi/2), rad*0.50, rad*0.10, 3.6, handCol)
+	drawHand(float32(mn*math.Pi/30-math.Pi/2), rad*0.72, rad*0.12, 2.5, handCol)
+	if seconds {
+		drawHand(float32(sc*math.Pi/30-math.Pi/2), rad*0.80, rad*0.16, 1.5, accent)
+	}
+	pt.Fill(ui.Rect{X: cx - 4, Y: cy - 4, W: 8, H: 8}, accent, 4)
+	pt.Fill(ui.Rect{X: cx - 1.8, Y: cy - 1.8, W: 3.6, H: 3.6}, ui.Hex("#FFFFFF"), 1.8)
+}
+
+// ---------------------------------------------------------------------------
+// 6. contrib: 7-row GitHub-style activity / habit contribution grid
+// ---------------------------------------------------------------------------
+
+func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) ui.Element {
+	p := pal(c)
+	if spec == nil || len(spec.Cells) == 0 {
+		return ui.Text(c, tr("暂无打卡记录")).FontSize(fsSmall).TextColor(p.muted)
+	}
+	base := parseColor(spec.Color, ui.Hex("#10B981"))
+	cells := spec.Cells
+	maxWeeks := spec.Weeks
+	if maxWeeks <= 0 {
+		maxWeeks = (len(cells) + 6) / 7
+	}
+	if !full && maxWeeks > 16 {
+		maxWeeks = 16
+	}
+	if maxWeeks > 52 {
+		maxWeeks = 52
+	}
+	need := maxWeeks * 7
+	if len(cells) > need {
+		cells = cells[len(cells)-need:]
+	}
+	hi := spec.Max
+	if hi <= 0 {
+		for _, cell := range cells {
+			if cell.Value > hi {
+				hi = cell.Value
+			}
+		}
+	}
+	if hi <= 0 {
+		hi = 1
+	}
+	levelColor := func(v float64) ui.Color {
+		if v <= 0 {
+			return p.chip
+		}
+		f := v / hi
+		switch {
+		case f <= 0.25:
+			return base.Alpha(0.28)
+		case f <= 0.50:
+			return base.Alpha(0.52)
+		case f <= 0.75:
+			return base.Alpha(0.76)
+		default:
+			return base
+		}
+	}
+	chosen := -1
+	if sel != nil {
+		chosen = *sel
+	}
+	cols := (len(cells) + 6) / 7
+	boxSize := float32(12)
+	gap := float32(3)
+	rad := float32(2.5)
+	if full {
+		boxSize = 16
+		gap = 4
+		rad = 3.5
+		if cols > 28 {
+			boxSize = 13
+			gap = 3
+		}
+	} else if cols > 12 {
+		boxSize = 10
+		gap = 2.5
+	}
+	grid := func() {
+		ui.Row(c).Gap(gap).AlignItems(ui.Start).Children(func() {
+			for col := 0; col < cols; col++ {
+				col := col
+				ui.Column(c).Gap(gap).Children(func() {
+					for row := 0; row < 7; row++ {
+						idx := col*7 + row
+						if idx >= len(cells) {
+							ui.Box(c).Size(boxSize, boxSize)
+							continue
+						}
+						cell := cells[idx]
+						colBg := levelColor(cell.Value)
+						if full && sel != nil {
+							btnEl := ui.ButtonBase(c.Key(fmt.Sprintf("contrib-%d", idx))).Size(boxSize, boxSize).Radius(rad).Background(colBg).Cursor(ui.CursorPointer)
+							if idx == chosen {
+								btnEl = btnEl.BorderWidth(1.5).BorderColor(p.text)
+							}
+							if btnEl.Clicked() {
+								if *sel == idx {
+									*sel = -1
+								} else {
+									*sel = idx
+								}
+							}
+						} else {
+							el := ui.Box(c).Size(boxSize, boxSize).Radius(rad).Background(colBg)
+							if spec.Neon && cell.Value >= hi*0.75 {
+								el = el.BorderWidth(1).BorderColor(base.Mix(ui.Hex("#FFFFFF"), 0.35))
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+	return ui.Column(c).Gap(10).Children(func() {
+		if full && cols > 20 {
+			ui.ScrollHorizontal(c).Children(grid)
+		} else {
+			grid()
+		}
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			if chosen >= 0 && chosen < len(cells) {
+				cell := cells[chosen]
+				lbl := cell.Date
+				if cell.Label != "" {
+					lbl = cell.Label
+				}
+				ui.Text(c, fmt.Sprintf("%s · %s%s", lbl, trimNum(cell.Value), spec.Unit)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			} else {
+				active := 0
+				for _, cell := range cells {
+					if cell.Value > 0 {
+						active++
+					}
+				}
+				msg := fmt.Sprintf(tr("活跃 %d / %d 天"), active, len(cells))
+				if full {
+					msg = fmt.Sprintf(tr("活跃 %d / %d 天 · 点选格子查看当天"), active, len(cells))
+				}
+				ui.Text(c, msg).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			}
+			ui.Spacer(c)
+			ui.Text(c, tr("少")).FontSize(fsTiny).TextColor(p.faint)
+			for _, f := range []float64{0, 0.25, 0.5, 0.75, 1.0} {
+				ui.Box(c).Size(9, 9).Radius(2).Background(levelColor(f * hi))
+			}
+			ui.Text(c, tr("多")).FontSize(fsTiny).TextColor(p.faint)
+		})
+	})
+}
+
+// widgetTiles shows summary tiles in fullView for widgets that benefit from
+// them (donut, checklist), and returns true for all non-plot widgets so
+// fullView never falls back to plot chart statTiles.
+func (a *app) widgetTiles(c *ui.Context, ch *engine.Chart) bool {
+	if ch == nil {
+		return false
+	}
+	if isProgress(ch) || isKV(ch) || isCountdown(ch) || isClock(ch) {
+		return true
+	}
+	p := pal(c)
+	cols := 3
+	if a.compact {
+		cols = 2
+	}
+	switch ch.Type {
+	case "donut":
+		total, topV, topName, unit := 0.0, 0.0, "", ""
+		countPos := 0
+		for _, sl := range ch.Slices {
+			if sl.Value <= 0 {
+				continue
+			}
+			countPos++
+			total += sl.Value
+			if sl.Value > topV {
+				topV, topName, unit = sl.Value, sl.Name, sl.Unit
+			}
+		}
+		if countPos == 0 {
+			return true
+		}
+		a.tileRow(c, cols, []tileData{
+			{tr("合计"), formatAmount(total) + unit, fmt.Sprintf(tr("%d 项"), countPos), p.text},
+			{tr("最大项"), formatAmount(topV) + unit, topName, p.accent},
+			{tr("最高占比"), fmt.Sprintf("%.1f%%", topV/total*100), topName, p.text},
+		})
+		return true
+	case "checklist":
+		if len(ch.Checklist) == 0 {
+			return true
+		}
+		done := 0
+		for _, it := range ch.Checklist {
+			if it.Done {
+				done++
+			}
+		}
+		left := len(ch.Checklist) - done
+		pct := float64(done) / float64(len(ch.Checklist)) * 100
+		a.tileRow(c, cols, []tileData{
+			{tr("已完成"), fmt.Sprintf("%d", done), fmt.Sprintf(tr("共 %d 项"), len(ch.Checklist)), p.down},
+			{tr("待完成"), fmt.Sprintf("%d", left), "", p.text},
+			{tr("完成率"), fmt.Sprintf("%.0f%%", math.Round(pct)), "", p.accent},
+		})
+		return true
+	case "contrib":
+		if ch.Contrib == nil || len(ch.Contrib.Cells) == 0 {
+			return true
+		}
+		cells := ch.Contrib.Cells
+		active, curStreak, bestStreak, run := 0, 0, 0, 0
+		peakV, peakDate := 0.0, ""
+		for _, cell := range cells {
+			if cell.Value > 0 {
+				active++
+				run++
+				if run > bestStreak {
+					bestStreak = run
+				}
+				if cell.Value > peakV {
+					peakV = cell.Value
+					peakDate = cell.Date
+					if cell.Label != "" {
+						peakDate = cell.Label
+					}
+				}
+			} else {
+				run = 0
+			}
+		}
+		for i := len(cells) - 1; i >= 0; i-- {
+			if cells[i].Value > 0 {
+				curStreak++
+			} else if i < len(cells)-1 {
+				break
+			}
+		}
+		a.tileRow(c, cols, []tileData{
+			{tr("活跃天数"), fmt.Sprintf("%d / %d", active, len(cells)), fmt.Sprintf("%.0f%%", float64(active)/float64(len(cells))*100), p.accent},
+			{tr("当前连续"), fmt.Sprintf(tr("%d 天"), curStreak), fmt.Sprintf(tr("最长 %d 天"), bestStreak), p.down},
+			{tr("最高单日"), trimNum(peakV) + ch.Contrib.Unit, peakDate, p.text},
+		})
+		return true
+	}
+	return false
+}

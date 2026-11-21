@@ -71,7 +71,7 @@ func (a *app) liveCheck() {
 		}
 		_, vals := a.viewOf(sc.ID, meta.Dims)
 		key := a.runKeyOf(sc.ID, sc, meta, vals)
-		if st, ok := a.runs[key]; ok && st.loading {
+		if st, ok := a.runs[key]; ok && (st.loading || st.updating) {
 			continue // the last run is still under way
 		}
 		if a.live.at == nil {

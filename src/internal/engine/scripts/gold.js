@@ -25,7 +25,14 @@ export function meta(a) {
         ],
       },
     ],
-    sources: { gold: "https://tmini.net/api/gold-price?type=json" },
+    sources: {
+      gold: {
+        url: "https://tmini.net/api/gold-price?type=json",
+        fallbacks: [
+          "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=30&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:118&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18",
+        ],
+      },
+    },
   };
 }
 
@@ -46,6 +53,35 @@ function rowsOf(list) {
     if (!name) continue;
     out.push({ name: name, v: v });
   }
+  return out;
+}
+
+const SGE_NAMES = {
+  AU9999: ["黄金9999", "Au99.99"],
+  AUTD: ["黄金T+D", "Au(T+D)"],
+  mAUTD: ["Mini黄金T+D", "mAu(T+D)"],
+  AU100: ["黄金100g", "Au100g"],
+  iAu999: ["国际版9999", "iAu99.99"],
+  SHAU: ["上海金", "SHAU"],
+  AU9995: ["黄金9995", "Au99.95"],
+  PGC30: ["熊猫金币30g", "Panda 30g"],
+};
+
+function sgeRowsOf(src) {
+  const list = src && src.data && src.data.diff;
+  const out = [];
+  if (!list || !list.length) return out;
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    if (!it) continue;
+    const code = String(it.f12 || "");
+    const names = SGE_NAMES[code];
+    if (!names) continue;
+    const v = num(it.f2) || num(it.f18);
+    if (v <= 100 || v >= 5000) continue;
+    out.push({ code: code, name: t(names[0], names[1]), v: v });
+  }
+  out.sort((a, b) => (a.code === "AU9999" ? -1 : b.code === "AU9999" ? 1 : b.v - a.v));
   return out;
 }
 
@@ -95,6 +131,14 @@ export function render(ctx) {
     kindName = t("回收", "Recycle");
   } else {
     rows = rowsOf(src.stores);
+  }
+  if (rows.length === 0) {
+    const sge = sgeRowsOf(src);
+    if (sge.length > 0) {
+      rows = sge;
+      prefer = t("黄金9999", "Au99.99");
+      kindName = t("上海黄金交易所", "Shanghai Gold Exchange");
+    }
   }
   if (rows.length === 0) {
     return {

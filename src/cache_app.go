@@ -65,16 +65,35 @@ func historyWanted(m engine.Meta) ([]string, int) {
 	return names, min(n, cache.MaxHistoryEntries)
 }
 
-// dataTimes says how old the data of a run is: when the oldest source was
-// fetched, and whether any of it stands in for a request that did not work.
+// dataTimes says how old the data of a run is: when it was fetched, and
+// whether the run had to fall back entirely to stale cached responses because
+// the network requests did not work (or the app is offline).
 func dataTimes(info map[string]engine.SourceInfo) (at int64, stale bool) {
+	var freshAt, staleAt int64
+	hasFresh, hasStale := false, false
 	for _, in := range info {
-		if in.At > 0 && (at == 0 || in.At < at) {
-			at = in.At
+		if in.At <= 0 {
+			continue
 		}
-		stale = stale || in.Stale
+		if in.Stale {
+			hasStale = true
+			if staleAt == 0 || in.At < staleAt {
+				staleAt = in.At
+			}
+		} else {
+			hasFresh = true
+			if freshAt == 0 || in.At < freshAt {
+				freshAt = in.At
+			}
+		}
 	}
-	return at, stale
+	if hasFresh {
+		return freshAt, false
+	}
+	if hasStale {
+		return staleAt, true
+	}
+	return 0, false
 }
 
 // resultKey names the saved result of a run: the card and its dimensions, the
@@ -97,7 +116,7 @@ func (a *app) savedResult(sc store.Script, run string, m engine.Meta) (engine.Re
 		return engine.Result{}, false
 	}
 	var res engine.Result
-	if json.Unmarshal(data, &res) != nil || res.Chart == nil && res.Big == "" {
+	if json.Unmarshal(data, &res) != nil || !hasResult(res) {
 		return engine.Result{}, false
 	}
 	if res.DataAt == 0 {
@@ -108,7 +127,7 @@ func (a *app) savedResult(sc store.Script, run string, m engine.Meta) (engine.Re
 
 // saveResult keeps a result that worked.
 func (a *app) saveResult(sc store.Script, run string, m engine.Meta, res engine.Result) {
-	if a.cache == nil || len(m.Sources) == 0 || strings.HasPrefix(run, draftKey) {
+	if a.cache == nil || len(m.Sources) == 0 || strings.HasPrefix(run, draftKey) || !hasResult(res) {
 		return
 	}
 	if data, err := json.Marshal(res); err == nil {

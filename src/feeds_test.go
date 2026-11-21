@@ -195,3 +195,61 @@ func TestSlugOf(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestTextRoundTrip(t *testing.T) {
+	reqs := []feed.Request{
+		{Method: "GET", URL: "https://example.com/p?a=1"},
+		{Method: "POST", URL: "https://example.com/p", Headers: map[string]string{"X-Key": "it's"}, Cookies: map[string]string{"a": "1", "b": "2"}, Body: `{"q":1}`},
+		{URL: "tcp://127.0.0.1:9000"},
+	}
+	for _, r := range reqs {
+		got, err := feed.ParseRequest(requestText(r))
+		if err != nil {
+			t.Fatalf("%q: %v", requestText(r), err)
+		}
+		if got.URL != r.URL || got.Body != r.Body || got.Cookies["b"] != r.Cookies["b"] || got.Headers["X-Key"] != r.Headers["X-Key"] {
+			t.Errorf("%q gave %+v, want %+v", requestText(r), got, r)
+		}
+	}
+}
+
+func TestEditAndTestFeed(t *testing.T) {
+	a := newTestApp(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"price":12.5}}`))
+	}))
+	defer srv.Close()
+
+	a.set.Offline = false
+	a.feedForm = feedForm{open: true, name: "编辑测试", curl: srv.URL, rule: "data.price", id: "edit-me", names: "价"}
+	a.testFeed()
+	if !strings.Contains(a.feedForm.note, "价 = 12.5") {
+		t.Fatalf("test note %q", a.feedForm.note)
+	}
+	if _, ok := a.store.Feed("edit-me"); ok {
+		t.Fatal("a test must not store the source")
+	}
+	a.addFeed()
+	src, ok := a.store.Feed("edit-me")
+	if !ok || a.feedForm.open {
+		t.Fatalf("stored %v, form open %v", ok, a.feedForm.open)
+	}
+	src.Timeout = 30
+	if err := a.store.SaveFeed(src); err != nil {
+		t.Fatal(err)
+	}
+
+	a.editFeed(src)
+	if a.feedForm.curl != srv.URL || a.feedForm.rule != "data.price" || a.feedForm.editing != "edit-me" {
+		t.Fatalf("form %+v", a.feedForm)
+	}
+	a.feedForm.name, a.feedForm.every = "改过的名字", 1
+	a.addFeed()
+	got, _ := a.store.Feed("edit-me")
+	if got.Name != "改过的名字" || got.Every != 300 || got.Timeout != 30 {
+		t.Errorf("edited source %+v", got)
+	}
+	if n := len(a.store.Feeds()); n != 1 {
+		t.Errorf("%d sources after an edit, want 1", n)
+	}
+}

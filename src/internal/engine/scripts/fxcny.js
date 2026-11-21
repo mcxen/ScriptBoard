@@ -23,7 +23,10 @@ export function meta(a) {
     needs: ["network"],
     icon: "globe",
     sources: {
-      fx: "https://api.frankfurter.dev/v1/latest?from=CNY&to=USD,EUR,JPY,GBP,HKD",
+      fx: {
+        url: "https://api.frankfurter.dev/v1/latest?from=CNY&to=USD,EUR,JPY,GBP,HKD",
+        fallbacks: ["https://api.frankfurter.app/latest?from=CNY&to=USD,EUR,JPY,GBP,HKD"],
+      },
     },
   };
 }

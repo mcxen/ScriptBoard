@@ -73,4 +73,14 @@ export function render(ctx) { return { title: "实时", big: "7", sub: "", lines
 	if a.runs[key] != first {
 		t.Error("the card ran again before its interval")
 	}
+
+	// While a run is updating (with its previous result kept on screen), a due
+	// tick must wait for it rather than dropping the in-flight run.
+	first.updating = true
+	a.live.at[sc.ID] = a.now().Add(-10 * time.Second)
+	a.watchLive(sc.ID, meta)
+	a.liveCheck()
+	if a.runs[key] != first {
+		t.Error("liveCheck dropped an updating run before it finished")
+	}
 }

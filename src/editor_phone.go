@@ -105,28 +105,38 @@ func (a *app) phoneEditor(c *ui.Context, preview func()) {
 		if a.status != "" {
 			ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
 		}
-		first := tr("源码")
 		if isTable {
-			first = tr("表格")
-		}
-		before := a.editTab
-		segmented(c, &a.editTab, first, tr("预览"))
-		if a.editTab != before {
-			a.invalidate(draftKey) // run what was just edited
+			if a.editTab > 1 {
+				a.editTab = 0
+			}
+			if choose(c, &a.editTab, tr("表格"), tr("预览")) {
+				a.invalidate(draftKey)
+			}
+		} else {
+			if choose(c, &a.editTab, tr("可视化"), tr("源码"), tr("预览")) {
+				a.invalidate(draftKey)
+			}
 		}
 		switch {
-		case a.editTab == 1:
+		case isTable && a.editTab == 1:
 			card(c).Padding(16).Gap(10).Children(preview)
 		case isTable:
 			card(c).Padding(14).Gap(gapItem).Children(func() { a.phoneTable(c) })
+		case a.editTab == 2:
+			card(c).Padding(16).Gap(10).Children(preview)
+		case a.editTab == 0:
+			card(c).Padding(14).Gap(gapItem).Children(func() {
+				a.specInfo(c, a.draft)
+				a.visualScriptEditor(c, true)
+				a.phoneScriptActions(c)
+			})
 		default:
 			card(c).Padding(14).Gap(gapItem).Children(func() { a.phoneScript(c) })
 		}
 	})
 }
 
-// phoneScript is the form of a script: its name, whether it is on the home
-// page, its source, and the things that can be done with it.
+// phoneScript is the source form of a script on a phone.
 func (a *app) phoneScript(c *ui.Context) {
 	field(c, tr("名称"), "", func() { textInput(c, &a.draft.Name, tr("脚本名称")) })
 	homeSwitch(c, &a.draft.Home)
@@ -135,6 +145,10 @@ func (a *app) phoneScript(c *ui.Context) {
 	field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
 		textArea(c, &a.draft.Source, "", rows).Font("monospace").FontSize(fsSmall)
 	})
+	a.phoneScriptActions(c)
+}
+
+func (a *app) phoneScriptActions(c *ui.Context) {
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 		if btn(c, tr("复制")).Clicked() {
 			a.duplicateDraft()

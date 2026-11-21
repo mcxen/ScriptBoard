@@ -236,6 +236,7 @@ func TestGuideSaysWhatTheHostAccepts(t *testing.T) {
 		"ctx.sourceInfo", "ctx.history", "Caching and offline belong to the host",
 		"allows it in the editor", // the permission rule
 		"System differences belong to the host",
+		"fallbacks",
 		"script_check", "plugin_save",
 	} {
 		if !strings.Contains(g, want) {
@@ -254,5 +255,30 @@ func TestGuideSaysWhatTheHostAccepts(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "ScriptBoard plugin guide") || strings.Contains(out.String(), `"isError":true`) {
 		t.Errorf("the guide cannot be read in read-only mode: %s", out.String())
+	}
+}
+
+func TestScriptCheckValidatesSourcesAndFallbacks(t *testing.T) {
+	bad := `export function meta() {
+  return {
+    name: "bad-src",
+    version: "1.0.0",
+    description: "x",
+    platforms: ["desktop", "mobile"],
+    needs: ["network"],
+    sources: {
+      a: { url: "https://example.com/a", fallbacks: ["ftp://example.com/b", ""] }
+    }
+  };
+}
+export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [], chart: null }; }`
+	var out bytes.Buffer
+	srv := Server{DataDir: t.TempDir()}
+	if err := srv.Serve(strings.NewReader(reqCall(1, "script_check", map[string]any{"source": bad})+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "备用请求 1") || !strings.Contains(got, "备用请求 2") {
+		t.Errorf("expected fallback warnings in script_check output: %s", got)
 	}
 }

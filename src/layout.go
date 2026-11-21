@@ -210,20 +210,22 @@ func packRows(items []placed, cols int) [][]placed {
 	return rows
 }
 
-// homeGrid draws the cards row by row. Each card's width is its columns of the
-// page, and the gaps between them.
+// homeGrid draws the cards in a single wrapping row whose widths are computed
+// by packRows so each row fills the full content width. Keeping every card as a
+// keyed direct child of one row preserves element identity (and active corner
+// resize drags) even when a card wraps onto another line while being resized.
 func (a *app) homeGrid(c *ui.Context, items []placed) {
 	gap := float32(cardGap)
-	a.unit = (a.contentW() - gap*float32(a.cols-1)) / float32(a.cols)
-	for _, row := range packRows(items, a.cols) {
-		row := row
-		ui.Row(c).Gap(gap).AlignItems(ui.Start).Children(func() {
+	rawUnit := (a.contentW() - gap*float32(a.cols-1)) / float32(a.cols)
+	a.unit = float32(math.Floor(float64(rawUnit)*100)) / 100
+	ui.Row(c).Wrap().Gap(gap).AlignItems(ui.Start).Children(func() {
+		for _, row := range packRows(items, a.cols) {
 			for _, it := range row {
 				w := a.unit*float32(it.span) + gap*float32(it.span-1)
-				a.card(c, it.sc, it.box, it.span, w)
+				a.card(c.Key("card:"+it.sc.ID), it.sc, it.box, it.span, w)
 			}
-		})
-	}
+		}
+	})
 }
 
 // cardRef is what a card carries while it is dragged to a new place.
@@ -238,9 +240,29 @@ type resize struct {
 	dx, dy float32
 }
 
-// resizeHandle is the corner a card is resized by in edit mode.
+// resizeHandle is the corner a card is resized by in edit mode. It is pinned
+// to the bottom-right corner with a stable key so dragging across size classes
+// (mini ↔ small ↔ medium ↔ large ↔ wide) never breaks the active pointer drag.
 func (a *app) resizeHandle(c *ui.Context, id string, span int, b store.CardBox) {
-	h := ui.Icon(c, icon("maximize-2")).FontSize(14).TextColor(pal(c).accent).Cursor(ui.CursorResizeNWSE).Label("resize:" + id)
+	p := pal(c)
+	active := a.rz != nil && a.rz.id == id
+	bg := p.card.Alpha(0.94)
+	fg := p.accent
+	if active {
+		bg = p.accent
+		fg = ui.Hex("#FFFFFF")
+	}
+	h := ui.Row(c.Key("resize:"+id)).
+		Absolute().Right(6).Bottom(6).
+		Size(26, 26).Radius(7).
+		Background(bg).
+		BorderWidth(1).BorderColor(p.accent.Alpha(0.6)).
+		AlignItems(ui.Center).Justify(ui.Center).
+		Cursor(ui.CursorResizeNWSE).
+		Label("resize:" + id)
+	h.Children(func() {
+		ui.Icon(c, icon("maximize-2")).FontSize(14).TextColor(fg).PassThrough()
+	})
 	dx, dy, ok := h.Dragged()
 	switch {
 	case ok:

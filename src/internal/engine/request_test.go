@@ -125,3 +125,69 @@ func TestPagingKeepsWhatItHas(t *testing.T) {
 		t.Errorf("body %s info %+v", body["l"], info["l"])
 	}
 }
+
+// A source with fallbacks tries them when the main address fails, returns
+// non-JSON, or returns an API error wrapper, and caches the working response
+// under the source's key. Both object fallbacks and array shorthand work.
+func TestSourceFallbacks(t *testing.T) {
+	badHTML := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<script src="/_guard/html.js"></script>`)
+	}))
+	defer badHTML.Close()
+	badAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"code":500,"msg":"upstream busy"}`)
+	}))
+	defer badAPI.Close()
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		fmt.Fprintf(w, `{"city":%q,"method":%q,"hdr":%q,"body":%q,"p":42}`,
+			r.URL.Query().Get("city"), r.Method, r.Header.Get("X-Token"), string(b))
+	}))
+	defer good.Close()
+
+	// 1. Object with string fallback (inherits query & headers) and object fallback (own method/body).
+	js := `export function meta() {
+  return {
+    name: "fb",
+    sources: {
+      a: {
+        url: "` + badHTML.URL + `",
+        headers: { "X-Token": "tok" },
+        query: { city: "{city}" },
+        fallbacks: [
+          "` + badAPI.URL + `",
+          { url: "` + good.URL + `", method: "POST", query: { city: "{city}" }, body: "hi-{city}" }
+        ]
+      },
+      b: ["` + badHTML.URL + `?city={city}", "` + good.URL + `?city={city}"]
+    }
+  };
+}
+export function render(ctx) {
+  return { title: "fb", big: ctx.sources.a.city + ":" + ctx.sourceInfo.a.used + ":" + ctx.sourceInfo.b.used, sub: ctx.sources.a.body, lines: [], chart: null };
+}`
+	s, err := Compile("fb.js", js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals := map[string]string{"city": "shanghai"}
+	reqs := map[string]Request{
+		"a": s.Meta.Sources["a"].Request(time.Now(), vals),
+		"b": s.Meta.Sources["b"].Request(time.Now(), vals),
+	}
+	c := newMemCache()
+	bodies, info := FetchRequests(context.Background(), good.Client(), reqs, time.Now(), FetchOptions{Cache: c})
+	if info["a"].Error != "" || info["a"].Stale || info["a"].Used != 2 {
+		t.Fatalf("source a info: %+v", info["a"])
+	}
+	if info["b"].Error != "" || info["b"].Stale || info["b"].Used != 1 {
+		t.Fatalf("source b info: %+v", info["b"])
+	}
+	if got, ok := c.Get(reqs["a"].CacheKey()); !ok || !strings.Contains(string(got.Body), "42") {
+		t.Errorf("fallback response not cached under main key: %+v %v", got, ok)
+	}
+	res, err := s.Run(context.Background(), Input{Now: time.Now(), Sources: bodies, SourceInfo: info, Vars: vals})
+	if err != nil || res.Big != "shanghai:2:1" || res.Sub != "hi-shanghai" {
+		t.Errorf("render got big=%q sub=%q err=%v", res.Big, res.Sub, err)
+	}
+}

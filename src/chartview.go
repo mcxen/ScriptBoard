@@ -84,6 +84,13 @@ func count(ch *engine.Chart) int {
 	if ch.Type == "candle" {
 		return len(ch.Candles)
 	}
+	if isPanels(ch) {
+		n := 0
+		for _, s := range ch.Panels[0].Series {
+			n = max(n, len(s.Points))
+		}
+		return n
+	}
 	n := 0
 	for _, s := range ch.Series {
 		n = max(n, len(s.Points))
@@ -260,15 +267,25 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 		v.Sel, v.Now = p.Selected, p.Now
 		return calendarMonth(c, v)
 	}
+	if isWidget(p.Data) {
+		return widgetView(c, p.Data, h, p.Selected, p.Full, p.Now, 0)
+	}
 	return chartWith(c, p.Data, p.Style, h, p.Selected, p.Full)
 }
 
 func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *int, full bool) ui.Element {
-	if ch != nil && ch.Type == "progress" {
-		return progressView(c, ch.Progress, 0)
+	if ch != nil && (ch.Type == "progress" || ch.Type == "progressBar") {
+		pb := &engine.ProgressBar{Items: ch.Progress}
+		if ch.Bar != nil {
+			pb.BarStyle = *ch.Bar
+		}
+		return progressBarView(c, pb, 0)
 	}
 	if ch != nil && ch.Type == "progressRing" {
 		return progressRingView(c, ch, 0, clampF(h*0.4, 56, 104))
+	}
+	if isWidget(ch) {
+		return widgetView(c, ch, h, sel, full, time.Now(), 0)
 	}
 	if isCombo(ch) {
 		return comboView(c, ch, style, h, sel, full)
@@ -315,7 +332,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 				y := chart.Y(r, tk.At)
 				p.Line(r.X, y, r.X+r.W, y, 1, pl.hairline)
 			}
-			paint(p, r, ch, s, style, xs, t.Accent)
+			paint(p, r, ch, s, style, xs, t.Accent, pl, false)
 			if full {
 				lastPriceLine(p, r, ch, s)
 			}
@@ -345,6 +362,16 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 		v.Now = time.Now()
 		return calendarMonth(c, v)
 	}
+	if ch != nil && (ch.Type == "progress" || ch.Type == "progressBar") {
+		pb := &engine.ProgressBar{Items: ch.Progress}
+		if ch.Bar != nil {
+			pb.BarStyle = *ch.Bar
+		}
+		return progressBarView(c, pb, 2)
+	}
+	if isWidget(ch) {
+		return widgetView(c, ch, h, nil, false, time.Now(), 3)
+	}
 	if isCombo(ch) {
 		return comboView(c, ch, "", h, nil, false)
 	}
@@ -364,7 +391,8 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 		return barhView(c, ch, h)
 	}
 	t := c.Theme()
-	s := scale(ch, t.Accent, pal(c).dark)
+	pl := pal(c)
+	s := scale(ch, t.Accent, pl.dark)
 	return ui.Box(c).Height(h).Draw(func(p *ui.Painter, r ui.Rect) {
 		if s.empty {
 			return
@@ -374,12 +402,12 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 			style = "area" // a card's curve is shaded
 		}
 		r.X, r.W = r.X+5, r.W-10 // keep dots and line ends inside the card
-		paint(p, r, ch, s, style, s.xs, t.Accent)
+		paint(p, r, ch, s, style, s.xs, t.Accent, pl, true)
 	})
 }
 
 // paint draws the chart in style.
-func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, xs []float32, accent ui.Color) {
+func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, xs []float32, accent ui.Color, pl palette, spark bool) {
 	switch style {
 	case "candle":
 		drawCandles(p, r, ch.Candles, s)
@@ -400,7 +428,7 @@ func paint(p *ui.Painter, r ui.Rect, ch *engine.Chart, s scaled, style string, x
 	case "pixel":
 		drawPixels(p, r, s.series)
 	case "grid":
-		drawGridLine(p, r, s, xs)
+		drawGridLine(p, r, s, xs, pl, spark)
 	case "area":
 		drawLines(p, r, s.series, true, chart.CurveMonotone)
 	case "step":
@@ -580,16 +608,83 @@ func drawPixels(p *ui.Painter, r ui.Rect, lines []seriesLine) {
 	}
 }
 
-// drawGridLine draws the lines with a grid behind them: a vertical rule at
-// each point, the same blue-gray as the horizontal rules of the chart.
-func drawGridLine(p *ui.Painter, r ui.Rect, s scaled, xs []float32) {
-	if len(s.series) > 0 {
-		for _, x := range xs {
-			xp := chart.X(r, x)
-			p.Line(xp, r.Y, xp, r.Y+r.H, 1, ui.Hex("#8C8C8C").Alpha(0.35))
+// drawGridLine draws a crisp technical graph-paper grid with a sharp linear
+// polyline over it. In compact card (spark) mode it draws a subtle rounded
+// graph-paper backdrop with evenly spaced horizontal and vertical cells (never
+// a dense barcode of vertical lines), a soft translucent fill under the primary
+// series, and a crisp latest-value marker.
+func drawGridLine(p *ui.Painter, r ui.Rect, s scaled, xs []float32, pl palette, spark bool) {
+	if len(s.series) == 0 || r.W <= 4 || r.H <= 4 {
+		return
+	}
+	gridBase := pl.muted
+	if pl.dark {
+		gridBase = ui.Hex("#94A3B8")
+	}
+	plotR := r
+	if spark {
+		// Subtle graph-paper panel with balanced 2D square cells.
+		p.Fill(r, gridBase.Alpha(0.05), 6)
+		p.StrokePath(roundedRectPath(r, 6), 1, gridBase.Alpha(0.18))
+		plotR = ui.Rect{X: r.X + 4, Y: r.Y + 4, W: max(r.W-8, 1), H: max(r.H-8, 1)}
+
+		ruleCol := gridBase.Alpha(0.14)
+		rows := max(2, min(4, int(math.Round(float64(plotR.H)/24))))
+		for i := 1; i < rows; i++ {
+			y := r.Y + r.H*float32(i)/float32(rows)
+			p.Line(r.X+1, y, r.X+r.W-1, y, 1, ruleCol)
+		}
+		cols := max(4, min(9, int(math.Round(float64(plotR.W)/36))))
+		for i := 1; i < cols; i++ {
+			x := r.X + r.W*float32(i)/float32(cols)
+			p.Line(x, r.Y+1, x, r.Y+r.H-1, 1, ruleCol)
+		}
+	} else {
+		// Full chart already draws horizontal rules; space vertical rules cleanly
+		// so dense series (e.g. 48h or 180 live ticks) stay airy and readable.
+		ruleCol := gridBase.Alpha(0.20)
+		maxCols := max(2, int(r.W/48))
+		step := 1
+		if len(xs) > maxCols+1 {
+			step = (len(xs)-1)/maxCols + 1
+		}
+		for i := 0; i < len(xs); i += step {
+			xp := chart.X(r, xs[i])
+			p.Line(xp, r.Y, xp, r.Y+r.H, 1, ruleCol)
 		}
 	}
-	drawLines(p, r, s.series, false, chart.CurveLinear)
+
+	// Soft subtle wash under the primary curve + sharp technical polyline.
+	for i, ln := range s.series {
+		if len(ln.xs) == 0 {
+			continue
+		}
+		if ln.dashed {
+			drawDashed(p, plotR, ln)
+			continue
+		}
+		if i == 0 {
+			topA := float32(0.15)
+			if spark {
+				topA = 0.20
+			}
+			p.FillPathGradient(chart.Area(plotR, ln.xs, nil, ln.ys, chart.CurveLinear), ui.LinearGradient{
+				From: ln.color.Alpha(topA), To: ln.color.Alpha(0.01), Angle: 180,
+			})
+		}
+		p.StrokePath(chart.Line(plotR, ln.xs, ln.ys, chart.CurveLinear), 2, ln.color)
+		if !spark && len(ln.xs) <= 20 {
+			for j := range ln.xs {
+				x, y := chart.X(plotR, ln.xs[j]), chart.Y(plotR, ln.ys[j])
+				p.Fill(ui.Rect{X: x - 2.5, Y: y - 2.5, W: 5, H: 5}, ln.color, 2.5)
+			}
+		} else if n := len(ln.xs); n > 0 {
+			// Crisp latest-point indicator on spark / dense series.
+			lx, ly := chart.X(plotR, ln.xs[n-1]), chart.Y(plotR, ln.ys[n-1])
+			p.Fill(ui.Rect{X: lx - 3.5, Y: ly - 3.5, W: 7, H: 7}, ln.color.Alpha(0.28), 3.5)
+			p.Fill(ui.Rect{X: lx - 2.2, Y: ly - 2.2, W: 4.4, H: 4.4}, ln.color, 2.2)
+		}
+	}
 }
 
 // closeLine is the closing prices of a candle chart as a line.
@@ -661,7 +756,11 @@ func readout(ch *engine.Chart, i int) string {
 		return fmt.Sprintf(tr("%s    开 %.2f   高 %.2f   低 %.2f   收 %.2f   涨跌 %+.2f"), name, cd.O, cd.H, cd.L, cd.C, change)
 	}
 	parts := []string{name}
-	for _, sr := range ch.Series {
+	series := ch.Series
+	if isPanels(ch) {
+		series = ch.Panels[0].Series
+	}
+	for _, sr := range series {
 		if i >= len(sr.Points) {
 			continue
 		}
@@ -679,10 +778,14 @@ func readout(ch *engine.Chart, i int) string {
 }
 
 // Detail is the readout line under a chart: the chosen point, or the latest
-// one while nothing is chosen.
+// one while nothing is chosen. Non-plot widgets (progressBar, progress,
+// progressRing, donut, checklist, kv, countdown, clock, contrib) have none.
 func Detail(c *ui.Context, ch *engine.Chart, sel *int) ui.Element {
 	if isCalendar(ch) {
 		return calendarDetail(c, sel, time.Now())
+	}
+	if !hasChartDetail(ch) {
+		return ui.Text(c, "").FontSize(12)
 	}
 	i := count(ch) - 1
 	// A touch screen has no hovering: it is a touch on the chart.

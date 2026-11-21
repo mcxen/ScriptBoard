@@ -110,6 +110,20 @@ func TestRetroChartStyles(t *testing.T) {
 			savePNG(t, tt, fmt.Sprintf("17-retro-%s-%s", orDefault(skinName), style))
 		}
 	}
+	// Also capture compact card (spark) grid line charts for sparse & dense series.
+	setSkin(skinDefault)
+	a := newTestApp(t)
+	a.styles["weight"] = "grid"
+	a.styles["fx"] = "grid"
+	a.styles["weather"] = "grid"
+	for _, sc := range a.store.Scripts() {
+		sc.Home = sc.ID == "weight" || sc.ID == "fx" || sc.ID == "weather"
+		a.store.SaveScript(sc)
+	}
+	tt := ui.NewTester(a.view, 1200, 520)
+	settle(tt)
+	settle(tt)
+	savePNG(t, tt, "33-grid-spark-cards")
 }
 
 func orDefault(s string) string {

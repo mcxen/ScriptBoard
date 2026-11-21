@@ -90,3 +90,24 @@ func TestGoldOfflineHasNoSample(t *testing.T) {
 		t.Errorf("offline gold used sample copy: %q", res.Lines)
 	}
 }
+
+func TestGoldFallsBackToSGEQuotes(t *testing.T) {
+	sge := `{"data":{"diff":[
+		{"f12":"AU9999","f14":"黄金9999","f2":763.0,"f18":764.55},
+		{"f12":"AUTD","f14":"黄金T+D","f2":761.41,"f18":764.0},
+		{"f12":"SHAU","f14":"上海金","f2":"-","f18":765.76}
+	]}}`
+	res, err := builtin(t, "gold").Run(context.Background(), Input{
+		Now:     time.Now(),
+		Sources: map[string]json.RawMessage{"gold": json.RawMessage(sge)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Big != "763.00" || res.Sub != "黄金9999" {
+		t.Errorf("got big %q sub %q, want 763.00 黄金9999", res.Big, res.Sub)
+	}
+	if res.Chart == nil || len(res.Chart.Series[0].Points) != 3 {
+		t.Fatalf("chart %+v", res.Chart)
+	}
+}

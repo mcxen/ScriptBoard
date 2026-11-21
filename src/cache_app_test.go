@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 )
 
@@ -171,5 +172,17 @@ func TestClearCache(t *testing.T) {
 	res, _ := f.a.execute(f.sc, nil)
 	if res.Big != "ERR" {
 		t.Errorf("after clearing, a down server gave %q", res.Big)
+	}
+}
+
+// A failed run that returns "--" must not be saved as a cached result or
+// overwrite a valid saved result.
+func TestFailedPlaceholderIsNotSavedAsCachedResult(t *testing.T) {
+	f := cacheApp(t, "")
+	meta, _ := f.a.metaOf(f.sc)
+	key := runKey(f.sc.ID, meta.Dims, nil)
+	f.a.saveResult(f.sc, key, meta, engine.Result{Title: "缓存", Big: "--", Sub: "failed"})
+	if _, ok := f.a.savedResult(f.sc, key, meta); ok {
+		t.Fatal("a '--' placeholder was kept as a saved result")
 	}
 }

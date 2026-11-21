@@ -91,7 +91,7 @@ func gaugeView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 	}
 	left, frac := remaining(g)
 	color := gaugeColor(p, frac)
-	size := clampF(h, 64, 260)
+	size := clampF(h*0.62, 64, 200)
 	return ui.Row(c).AlignItems(ui.Center).Gap(18).Children(func() {
 		ui.Box(c).Size(size, size).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
 			donut(pt, r, frac, color, p.chip)
@@ -115,9 +115,11 @@ func barhView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 		return ui.Text(c, tr("暂无数据")).TextColor(p.muted)
 	}
 	s := ch.Series[0]
-	rowH := float32(26)
-	rows := max(1, int(h/rowH))
-	n := min(len(s.Points), rows)
+	n := len(s.Points)
+	if h < 240 {
+		rows := max(1, int(h/26))
+		n = min(n, rows)
+	}
 	hi := 0.0
 	for _, v := range s.Points[:n] {
 		hi = math.Max(hi, v)
@@ -135,11 +137,13 @@ func barhView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 			color := parseColor(s.Color, seriesPalette[i%len(seriesPalette)])
 			frac := float32(s.Points[i] / hi)
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-				ui.Text(c, name).FontSize(fsSmall).TextColor(p.muted).Width(92).NoWrap()
+				ui.Row(c).Width(96).MinWidth(0).ClipX().Children(func() {
+					ui.Text(c, name).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+				})
 				ui.Box(c).Grow(1).Height(10).Radius(5).Background(p.chip).Draw(func(pt *ui.Painter, r ui.Rect) {
 					pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: max(r.W*frac, 4), H: r.H}, color, 5)
 				})
-				ui.Text(c, formatAmount(s.Points[i])).FontSize(fsSmall).FontWeight(600).Width(58).TextAlign(ui.End).NoWrap()
+				ui.Text(c, formatAmount(s.Points[i])).FontSize(fsSmall).FontWeight(600).Width(64).TextAlign(ui.End).NoWrap()
 			})
 		}
 	})
@@ -169,21 +173,28 @@ func (a *app) kindTiles(c *ui.Context, ch *engine.Chart) bool {
 		if g.Reset != "" {
 			tiles = append(tiles, tileData{tr("重置"), g.Reset, "", p.text})
 		}
-	case len(ch.Series) > 0:
-		sum, top, topI := 0.0, math.Inf(-1), 0
+	case len(ch.Series) > 0 && len(ch.Series[0].Points) > 0:
+		sum, top, topI, low, lowI := 0.0, math.Inf(-1), 0, math.Inf(1), 0
 		for i, v := range ch.Series[0].Points {
 			sum += v
 			if v > top {
 				top, topI = v, i
 			}
+			if v < low {
+				low, lowI = v, i
+			}
 		}
-		topName := ""
+		topName, lowName := "", ""
 		if topI < len(ch.Labels) {
 			topName = ch.Labels[topI]
 		}
+		if lowI < len(ch.Labels) {
+			lowName = ch.Labels[lowI]
+		}
 		tiles = []tileData{
 			{tr("合计"), formatAmount(sum), fmt.Sprintf(tr("%d 项"), len(ch.Series[0].Points)), p.text},
-			{tr("最大项"), formatAmount(top), topName, p.text},
+			{tr("最大项"), formatAmount(top), topName, p.accent},
+			{tr("最小项"), formatAmount(low), lowName, p.text},
 		}
 	}
 	a.tileRow(c, cols, tiles)

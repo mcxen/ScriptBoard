@@ -207,8 +207,155 @@ type Chart struct {
 	// Progress are the bars of a "progress" chart: each a value against its
 	// maximum (a completion), shown as a percentage bar.
 	Progress []Progress `json:"progress"`
+	// Bar styles a progress / progressBar component (BarStyle).
+	Bar *BarStyle `json:"bar,omitempty"`
 	// Ring styles a progressRing chart (RingStyle).
 	Ring *RingStyle `json:"ring,omitempty"`
+	// Slices and Donut are a "donut" share breakdown component.
+	Slices []Slice     `json:"slices,omitempty"`
+	Donut  *DonutStyle `json:"donut,omitempty"`
+	// Checklist is a "checklist" task/habit list component.
+	Checklist []CheckItem `json:"checklist,omitempty"`
+	// KV is a "kv" key-value status panel component.
+	KV []KVItem `json:"kv,omitempty"`
+	// Countdown is a "countdown" target-date component.
+	Countdown []CountdownItem `json:"countdown,omitempty"`
+	// Clock is a "clock" analog/digital/world clock component.
+	Clock *ClockSpec `json:"clock,omitempty"`
+	// Contrib is a "contrib" GitHub-style activity grid component.
+	Contrib *ContribSpec `json:"contrib,omitempty"`
+}
+
+// BarStyle styles a progressBar / progress component.
+type BarStyle struct {
+	// Style is "solid" (default), "gradient", "neon" (glowing neon tube),
+	// or "segmented" (discrete blocks).
+	Style string `json:"style,omitempty"`
+	// Height is the bar thickness in DIPs, 4 to 24; 0 is 8 (10 for neon).
+	Height float32 `json:"height,omitempty"`
+	// Track is "neutral" (default), "tint", "dark", or "none".
+	Track string `json:"track,omitempty"`
+	// Glow is neon halo intensity (0.2 to 1.5; 0 defaults to 1.0 for neon).
+	Glow float32 `json:"glow,omitempty"`
+	// Segments is block count when Style == "segmented" (4 to 30; 0 is 10).
+	Segments int `json:"segments,omitempty"`
+	// HideLabel hides the "value / max · pct%" readout on the right.
+	HideLabel bool `json:"hideLabel,omitempty"`
+}
+
+// ProgressBar is a standalone progress bar component directly on Result (no
+// Chart object needed). It unmarshals from either an array of Progress items
+// or an object {items, style, height, track, glow, segments, hideLabel}.
+type ProgressBar struct {
+	Items []Progress `json:"items"`
+	BarStyle
+}
+
+// UnmarshalJSON accepts ProgressBar as an array of items or as a styled object.
+func (p *ProgressBar) UnmarshalJSON(b []byte) error {
+	trimmed := strings.TrimSpace(string(b))
+	if strings.HasPrefix(trimmed, "[") {
+		var items []Progress
+		if err := json.Unmarshal(b, &items); err != nil {
+			return err
+		}
+		*p = ProgressBar{Items: items}
+		return nil
+	}
+	type raw struct {
+		Items    []Progress `json:"items"`
+		Progress []Progress `json:"progress"`
+		BarStyle
+	}
+	var r raw
+	if err := json.Unmarshal(b, &r); err != nil {
+		return err
+	}
+	items := r.Items
+	if len(items) == 0 && len(r.Progress) > 0 {
+		items = r.Progress
+	}
+	*p = ProgressBar{Items: items, BarStyle: r.BarStyle}
+	return nil
+}
+
+// Slice is one segment of a "donut" component.
+type Slice struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Color string  `json:"color,omitempty"`
+	Unit  string  `json:"unit,omitempty"`
+}
+
+// DonutStyle styles a "donut" component.
+type DonutStyle struct {
+	Center    string  `json:"center,omitempty"`    // text in the hole; empty shows total
+	Sub       string  `json:"sub,omitempty"`       // caption under center
+	Thickness float32 `json:"thickness,omitempty"` // 0.12 to 0.45; 0 is 0.26
+	Neon      bool    `json:"neon,omitempty"`
+}
+
+// CheckItem is one row of a "checklist" component.
+type CheckItem struct {
+	Label string `json:"label"`
+	Done  bool   `json:"done"`
+	Note  string `json:"note,omitempty"`
+	Badge string `json:"badge,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+// KVItem is one row of a "kv" key-value status component.
+type KVItem struct {
+	Label  string `json:"label"`
+	Value  string `json:"value"`
+	Sub    string `json:"sub,omitempty"`
+	Badge  string `json:"badge,omitempty"`
+	Status string `json:"status,omitempty"` // ok | warn | err | info
+	Color  string `json:"color,omitempty"`
+}
+
+// CountdownItem is one target date of a "countdown" component.
+type CountdownItem struct {
+	Label  string `json:"label"`
+	Target string `json:"target"`          // YYYY-MM-DD, YYYY-MM-DD HH:MM, RFC3339, or unix timestamp
+	Start  string `json:"start,omitempty"` // optional start date for progress bar
+	Note   string `json:"note,omitempty"`
+	Color  string `json:"color,omitempty"`
+	To     string `json:"to,omitempty"`
+	Style  string `json:"style,omitempty"` // solid | gradient | neon
+}
+
+// ClockZone is one timezone in a "clock" component. Offset is hours east of
+// UTC (e.g. 8, -5, 5.5); values with |offset| > 14 are treated as minutes.
+type ClockZone struct {
+	Label  string  `json:"label"`
+	Offset float64 `json:"offset"`
+}
+
+// ClockSpec configures a "clock" component.
+type ClockSpec struct {
+	Style   string      `json:"style,omitempty"` // analog (default) | digital | world
+	Zones   []ClockZone `json:"zones,omitempty"`
+	Seconds bool        `json:"seconds,omitempty"`
+	Color   string      `json:"color,omitempty"`
+	Neon    bool        `json:"neon,omitempty"`
+}
+
+// ContribCell is one day in a "contrib" activity grid component.
+type ContribCell struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+	Label string  `json:"label,omitempty"`
+}
+
+// ContribSpec configures a "contrib" component.
+type ContribSpec struct {
+	Cells []ContribCell `json:"cells"`
+	Color string        `json:"color,omitempty"`
+	Max   float64       `json:"max,omitempty"`
+	Weeks int           `json:"weeks,omitempty"`
+	Unit  string        `json:"unit,omitempty"`
+	Neon  bool          `json:"neon,omitempty"`
 }
 
 // Progress is one bar of a "progress" chart: Value out of Max. A Max of 0
@@ -272,9 +419,13 @@ type RingStyle struct {
 	VAlign string `json:"valign,omitempty"`
 }
 
-// ChartTypes are the chart types a result can draw. A script that names another
-// draws nothing useful, so script_check reports it.
-var ChartTypes = []string{"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels", "progress", "progressRing", "calendar"}
+// ChartTypes are the chart and component types a result can draw. A script that
+// names another draws nothing useful, so script_check reports it.
+var ChartTypes = []string{
+	"line", "dot", "candle", "gauge", "barh", "combo", "heat", "panels",
+	"progress", "progressBar", "progressRing", "calendar",
+	"donut", "checklist", "kv", "countdown", "clock", "contrib",
+}
 
 // UnknownChartType reports whether t is not one of ChartTypes (an empty type is
 // a line).
@@ -377,6 +528,9 @@ type Result struct {
 	Sub   string   `json:"sub"`
 	Lines []string `json:"lines"`
 	Chart *Chart   `json:"chart"`
+	// ProgressBar is a standalone progress bar component (including neon bars),
+	// rendered without a chart container or chart detail controls.
+	ProgressBar *ProgressBar `json:"progressBar,omitempty"`
 	// Stats are short figures a result shows as a row under its headline, and
 	// as tiles in the full view: a live weather's feels-like, humidity, wind.
 	Stats []Stat `json:"stats"`

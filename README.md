@@ -99,7 +99,7 @@ Chart(c, ChartProps{
 - **编辑布局**：顶部的「编辑布局」打开编辑模式。拖卡片的正文可以换位置；拖卡片右下角的角可以调宽窄和高矮（宽度按列吸附，高度每 16 点一档）；也可以直接把卡片从首页移走；「完成」退出。位置、大小和顺序都保存在设置里，顶部统一切换尺寸时会清掉手动排的位置。
 - 网格是 12 列（窄于 900 点时 6 列，手机 2 列，大、宽卡片占整行）。每一行的最后一张卡片会占满这一行剩下的列，所以窗口拉宽也不会右边空一大块。卡片右上角的刷新按钮立即重新取数（见下文「点击刷新」）。点卡片进入全屏查看（编辑模式里不进入）。
 - **全屏查看**：一个脚本的完整视图，见下文「全屏与图表」。
-- **编辑**：左边选脚本或数据表。脚本：中间改源码，右边看预览、调节维度，也可以导入、导出脚本；插件脚本在插件文件夹里改，编辑页只读。数据表：中间是表格，见下。两种东西不混在一起。
+- **编辑**：左边选脚本或数据表。脚本支持**可视化**与**源码**双模式：可视化模式提供 9 套即用组件模板（霓虹进度条、完成度环、环形占比、待办清单、状态面板、倒计时、世界时钟、打卡热力格、折线图表）、按分类可视选图标、平台/菜单栏开关、卡片外观布局及组件条目/样式/色板编辑，右边实时预览；源码模式直接写 ES 模块，也可以导入、导出脚本；插件脚本在插件文件夹里改，编辑页只读。数据表：中间是表格，见下。两种东西不混在一起。
 - **社区**：登录后上传脚本，等管理员审核；无需登录即可下载已通过的脚本。
 - **设置**：在电脑上点侧栏的「设置」会打开一个单独的窗口（宽度合适，主窗口不动，再点一次就把它带到前面）；手机上是一个页面。内容按外观（风格、明暗、语言、内容宽度）、数据（体重单位、离线模式、本地缓存）、AI 用量、数据源、更新、MCP 服务器（关着时只有一个开关，打开后才有端口、密钥和复制配置的按钮）、社区、关于（版本、数据文件、插件目录）分组。
 
@@ -135,8 +135,16 @@ Chart(c, ChartProps{
 | `panels` | **面板叠放**：价格和指标各占一块，共用一根时间轴，悬浮时十字线同时出现在每个面板上。参考线是虚线的常数序列 | `panels: [{title, style, weight, series}]` |
 | `combo` | **曲线加圆环**：左边是曲线，右边是一排圆环，每个圆环是百分之几，下面写名字。曲线可以只占一段（`offset`）并画成虚线（`dashed: true`），适合「已有的 + 预计的」 | `series`（每条可以带 `offset`、`dashed`），`rings: [{label, percent, text?, color?}]` |
 | `progressRing` | **完成度环**：数据同 `progress`，每项一个环，环里是百分比，下面是名字和「已完成 / 总数」。可调：`ring: {layout, size, thickness, cap, track, fill, center, align, valign}`，每项还能给 `color` 和 `to`（见下）。中等卡片画前三项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
-| `progress` | **完成度条**：每项一根条，标出「已完成 / 总数 · 百分比」；没有上限时数值就是百分比。中等卡片画前两项，写「另外 N 项」，大卡片和全屏画出全部 | `progress: [{name, value, max, unit}]` |
+| `progress` / `progressBar` | **进度条**（推荐直接写在结果顶层的 `progressBar`，无需 `chart`，卡片与全屏页均不出现图表样式/大图/悬浮详情）：支持 `solid`、`gradient`、`neon`（霓虹发光灯管）、`segmented`（分段格）四种风格 | 顶层 `progressBar: {style, height, track, glow, segments, hideLabel, items: [{name, value, max, unit, color, to}]}` 或直接数组 `[{...}]`（亦兼容 `chart: {type: "progress", ...}`） |
+| `donut` | **环形占比图**：多分类占比扇区、中心总计/说明、可选霓虹微光与右侧图例 | `slices: [{name, value, color, unit}]`，可选 `donut: {center, sub, thickness, neon}` |
+| `checklist` | **待办 / 打卡清单**：勾选圆圈、完成度徽章、备注与彩色标签 | `checklist: [{label, done, note, badge, color}]` |
+| `kv` | **状态键值面板**：指标名、粗体数值、状态指示灯（`ok` / `warn` / `err` / `info`）与徽章 | `kv: [{label, value, sub, badge, status, color}]` |
+| `countdown` | **倒计时 / 纪念日**：单目标大数字方格 + 可选起止日期霓虹/渐变进度条；多目标按列表展示剩余天数 | `countdown: [{label, target, start, note, color, to, style}]` |
+| `clock` | **指针 / 数字 / 世界时钟**：模拟表盘（可选霓虹发光与秒针）、大字数字表盘或多时区世界时钟 | `clock: {style: "analog"|"digital"|"world", seconds, color, neon, zones: [{label, offset}]}` |
+| `contrib` | **打卡热力格**：7 行 GitHub 风格活跃矩阵、5 级亮度、图例；全屏页支持点选格子查看某天详情 | `contrib: {cells: [{date, value, label}], color, max, weeks, unit, neon}` |
 | `calendar` | **月视图日历**：由宿主填充农历、干支、生肖、节气与国际/中国节日；全屏页支持点选或用方向键 / Home 切换日期并查看当天详情（内置的「日历」脚本就是这样） | 无需 `series`，只需 `{type: "calendar"}` |
+
+**独立进度条（含霓虹灯风格）：`progressBar`。** 在 `render(ctx)` 返回值顶层直接写 `progressBar`（不需要 `chart`）：支持简写数组 `[{name, value, max, unit, color, to}]`，或对象 `{style: "neon"|"gradient"|"solid"|"segmented", height, track: "dark"|"tint"|"neutral"|"none", glow, segments, hideLabel, items: [...]}`。进度条及其他非坐标组件（`donut`、`checklist`、`kv`、`countdown`、`clock`、`contrib`、`progressRing`）在卡片、预览与全屏页中都不会显示折线/柱状等图表样式切换、「大图」开关或悬浮图表详情提示。
 
 K 线的周期由宿主统一聚合（`src/internal/engine/candles.go`）：秒、分、时、日、周（周一开始）、月（日历月），时间按本地时区划分。内置的「金价 K 线」脚本就是这样，周期维度选 日、周、月、时、分、秒。
 
@@ -393,7 +401,14 @@ export function meta() {
 
 **实况与统计：`stats`。** 结果里可以带 `stats: [{label, value, sub}]`。卡片上它自成一块，在图表下面；迷你卡片不显示，中等卡片画进度条时也不显示（全屏页都有）。全屏页排成卡片。实况类的脚本（例如「国内实况」）用它显示体感、湿度、风速和气压。
 
-**数据源的完整请求。** `sources` 的一项可以是地址字符串，也可以是对象 `{url, method, headers, query, body, paging}`：`method` 默认 GET，可以是 POST 并带 `body`；`headers` 里写 `Cookie` 就能带登录；`query` 会拼到地址后面。`paging: {param, start, step, pages, items}` 声明分页：页码放进 `param`，逐页读取后把列表拼成一个；`items` 是每页里列表的路径（如 `data.list`），为空表示响应本身就是列表；遇到没有数据的页就停下。
+**数据源的完整请求与备用回退（Fallbacks）。** `sources` 的一项有三种写法：
+1. 地址字符串：`"https://example.com/api"`
+2. 请求对象：`{url, method, headers, query, body, paging, fallbacks}`
+3. 候选数组：`["https://主地址", "https://镜像地址", {url: "https://异构备用地址", method: "POST", ...}]`（第一项为主请求，其余依次作为 `fallbacks`）
+
+其中 `method` 默认 GET，可以是 POST 并带 `body`；`headers` 里写 `Cookie` 就能带登录；`query` 会拼到地址后面；`paging: {param, start, step, pages, items}` 声明分页（页码放进 `param`，逐页读取后把列表拼成一个；`items` 是每页里列表的路径如 `data.list`，为空表示响应本身就是列表；遇到没有数据的页就停下）。`fallbacks` 里的每一项既可以是地址字符串（自动继承主请求的 `method`、`headers`、`query`、`body`、`paging`，适合同构镜像），也可以是独立的请求对象（适合异构备用接口）。变量 `{key}` 和日期 `{start}`、`{end}` 会同样填入所有备用请求。
+
+当主请求遇到网络失败、非 2xx 状态码（如 429 限流、5xx）、返回非 JSON 内容（如 HTML 验证页）或返回无数据的接口错误对象（`{"error": "…"}` 或 `{"code": 500}`）时，宿主会自动依次尝试 `fallbacks`，并将第一个成功的响应写入该数据源的缓存与历史；只有全部候选都失败时，才会回退到本地旧缓存（`stale: true`）。脚本可以通过 `ctx.sourceInfo[名字].used` 获知本次由第几个请求提供（`0` 为主请求，`1` 为第一个备用请求，依此类推）。
 
 **图标分类。** 脚本的 `icon` 从 `icon_catalog`（MCP 工具）里选，目录按天气、财经、图表、时间、身体、智能、数据与网络、界面分类；写了目录里没有的名字，`script_check` 会警告。
 
@@ -478,11 +493,11 @@ export function render(ctx) {
 | `src/main.go`、`src/app.go` | 窗口、应用状态、脚本运行、手机排版与宽窄判断 |
 | `src/home.go`、`src/layout.go` | 首页与组件卡片、网格布局、编辑布局与卡片尺寸 |
 | `src/fullview.go`、`src/stats.go` | 全屏查看与统计 |
-| `src/chartview.go`、`src/charts2.go`、`src/progress_view.go`、`src/calendar_view.go` | 图表（折线 / K 线 / 复古样式 / 剩余量圆环 / 横置条形 / 热力表 / 叠放面板 / 组合 / 完成度条与环 / 月视图日历） |
+| `src/chartview.go`、`src/charts2.go`、`src/progress_view.go`、`src/widgets_view.go`、`src/calendar_view.go` | 图表与组件（折线 / K 线 / 复古样式 / 剩余量圆环 / 横置条形 / 热力表 / 叠放面板 / 组合 / 独立霓虹进度条与完成度环 / 环形占比 / 待办清单 / 状态面板 / 倒计时 / 世界时钟 / 打卡热力格 / 月视图日历） |
 | `src/images_app.go`、`src/images_ui.go` | 图片缓存、历史与轮播卡片 |
 | `src/menubar.go` | 菜单栏图标与自定义菜单 |
 | `src/live_app.go`、`src/refresh.go` | 实时线轮询与卡片刷新 |
-| `src/editor.go`、`src/transfer.go`、`src/table_app.go` | 编辑页、导入导出与数据表编辑 |
+| `src/editor.go`、`src/editor_visual.go`、`src/editor_phone.go`、`src/transfer.go`、`src/table_app.go` | 编辑页（可视化组件配置与源码双模式）、手机编辑页、导入导出与数据表编辑 |
 | `src/community.go` | 社区页 |
 | `src/plugins_app.go`、`src/plugin_spec.go`、`src/permissions.go` | 插件目录同步与监视、规范说明与权限授权 |
 | `src/settings.go`、`src/settings_window.go`、`src/pagewidth.go` | 设置页（独立窗口）、外观与内容宽度 |

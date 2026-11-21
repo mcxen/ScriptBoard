@@ -115,6 +115,34 @@ export function render(ctx) { return { title: "轮播", big: "2", sub: "", lines
 	settle(tt)
 	settle(tt)
 	requireText(t, tt, "1 / 2")
+	requireText(t, tt, "保存图片")
 	click(t, tt, "›")
 	requireText(t, tt, "2 / 2")
+	savePNG(t, tt, "28-bing-gallery-full")
+}
+
+// Saving an image chooses a safe file name with the detected format and copies
+// the original full-resolution bytes intact.
+func TestSaveImageFilenameAndCopy(t *testing.T) {
+	data := pngBytes(t)
+	gotName := imageFilename(engine.Image{URL: "https://bing.com/x.jpg", Caption: "2026-11-21 · 阿尔卑斯/薄雾"}, data)
+	if gotName != "2026-11-21-阿尔卑斯-薄雾.png" {
+		t.Errorf("filename %q, want 2026-11-21-阿尔卑斯-薄雾.png", gotName)
+	}
+	dir := t.TempDir()
+	src := dir + "/cached.bin"
+	dst := dir + "/saved.png"
+	if err := os.WriteFile(src, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeImageCopy(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	copied, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(copied, data) {
+		t.Errorf("copied image bytes differ (%d vs %d)", len(copied), len(data))
+	}
 }

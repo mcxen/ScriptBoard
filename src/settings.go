@@ -60,6 +60,9 @@ func (a *app) settingsBody(c *ui.Context, compact, titled bool) {
 					if a.win != nil {
 						a.win.SetTitle(appName())
 					}
+					if a.settingsWin != nil {
+						a.settingsWin.SetTitle(tr("设置"))
+					}
 				}
 			}},
 			row{stack: true, title: tr("内容宽度"), note: tr("自动：首页和详情页铺满窗口，设置等文字页保持易读的宽度；也可以固定为舒适、宽，或始终铺满。"), control: func() {

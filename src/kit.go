@@ -355,11 +355,39 @@ func iconBadge(c *ui.Context, name string, color ui.Color, size float32) ui.Elem
 	})
 }
 
-// accentOf is the color a card takes: the first line's color when the script
-// gave one, else the app's accent.
+// accentOf is the color a card takes: the first item's or line's color when
+// the script gave one, else the app's accent.
 func accentOf(res engine.Result, fallback ui.Color) ui.Color {
-	if res.Chart != nil && res.Chart.Type != "candle" && len(res.Chart.Series) > 0 {
-		return parseColor(res.Chart.Series[0].Color, fallback)
+	if pb, ok := progressBarOf(res); ok && len(pb.Items) > 0 {
+		if pb.Style == "neon" && !hexColor.MatchString(pb.Items[0].Color) {
+			return neonPalette[0]
+		}
+		return parseColor(pb.Items[0].Color, fallback)
+	}
+	if res.Chart != nil {
+		switch res.Chart.Type {
+		case "donut":
+			if len(res.Chart.Slices) > 0 {
+				return parseColor(res.Chart.Slices[0].Color, donutPalette[0])
+			}
+		case "countdown":
+			if len(res.Chart.Countdown) > 0 {
+				return parseColor(res.Chart.Countdown[0].Color, fallback)
+			}
+		case "clock":
+			if res.Chart.Clock != nil {
+				return parseColor(res.Chart.Clock.Color, fallback)
+			}
+		case "contrib":
+			if res.Chart.Contrib != nil {
+				return parseColor(res.Chart.Contrib.Color, ui.Hex("#10B981"))
+			}
+		case "candle":
+		default:
+			if len(res.Chart.Series) > 0 {
+				return parseColor(res.Chart.Series[0].Color, fallback)
+			}
+		}
 	}
 	return fallback
 }

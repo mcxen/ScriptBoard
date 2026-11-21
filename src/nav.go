@@ -24,6 +24,13 @@ var navItems = []navItem{
 	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds"}},
 }
 
+// mainNavItems are the pages that live inside the main window; settings opens
+// in its own window on desktop and sits apart in the sidebar footer.
+var (
+	mainNavItems    = navItems[:3]
+	settingsNavItem = navItems[3]
+)
+
 // active reports whether the page at path belongs to the item.
 func (n navItem) active(path string) bool {
 	if n.path == "/" {
@@ -68,6 +75,10 @@ func (a *app) view(c *ui.Context) {
 	// first, since it is built after the page.
 	if root.OverlayShortcut(0, ui.KeyEscape) {
 		a.router.Back()
+	}
+	// Cmd+, (macOS) or Ctrl+, (Windows/Linux) opens the settings window.
+	if !isAndroid() && root.OverlayShortcut(ui.Cmd, ui.KeyComma) {
+		a.goTo(settingsNavItem.path)
 	}
 	// Closing the window only minimizes it, and Windows and Linux have no menu
 	// with a Quit: Ctrl+Q quits there, as Cmd-Q does on a Mac.
@@ -117,13 +128,13 @@ func (a *app) view(c *ui.Context) {
 			})
 		}
 		if compact {
-			ui.Column(c).Fill().Children(func() {
+			ui.Column(c).Grow(1).Children(func() {
 				pages()
 				a.tabBar(c, p, path)
 			})
 			return
 		}
-		ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 			a.sidebar(c, p, path)
 			pages()
 		})
@@ -150,48 +161,100 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 			}
 		})
 		if isMac() {
-			for _, n := range navItems {
+			for _, n := range mainNavItems {
 				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-24) {
 					a.goTo(n.path)
 				}
 			}
-			a.sidebarStatus(c, p)
+			ui.Spacer(c)
+			ui.Column(c).BorderWidth(1, 0, 0, 0).BorderColor(p.border).Padding(8, 0, 0, 0).Gap(2).Children(func() {
+				if macSidebarItem(c, tr(settingsNavItem.label), settingsNavItem.icon, settingsNavItem.active(path) || a.settingsWin != nil, sidebarWidth-24) {
+					a.goTo(settingsNavItem.path)
+				}
+				a.sidebarStatus(c, p)
+			})
 			return
 		}
-		items := make([]display.ListItem, len(navItems))
+		items := make([]display.ListItem, len(mainNavItems))
 		active := ""
-		for i, n := range navItems {
+		for i, n := range mainNavItems {
 			items[i] = display.ListItem{Key: n.path, Label: tr(n.label), Icon: icon(n.icon)}
 			if n.active(path) {
 				active = n.path
 			}
 		}
 		if key := display.List(c, display.ListProps{Items: items, Active: active}); key != "" {
-			a.router.Push(key)
+			a.goTo(key)
 		}
 		ui.Spacer(c)
-		a.sidebarStatus(c, p)
+		ui.Column(c).BorderWidth(1, 0, 0, 0).BorderColor(p.border).Padding(8, 0, 0, 0).Gap(2).Children(func() {
+			a.sidebarSettingsButton(c, p, settingsNavItem.active(path))
+			a.sidebarStatus(c, p)
+		})
 	})
+}
+
+// sidebarSettingsButton opens the standalone settings window on desktop (or the
+// /settings page in headless tests / mobile fallback). It lives in the sidebar
+// footer so it is visually distinct from main-window navigation tabs.
+func (a *app) sidebarSettingsButton(c *ui.Context, p palette, active bool) {
+	label := tr(settingsNavItem.label)
+	shortcut := "⌘,"
+	if ownControls {
+		shortcut = "Ctrl+,"
+	}
+	lit := active || a.settingsWin != nil
+	fg := p.muted
+	if lit {
+		fg = p.text
+	}
+	b := ui.ButtonBase(c).
+		Width(sidebarWidth-24).
+		Height(34).
+		Padding(0, 10).
+		Radius(8).
+		Gap(8).
+		AlignItems(ui.Center).
+		Tooltip(label + " (" + shortcut + ")")
+	if lit {
+		b = b.Background(p.rowSel)
+	} else if b.Hovered() {
+		b = b.Background(p.hover)
+	}
+	if b.Children(func() {
+		ui.Icon(c, icon(settingsNavItem.icon)).FontSize(16).TextColor(fg)
+		ui.Text(c, label).FontSize(fsBody).TextColor(fg)
+		ui.Spacer(c)
+		if !isAndroid() {
+			ui.Text(c, shortcut).FontSize(fsTiny).TextColor(p.faint)
+		}
+	}).Clicked() {
+		a.goTo(settingsNavItem.path)
+	}
 }
 
 // sidebarRail is the sidebar folded: the toggle, one icon for each place, and
 // the network state as a dot, each with its name as a tooltip.
 func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
-	ui.Column(c).Width(railWidth).Background(p.sidebar).Padding(10, 6).Gap(6).AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Width(railWidth).Background(p.sidebar).Padding(10, 6, 14, 6).Gap(6).AlignItems(ui.Center).Children(func() {
 		if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
 			a.toggleSidebar()
 		}
-		for _, n := range navItems {
+		for _, n := range mainNavItems {
 			if macOrRailItem(c, n, n.active(path), p) {
 				a.goTo(n.path)
 			}
 		}
 		ui.Spacer(c)
+		ui.Box(c).Width(24).Height(1).Background(p.border)
+		if macOrRailItem(c, settingsNavItem, settingsNavItem.active(path) || a.settingsWin != nil, p) {
+			a.goTo(settingsNavItem.path)
+		}
 		color := p.down
 		if a.set.Offline {
 			color = p.warn
 		}
-		ui.Row(c).Size(7, 7).Radius(3.5).Background(color).Padding(0, 0, 10, 0)
+		ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
 	})
 }
 
@@ -211,13 +274,12 @@ func sidebarToggle(c *ui.Context, iconName, title string) ui.Element {
 
 // macOrRailItem is one place in the rail: its icon, chosen as a filled square.
 func macOrRailItem(c *ui.Context, n navItem, chosen bool, p palette) bool {
-	bg := ui.Color{}
+	label := tr(n.label)
+	el := ui.ButtonBase(c).Size(34, 34).Radius(8).AlignItems(ui.Center).Justify(ui.Center).Label(label).Tooltip(label)
 	if chosen {
-		bg = p.rowSel
-	}
-	el := ui.ButtonBase(c).Size(34, 34).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
-	if chosen {
-		el = el.Background(bg)
+		el = el.Background(p.rowSel)
+	} else if el.Hovered() {
+		el = el.Background(p.hover)
 	}
 	return el.Children(func() {
 		ui.Icon(c, icon(n.icon)).FontSize(18).TextColor(p.text)

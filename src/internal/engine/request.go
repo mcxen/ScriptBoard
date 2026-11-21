@@ -14,26 +14,31 @@ import (
 	"time"
 )
 
-// A source is where a response comes from. In meta() it is either the address
-// as a string, or an object for a request of its own:
+// A source is where a response comes from. In meta() it is the address as a
+// string, an object for a request of its own (with optional fallbacks), or an
+// array of addresses / request objects tried in order:
 //
 //	sources: {
 //	  list: "https://example.com/api/items",                     // GET
+//	  wx:   ["https://a.example.com/wx?c={city}", "https://b.example.com/wx?c={city}"],
 //	  pay:  { url: "https://example.com/api/query", method: "POST",
-//	          headers: { Cookie: "session=…" }, body: "{\"day\":\"{start}\"}" },
+//	          headers: { Cookie: "session=…" }, body: "{\"day\":\"{start}\"}",
+//	          fallbacks: ["https://backup.example.com/api/query"] },
 //	  page: { url: "https://example.com/api/list",
 //	          paging: { param: "page", start: 1, pages: 5, items: "data.list" } },
 //	}
 //
-// {start}, {end} and the variables fill the address, the query, the headers
-// and the body alike.
+// {start}, {end} and the variables fill the address, the query, the headers,
+// the body and every fallback alike.
 type Source struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Query   map[string]string `json:"query,omitempty"`
-	Body    string            `json:"body,omitempty"`
-	Paging  *Paging           `json:"paging,omitempty"`
+	URL        string            `json:"url"`
+	Fallbacks  []Source          `json:"fallbacks,omitempty"`
+	Method     string            `json:"method,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Query      map[string]string `json:"query,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	Paging     *Paging           `json:"paging,omitempty"`
+	fromString bool
 }
 
 // Paging reads a list that runs over several pages: one request a page, with
@@ -52,10 +57,33 @@ type Paging struct {
 // maxPages bounds how many pages one source reads.
 const maxPages = 50
 
-// UnmarshalJSON takes a source as its address, or as an object.
+// UnmarshalJSON takes a source as its address, as an object, or as an array of
+// sources (the first is the main request and the rest are its fallbacks).
 func (s *Source) UnmarshalJSON(b []byte) error {
 	if len(b) > 0 && b[0] == '"' {
-		return json.Unmarshal(b, &s.URL)
+		var u string
+		if err := json.Unmarshal(b, &u); err != nil {
+			return err
+		}
+		*s = Source{URL: u, fromString: true}
+		return nil
+	}
+	if len(b) > 0 && b[0] == '[' {
+		var list []Source
+		if err := json.Unmarshal(b, &list); err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			*s = Source{}
+			return nil
+		}
+		head := list[0]
+		for _, item := range list[1:] {
+			head.Fallbacks = append(head.Fallbacks, item)
+			head.Fallbacks = append(head.Fallbacks, item.Fallbacks...)
+		}
+		*s = head
+		return nil
 	}
 	type plain Source
 	var p plain
@@ -68,43 +96,88 @@ func (s *Source) UnmarshalJSON(b []byte) error {
 
 // Request is a source made ready to send: its variables and dates filled in.
 type Request struct {
-	Method  string
-	URL     string
-	Headers map[string]string
-	Body    string
-	Paging  *Paging
+	Method    string
+	URL       string
+	Fallbacks []Request
+	Headers   map[string]string
+	Body      string
+	Paging    *Paging
+}
+
+// Requests lists the main request and then its fallbacks, each as a standalone
+// request with no nested fallbacks.
+func (r Request) Requests() []Request {
+	base := r
+	base.Fallbacks = nil
+	out := make([]Request, 0, 1+len(r.Fallbacks))
+	out = append(out, base)
+	for _, fb := range r.Fallbacks {
+		fb.Fallbacks = nil
+		out = append(out, fb)
+	}
+	return out
 }
 
 // Request makes the request of the source at now, with the variables vals.
+// A fallback given as a plain URL string mirrors the parent source's method,
+// headers, query, body and paging; an object fallback uses its own configuration
+// (inheriting parent headers unless it overrides them).
 func (s Source) Request(now time.Time, vals map[string]string) Request {
-	r := Request{
-		Method:  strings.ToUpper(s.Method),
-		URL:     ExpandVars(s.URL, now, vals),
-		Body:    ExpandVars(s.Body, now, vals),
-		Headers: map[string]string{},
-		Paging:  s.Paging,
-	}
-	if r.Method == "" {
-		r.Method = http.MethodGet
-	}
-	for k, v := range s.Headers {
-		r.Headers[k] = ExpandVars(v, now, vals)
-	}
-	if len(s.Query) > 0 {
-		keys := make([]string, 0, len(s.Query))
-		for k := range s.Query {
-			keys = append(keys, k)
+	buildOne := func(src Source) Request {
+		r := Request{
+			Method:  strings.ToUpper(src.Method),
+			URL:     strings.TrimSpace(ExpandVars(src.URL, now, vals)),
+			Body:    ExpandVars(src.Body, now, vals),
+			Headers: map[string]string{},
+			Paging:  src.Paging,
 		}
-		sort.Strings(keys)
-		q := url.Values{}
-		for _, k := range keys {
-			q.Set(k, ExpandVars(s.Query[k], now, vals))
+		if r.Method == "" {
+			r.Method = http.MethodGet
 		}
-		sep := "?"
-		if strings.Contains(r.URL, "?") {
-			sep = "&"
+		for k, v := range src.Headers {
+			r.Headers[k] = ExpandVars(v, now, vals)
 		}
-		r.URL += sep + q.Encode()
+		if len(src.Query) > 0 {
+			keys := make([]string, 0, len(src.Query))
+			for k := range src.Query {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			q := url.Values{}
+			for _, k := range keys {
+				q.Set(k, ExpandVars(src.Query[k], now, vals))
+			}
+			sep := "?"
+			if strings.Contains(r.URL, "?") {
+				sep = "&"
+			}
+			r.URL += sep + q.Encode()
+		}
+		return r
+	}
+	r := buildOne(s)
+	for _, fb := range s.Fallbacks {
+		merged := fb
+		if fb.fromString {
+			merged.Method = s.Method
+			merged.Body = s.Body
+			merged.Query = s.Query
+			merged.Paging = s.Paging
+		}
+		if len(s.Headers) > 0 {
+			hdr := make(map[string]string, len(s.Headers)+len(fb.Headers))
+			for k, v := range s.Headers {
+				hdr[k] = v
+			}
+			for k, v := range fb.Headers {
+				hdr[k] = v
+			}
+			merged.Headers = hdr
+		}
+		fbr := buildOne(merged)
+		if fbr.URL != "" {
+			r.Fallbacks = append(r.Fallbacks, fbr)
+		}
 	}
 	return r
 }

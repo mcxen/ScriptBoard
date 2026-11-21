@@ -20,9 +20,15 @@ const (
 // goTo is where a click on a place of the sidebar or the tab bar goes: the page,
 // or, for the settings on a computer, their window.
 func (a *app) goTo(path string) {
-	if path == "/settings" && a.win != nil && !isAndroid() {
-		a.openSettings()
-		return
+	if path == "/settings" && !isAndroid() {
+		if a.openSettingsHook != nil {
+			a.openSettingsHook()
+			return
+		}
+		if a.win != nil {
+			a.openSettings()
+			return
+		}
 	}
 	a.router.Push(path)
 }
@@ -45,9 +51,11 @@ func (a *app) openSettings() {
 		Content:  ui.View(a.settingsView),
 	}))
 	a.settingsWin = w
+	a.post(func() {})
 	w.OnClosed(func() {
 		if a.settingsWin == w {
 			a.settingsWin = nil
+			a.post(func() {})
 		}
 	})
 }
@@ -55,8 +63,16 @@ func (a *app) openSettings() {
 // settingsView is the content of the settings window: a title row, as the main
 // window has, and the settings page.
 func (a *app) settingsView(c *ui.Context) {
+	applySkin(c)
+	setPageWidth(a.set.ContentWidth)
 	w := a.settingsWin
 	root := skinBackground(c, ui.Column(c).Fill())
+	if root.OverlayShortcut(0, ui.KeyEscape) && w != nil {
+		w.Close()
+	}
+	if ownControls && root.OverlayShortcut(ui.Ctrl, ui.KeyQ) {
+		quitApp()
+	}
 	root.Children(func() {
 		switch {
 		case isMac():

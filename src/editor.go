@@ -23,6 +23,9 @@ func (a *app) openEditor(id string) {
 	a.editorID = id
 	a.draft = sc
 	a.status = ""
+	a.visual.sourceSig = ""
+	a.visual.iconOpen = false
+	a.visual.tplOpen = false
 	a.loadBound(&a.draft)
 	a.afterOpenTable()
 }
@@ -33,6 +36,10 @@ func (a *app) newScript() {
 	a.editorID = id
 	a.draft = store.Script{ID: id, Name: tr("新脚本"), Source: engine.DefaultSourceFor(curLang()), Origin: store.OriginUser}
 	a.status = tr("未保存")
+	a.visual.sourceSig = ""
+	a.visual.iconOpen = false
+	a.visual.tplOpen = true
+	a.editMode = 0
 	a.afterOpenTable()
 }
 
@@ -147,9 +154,11 @@ func (a *app) editor(c *ui.Context, compact bool) {
 				it := display.ListItem{Key: sc.ID, Label: tr(sc.Name), Icon: icon(meta.Icon), Description: a.scriptNote(sc)}
 				items = append(items, it)
 			}
-			if key := display.List(c, display.ListProps{Items: items, Active: a.editorID}); key != "" {
-				a.openEditor(key)
-			}
+			ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+				if key := display.List(c, display.ListProps{Items: items, Active: a.editorID}); key != "" {
+					a.openEditor(key)
+				}
+			})
 			return
 		}
 		list := func() {
@@ -194,51 +203,61 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		sourceH = 260
 	}
 	draft := func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
-			ui.Column(c).Gap(2).Children(func() {
+		ui.Column(c).Gap(8).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 				sectionTitle(c, tr("编辑脚本"))
 				if a.status != "" {
-					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted)
+					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+				} else {
+					ui.Spacer(c)
+				}
+				if primaryBtn(c, tr("保存")).Clicked() {
+					a.saveDraft()
 				}
 			})
-			ui.Spacer(c)
-			if btn(c, tr("复制")).Clicked() {
-				a.duplicateDraft()
-			}
-			if a.originOf(a.draft) == store.OriginBuiltin {
-				if btn(c, tr("还原")).Clicked() {
-					a.restoreDraft()
+			ui.Row(c).AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
+				if btn(c, tr("运行")).Clicked() {
+					a.invalidate(draftKey)
 				}
-			}
-			if a.canDelete(a.draft) {
-				label := tr("删除")
-				if a.confirmDelete == a.draft.ID {
-					label = tr("确认删除")
+				if btn(c, tr("复制")).Clicked() {
+					a.duplicateDraft()
 				}
-				if btn(c, label).Clicked() {
-					a.deleteDraft()
+				if a.originOf(a.draft) == store.OriginBuiltin {
+					if btn(c, tr("还原")).Clicked() {
+						a.restoreDraft()
+					}
 				}
-			}
-			if btn(c, tr("导出")).Clicked() {
-				a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
-			}
-			if btn(c, tr("运行")).Clicked() {
-				a.invalidate(draftKey)
-			}
-			a.resetButton(c, a.draft)
-			if primaryBtn(c, tr("保存")).Clicked() {
-				a.saveDraft()
-			}
+				if btn(c, tr("导出")).Clicked() {
+					a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
+				}
+				a.resetButton(c, a.draft)
+				if a.canDelete(a.draft) {
+					label := tr("删除")
+					if a.confirmDelete == a.draft.ID {
+						label = tr("确认删除")
+					}
+					if btn(c, label).Clicked() {
+						a.deleteDraft()
+					}
+				}
+			})
 		})
 		a.transferPanel(c)
-		field(c, tr("名称"), "", func() {
-			textInput(c, &a.draft.Name, tr("脚本名称"))
-		})
-		homeSwitch(c, &a.draft.Home)
 		a.specInfo(c, a.draft)
-		field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
-			textArea(c, &a.draft.Source, "", int(sourceH/17)).Font("monospace").FontSize(fsSmall)
-		})
+		if choose(c, &a.editMode, tr("可视化"), tr("源码")) {
+			a.invalidate(draftKey)
+		}
+		if a.editMode == 0 {
+			a.visualScriptEditor(c, compact)
+		} else {
+			field(c, tr("名称"), "", func() {
+				textInput(c, &a.draft.Name, tr("脚本名称"))
+			})
+			homeSwitch(c, &a.draft.Home)
+			field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
+				textArea(c, &a.draft.Source, "", int(sourceH/17)).Font("monospace").FontSize(fsSmall)
+			})
+		}
 	}
 
 	preview := func() {
@@ -261,19 +280,43 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		case st.err != nil:
 			ui.Text(c, st.err.Error()).FontSize(fsSmall).TextColor(p.up)
 		default:
+			pb, hasPB := progressBarOf(st.res)
 			if isCalendar(st.res.Chart) {
 				a.calendarPreview(c, a.selOf(draftKey), 280)
 			} else {
-				ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
-				ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-					ui.Text(c, st.res.Big).FontSize(30).Bold()
-					if cs := summarize(st.res.Chart); cs.ok {
-						deltaChip(c, cs.pct)
+				if st.res.Title != "" {
+					ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
+				}
+				if st.res.Big != "" || (!hasPB && isPlotChart(st.res.Chart)) {
+					ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+						if st.res.Big != "" {
+							ui.Text(c, st.res.Big).FontSize(30).Bold()
+						}
+						if !hasPB && isPlotChart(st.res.Chart) {
+							if cs := summarize(st.res.Chart); cs.ok {
+								deltaChip(c, cs.pct)
+							}
+						}
+					})
+				}
+				if st.res.Sub != "" {
+					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
+				}
+				switch {
+				case hasPB:
+					// progressBar needs no chart component or chart detail in preview.
+					progressBarView(c, pb, 0)
+				case isWidget(st.res.Chart):
+					widgetView(c, st.res.Chart, 180, a.selOf(draftKey), false, a.now(), 0)
+				case st.res.Chart != nil:
+					Chart(c, ChartProps{Data: st.res.Chart, Height: 170, Selected: a.selOf(draftKey), Now: a.now()})
+					if hasChartDetail(st.res.Chart) {
+						Detail(c, st.res.Chart, a.selOf(draftKey))
 					}
-				})
-				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
-				Chart(c, ChartProps{Data: st.res.Chart, Height: 170, Selected: a.selOf(draftKey), Now: a.now()})
-				Detail(c, st.res.Chart, a.selOf(draftKey))
+				}
+				if len(st.res.Stats) > 0 {
+					cardStats(c, st.res.Stats)
+				}
 			}
 			for _, line := range st.res.Lines {
 				ui.Text(c, line).FontSize(fsTiny).TextColor(p.muted)

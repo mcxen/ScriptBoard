@@ -161,8 +161,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		inputs = nil
 	}
 	ready := st.err == nil && !st.loading
+	pb, hasPB := progressBarOf(st.res)
+	hasPB = ready && hasPB
 	// A card keeps the height its box gives it: a size is what the user chose.
-	hasChart := ready && st.res.Chart != nil
+	hasChart := ready && st.res.Chart != nil && !hasPB
 	h := b.Height*s + float32(len(inputs))*44*s
 	accent := p.accent
 	if ready {
@@ -211,15 +213,20 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		if len(meta.Vars) > 0 {
 			need += 34 * s
 		}
-		if hasChart {
+		if hasChart && hasChartDetail(st.res.Chart) {
 			need += 22 * s // the detail line under the chart
 		}
 		if len(st.res.Stats) > 0 {
 			need += 60 * s
 		}
 		need += float32(len(inputs)) * 44 * s
-		wideChart = max(h-need, 96*s)
-		h = need + wideChart
+		if hasChart {
+			wideChart = max(h-need, 96*s)
+			h = need + wideChart
+		} else if hasPB && len(pb.Items) > 0 {
+			barNeed := float32(len(pb.Items)) * 44 * s
+			h = max(h, need+barNeed)
+		}
 	}
 	base := card(c).Width(w)
 	if h > 0 {
@@ -271,9 +278,6 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			a.coverCard(c, sc, cv, st.res, lay, title, size, showActions)
 			return
 		}
-		if a.editing {
-			a.removeRow(c, sc)
-		}
 		if size == sizeMini {
 			// The smallest card: its number and nothing else. A click opens the
 			// full view and the right-click menu still picks a size.
@@ -283,141 +287,167 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				ui.Spacer(c)
 				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
 			}
-			if a.editing {
-				a.resizeHandle(c, sc.ID, span, b)
-			}
-			return
-		}
-		if showTitle {
-			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-				iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
-				// The title gives way, with an ellipsis, so the tag and the buttons
-				// stay whole on a small card.
-				ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-					ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
-				})
-				chip()
-				a.refreshButton(c, sc, showActions)
-				a.sizeButton(c, sc, size, showActions)
-			})
-		}
-		switch {
-		case st.loading:
-			ui.Spacer(c)
-			ui.Text(c, tr("加载中…")).FontSize(fsSmall).TextColor(p.muted)
-		case st.err != nil:
-			ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
-		default:
-			if isCalendar(st.res.Chart) {
-				a.calendarHomeCard(c, size, s, b.Height)
-				break
-			}
-			// A card with no headline, or no summary, does not keep a line empty.
-			if st.res.Big != "" {
-				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
-			}
-			hasSub := lay.Summary != "hide" && st.res.Sub != ""
-			switch {
-			case showTitle && hasSub:
-				ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
-			case !showTitle && (hasSub || chipOK):
-				// The summary, with the change beside it.
-				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-					if hasSub {
-						ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
-							ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
-						})
-					}
+		} else {
+			if showTitle {
+				ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+					iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
+					// The title gives way, with an ellipsis, so the tag and the buttons
+					// stay whole on a small card.
+					ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+						ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
+					})
 					chip()
+					a.refreshButton(c, sc, showActions)
+					a.sizeButton(c, sc, size, showActions)
 				})
 			}
-			showLegend := a.legendShown(sc.ID, lay)
-			if size > 0 {
-				a.freshness(c, st, size)
-				if len(st.res.Images) > 0 {
-					a.imageCarousel(c, sc, st.res.Images, w-32*s, 120*s)
+			switch {
+			case st.loading:
+				ui.Spacer(c)
+				ui.Text(c, tr("加载中…")).FontSize(fsSmall).TextColor(p.muted)
+			case st.err != nil:
+				ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
+			default:
+				if isCalendar(st.res.Chart) {
+					a.calendarHomeCard(c, size, s, b.Height)
+					break
 				}
-			}
-			switch size {
-			case 1:
-				if !hasChart {
+				// A card with no headline, or no summary, does not keep a line empty.
+				// Clock and single-target countdown widgets already draw a hero display
+				// on medium/large cards, so avoid duplicating Big above them (mini/small
+				// cards still show Big).
+				selfHero := size > 0 && hasChart && (isClock(st.res.Chart) || (isCountdown(st.res.Chart) && len(st.res.Chart.Countdown) == 1))
+				if st.res.Big != "" && !selfHero {
+					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
+				}
+				hasSub := lay.Summary != "hide" && st.res.Sub != ""
+				switch {
+				case showTitle && hasSub:
+					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+				case !showTitle && (hasSub || chipOK):
+					// The summary, with the change beside it.
+					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+						if hasSub {
+							ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
+								ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+							})
+						}
+						chip()
+					})
+				}
+				showLegend := a.legendShown(sc.ID, lay)
+				if size > 0 {
+					a.freshness(c, st, size)
+					if len(st.res.Images) > 0 {
+						a.imageCarousel(c, sc, st.res.Images, w-32*s, 120*s)
+					}
+				}
+				switch size {
+				case 0:
+					if hasPB && len(pb.Items) > 0 {
+						compactPB := *pb
+						compactPB.HideLabel = true
+						if compactPB.Height <= 0 || compactPB.Height > 7 {
+							compactPB.Height = 6
+						}
+						compactPB.Items = []engine.Progress{{Value: pb.Items[0].Value, Max: pb.Items[0].Max, Color: pb.Items[0].Color, To: pb.Items[0].To}}
+						progressBarView(c, &compactPB, 1)
+					}
+				case 1:
+					if hasPB {
+						progressBarView(c, pb, 2)
+						for _, in := range inputs {
+							a.quickEntry(c, sc.ID, in)
+						}
+						break
+					}
+					if !hasChart {
+						for _, in := range inputs {
+							a.quickEntry(c, sc.ID, in)
+						}
+						break
+					}
+					if !isProgress(st.res.Chart) && !isWidget(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
+						ui.Spacer(c)
+					}
+					if isProgress(st.res.Chart) {
+						// A completion ring sits cleanly right under the summary.
+						progressRingView(c, st.res.Chart, 3, 46)
+					} else if isWidget(st.res.Chart) {
+						sparkH := max(54, b.Height-154)*s + lift
+						widgetView(c, st.res.Chart, sparkH, nil, false, a.now(), 3)
+					} else {
+						sparkH := max(54, b.Height-154)*s + lift
+						if len(st.res.Stats) > 0 && !isCalendar(st.res.Chart) {
+							// The stat strip takes the room a curve would have had.
+							sparkH = max(28, b.Height-210)*s + lift
+						}
+						if isCalendar(st.res.Chart) {
+							Chart(c, ChartProps{Data: st.res.Chart, Height: sparkH, Now: a.now()})
+						} else {
+							SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
+						}
+					}
 					for _, in := range inputs {
 						a.quickEntry(c, sc.ID, in)
 					}
-					break
-				}
-				if !isProgress(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
-					ui.Spacer(c)
-				}
-				if isProgress(st.res.Chart) {
-					// A completion chart is bars or rings, not a curve: a medium
-					// card draws two bars or three rings, and the full view or a
-					// large card shows all.
-					if st.res.Chart.Type == "progressRing" {
-						progressRingView(c, st.res.Chart, 3, 46)
-					} else {
-						progressView(c, st.res.Chart.Progress, 2)
+				case 2, 3:
+					if hasPB {
+						a.dimRow(c, idx, meta.Dims)
+						a.varRow(c, sc, meta)
+						progressBarView(c, pb, 0)
+						for _, in := range inputs {
+							a.quickEntry(c, sc.ID, in)
+						}
+						break
 					}
-				} else {
-					sparkH := max(54, b.Height-154)*s + lift
-					if len(st.res.Stats) > 0 && !isCalendar(st.res.Chart) {
-						// The stat strip takes the room a curve would have had.
-						sparkH = max(28, b.Height-210)*s + lift
-					}
-					if isCalendar(st.res.Chart) {
-						Chart(c, ChartProps{Data: st.res.Chart, Height: sparkH, Now: a.now()})
-					} else {
-						SparkStyled(c, st.res.Chart, a.styles[sc.ID], sparkH)
-					}
-				}
-				for _, in := range inputs {
-					a.quickEntry(c, sc.ID, in)
-				}
-			case 2, 3:
-				// A completion chart sits right under the summary; a curve is
-				// pushed down to fill the card.
-				if !hasChart || !isProgress(st.res.Chart) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
-					ui.Spacer(c)
-				}
-				a.dimRow(c, idx, meta.Dims)
-				a.varRow(c, sc, meta)
-				// A wide card is a strip: its chart is shorter than a large card's.
-				chartH := max(120, b.Height-210)*s + lift
-				if size == 3 {
-					chartH = wideChart
-				}
-				if hasChart {
-					Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID), Now: a.now()})
-					if !isCalendar(st.res.Chart) {
-						Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
-					}
-					if showLegend {
-						legendRow(c, st.res.Chart)
-					}
-					if isProgress(st.res.Chart) && ringVAlign(st.res.Chart) != "bottom" {
+					// A completion chart or widget sits right under the summary; a curve is
+					// pushed down to fill the card.
+					if !hasChart || (!isProgress(st.res.Chart) && !isWidget(st.res.Chart)) || ringVAlign(st.res.Chart) == "middle" || ringVAlign(st.res.Chart) == "bottom" {
 						ui.Spacer(c)
 					}
+					a.dimRow(c, idx, meta.Dims)
+					a.varRow(c, sc, meta)
+					// A wide card is a strip: its chart is shorter than a large card's.
+					chartH := max(120, b.Height-210)*s + lift
+					if size == 3 {
+						chartH = wideChart
+					}
+					if hasChart {
+						if isWidget(st.res.Chart) {
+							widgetView(c, st.res.Chart, chartH, a.selOf("card:"+sc.ID), false, a.now(), 0)
+						} else {
+							Chart(c, ChartProps{Data: st.res.Chart, Style: a.styles[sc.ID], Height: chartH, Selected: a.selOf("card:" + sc.ID), Now: a.now()})
+							if hasChartDetail(st.res.Chart) && !isCalendar(st.res.Chart) {
+								Detail(c, st.res.Chart, a.selOf("card:"+sc.ID))
+							}
+							if showLegend && isPlotChart(st.res.Chart) {
+								legendRow(c, st.res.Chart)
+							}
+							if isProgress(st.res.Chart) && ringVAlign(st.res.Chart) != "bottom" {
+								ui.Spacer(c)
+							}
+						}
+					}
+					for _, in := range inputs {
+						a.quickEntry(c, sc.ID, in)
+					}
 				}
-				for _, in := range inputs {
-					a.quickEntry(c, sc.ID, in)
+				// The stats are their own block at the foot of the card, when the
+				// layout keeps them. A medium card with bars or widgets has no room for them;
+				// its full view has them.
+				barsOnMedium := size == 1 && (hasPB || (hasChart && (isProgress(st.res.Chart) || isCalendar(st.res.Chart) || isWidget(st.res.Chart))))
+				if size > 0 && lay.Stats != "hide" && !barsOnMedium {
+					cardStats(c, st.res.Stats)
 				}
 			}
-			// The stats are their own block at the foot of the card, when the
-			// layout keeps them. A medium card with bars has no room for them;
-			// its full view has them.
-			barsOnMedium := size == 1 && hasChart && (isProgress(st.res.Chart) || isCalendar(st.res.Chart))
-			if size > 0 && lay.Stats != "hide" && !barsOnMedium {
-				cardStats(c, st.res.Stats)
-			}
+		}
+		if !showTitle && !a.editing && size != sizeMini {
+			a.hoverBar(c, sc, title, size, showActions, w)
 		}
 		if a.editing {
-			ui.Row(c).Shrink(0).AlignItems(ui.End).Children(func() {
-				ui.Spacer(c)
-				a.resizeHandle(c, sc.ID, span, b)
-			})
-		}
-		if !showTitle {
-			a.hoverBar(c, sc, title, size, showActions, w)
+			a.removeRow(c, sc)
+			a.resizeHandle(c, sc.ID, span, b)
 		}
 	})
 	// Right click on this card: a menu in the window with its four sizes. It
@@ -457,7 +487,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	})
 	if a.editing {
 		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
-		el.Border(1, accent.Alpha(0.55))
+		if a.rz != nil && a.rz.id == sc.ID {
+			el.Border(2, p.accent)
+		} else {
+			el.Border(1, accent.Alpha(0.55))
+		}
 		if ref, ok := ui.Drop[cardRef](el); ok && ref.id != sc.ID {
 			a.moveCard(ref.id, sc.ID)
 		}
@@ -530,8 +564,9 @@ func fitText(s string, width, fs float32) string {
 // removeRow is the × of a card in edit mode: it takes the card off the home
 // page. The script stays in 编辑, where it can be put back with 显示在首页.
 func (a *app) removeRow(c *ui.Context, sc store.Script) {
-	ui.Row(c).Shrink(0).AlignItems(ui.Center).Children(func() {
-		ui.Spacer(c)
+	p := pal(c)
+	ui.Row(c.Key("remove:" + sc.ID)).Absolute().Top(6).Right(6).Padding(2).Radius(radControl).
+		Background(p.card.Alpha(0.92)).BorderWidth(1).BorderColor(p.hairline).Children(func() {
 		if action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("从首页移除")}).Clicked() {
 			a.removeFromHome(sc)
 		}
