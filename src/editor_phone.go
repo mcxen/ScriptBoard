@@ -22,7 +22,7 @@ import (
 func (a *app) phoneList(c *ui.Context) {
 	p := pal(c)
 	page(c, true, func() {
-		header(c, tr("编辑"), tr("脚本与数据表"), nil)
+		header(c, tr("组件管理"), tr("脚本与数据表"), nil)
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			if primaryBtn(c, tr("+ 脚本")).Clicked() {
 				a.newScript()
@@ -38,11 +38,14 @@ func (a *app) phoneList(c *ui.Context) {
 		})
 		a.transferPanel(c)
 
-		var tables, scripts []store.Script
+		var bars, tables, scripts []store.Script
 		for _, sc := range a.store.Scripts() {
-			if sc.IsTable() {
+			switch {
+			case sc.IsBar():
+				bars = append(bars, sc)
+			case sc.IsTable():
 				tables = append(tables, sc)
-			} else {
+			default:
 				scripts = append(scripts, sc)
 			}
 		}
@@ -57,6 +60,7 @@ func (a *app) phoneList(c *ui.Context) {
 				}
 			})
 		}
+		section(".bar", bars)
 		section(tr("脚本"), scripts)
 		section(tr("数据表"), tables)
 	})

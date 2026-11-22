@@ -159,7 +159,7 @@ func TestEditorGrantButtons(t *testing.T) {
 	sc := saveUserScript(t, a, "needs-grant", `{ name: "needs", platforms: ["desktop"], needs: ["files"], usage: ["claude-code"] }`)
 	a.openEditor(sc.ID)
 	tt := ui.NewTester(a.view, 1300, 900)
-	click(t, tt, "编辑")
+	click(t, tt, "组件管理")
 	requireText(t, tt, "未授权")
 	click(t, tt, "授权")
 	if !a.granted(sc, caps.Files) {

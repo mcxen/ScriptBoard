@@ -117,6 +117,9 @@ func (a *app) scriptNote(sc store.Script) string {
 	if sc.IsTable() {
 		return tr("数据表") + " · " + parts[0]
 	}
+	if sc.IsBar() {
+		return tr("组件") + " · " + parts[0]
+	}
 	if p := platformLabel(r); p != "" {
 		parts = append(parts, p)
 	}

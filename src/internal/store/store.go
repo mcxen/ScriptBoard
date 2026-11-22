@@ -55,6 +55,9 @@ type Script struct {
 // imports, shown as a table, a chart and a card.
 const KindTable = "table"
 
+// KindBar is the Kind of a .bar XML component bundle running on moejs + webapi.
+const KindBar = "bar"
+
 // Table is the rows of a data table. A table with a Metric is a view of a
 // recorded series (weight, gold) and keeps its rows there, not here.
 type Table struct {
@@ -67,6 +70,9 @@ type Table struct {
 
 // IsTable reports whether the plugin is a data table.
 func (s Script) IsTable() bool { return s.Kind == KindTable }
+
+// IsBar reports whether the entry is a .bar XML component.
+func (s Script) IsBar() bool { return s.Kind == KindBar }
 
 // Clone copies the table, so that editing the copy leaves the original alone.
 func (t *Table) Clone() *Table {
@@ -159,6 +165,21 @@ type Settings struct {
 	ScriptVars map[string]map[string]string `json:"scriptVars"`
 	// CardScale scales the home cards and their icons, from about 0.7 to 1.6.
 	CardScale float64 `json:"cardScale"`
+	// BarPlacements holds per-.bar-component enablement and display placements.
+	BarPlacements map[string]BarPlacement `json:"barPlacements,omitempty"`
+}
+
+// BarPlacement records where a .bar component is enabled and displayed.
+type BarPlacement struct {
+	Enabled      bool   `json:"enabled"`
+	MenuBar      bool   `json:"menuBar"`
+	MenuBarMode  string `json:"menuBarMode,omitempty"` // "panel" (default), "menu", or "open"
+	Display      string `json:"display,omitempty"`     // ""/"cursor" (follow click), "internal", or "external"
+	LeftSidebar  bool   `json:"leftSidebar"`
+	RightSidebar bool   `json:"rightSidebar"`
+	BottomBar    bool   `json:"bottomBar"`
+	Shortcut     bool   `json:"shortcut"`
+	ShortcutKey  string `json:"shortcutKey,omitempty"`
 }
 
 // CardBox is a home card's place on the grid: its width in columns of a
@@ -229,26 +250,38 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{path: filepath.Join(dir, "data.json")}
+	if err := s.Reload(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Reload re-reads data.json from disk, updating the in-memory store.
+func (s *Store) Reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var next file
 	b, err := os.ReadFile(s.path)
 	switch {
 	case err == nil:
-		if err := json.Unmarshal(b, &s.f); err != nil {
-			return nil, err
+		if err := json.Unmarshal(b, &next); err != nil {
+			return err
 		}
 	case errors.Is(err, fs.ErrNotExist):
 	default:
-		return nil, err
+		return err
 	}
-	if s.f.Metrics == nil {
-		s.f.Metrics = map[string][]engine.Point{}
+	if next.Metrics == nil {
+		next.Metrics = map[string][]engine.Point{}
 	}
-	if s.f.Settings.WeightUnit == "" {
-		s.f.Settings = Settings{WeightUnit: "kg", RemindAt: "20:00"}
+	if next.Settings.WeightUnit == "" {
+		next.Settings = Settings{WeightUnit: "kg", RemindAt: "20:00"}
 	}
-	if s.f.Settings.CardScale == 0 {
-		s.f.Settings.CardScale = 1
+	if next.Settings.CardScale == 0 {
+		next.Settings.CardScale = 1
 	}
-	return s, nil
+	s.f = next
+	return nil
 }
 
 // Path is the file the data lives in.

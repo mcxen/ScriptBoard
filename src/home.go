@@ -10,6 +10,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 )
@@ -143,6 +144,10 @@ func fmtScale(s float32) string {
 func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w float32) {
 	p := pal(c)
 	s := a.scale()
+	if sc.IsBar() {
+		a.barHomeCard(c, sc, b, w, s)
+		return
+	}
 	meta, metaErr := a.metaOf(sc)
 	idx, vals := a.viewOf(sc.ID, meta.Dims)
 	st := &runState{err: metaErr}
@@ -612,4 +617,37 @@ func (a *app) removeFromHome(sc store.Script) {
 		return
 	}
 	a.status = tr("已从首页移除，在「编辑」里可以再显示")
+}
+
+func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s float32) {
+	p := pal(c)
+	inst, _, err := a.ensureBarInstance(sc)
+	var snap bar.Snapshot
+	if err == nil && inst != nil {
+		snap = inst.Snapshot()
+	} else if err != nil {
+		snap.Error = err.Error()
+	}
+	h := max(b.Height*s, 220*s)
+	el := card(c).Width(w).Height(h).Clip().Cursor(ui.CursorPointer)
+	el.Children(func() {
+		if a.editing {
+			a.removeRow(c, sc)
+		}
+		th := barThemeFor(c, barThemeAuto)
+		ui.Scroll(c).Fill().Children(func() {
+			if snap.Panel != nil {
+				renderBarNode(c, snap.Panel, th, func(aid string) {
+					a.invokeBarAction(sc.ID, aid)
+				})
+			} else if snap.Error != "" {
+				ui.Column(c).Padding(16).Children(func() {
+					ui.Text(c, snap.Error).FontSize(fsSmall).TextColor(p.up)
+				})
+			}
+		})
+	})
+	if el.Clicked() && !a.editing {
+		a.router.Push("/bar/" + sc.ID)
+	}
 }

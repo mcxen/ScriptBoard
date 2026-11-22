@@ -7,6 +7,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/display"
 
 	"scriptboard/src/internal/caps"
+	"scriptboard/src/internal/store"
 )
 
 // navItem is one place the app can go to.
@@ -19,7 +20,8 @@ type navItem struct {
 
 var navItems = []navItem{
 	{path: "/", icon: "layout-grid", label: "首页", also: []string{"/full/"}},
-	{path: "/edit", icon: "pencil-line", label: "编辑"},
+	{path: "/edit", icon: "pencil-line", label: "组件管理", also: []string{"/edit/"}},
+	{path: "/bar", icon: "sparkles", label: "菜单管理", also: []string{"/bar/"}},
 	{path: "/community", icon: "users", label: "社区"},
 	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds"}},
 }
@@ -27,8 +29,8 @@ var navItems = []navItem{
 // mainNavItems are the pages that live inside the main window; settings opens
 // in its own window on desktop and sits apart in the sidebar footer.
 var (
-	mainNavItems    = navItems[:3]
-	settingsNavItem = navItems[3]
+	mainNavItems    = navItems[:4]
+	settingsNavItem = navItems[4]
 )
 
 // active reports whether the page at path belongs to the item.
@@ -71,10 +73,21 @@ func (a *app) view(c *ui.Context) {
 
 	setPageWidth(a.set.ContentWidth)
 	root := skinBackground(c, ui.Column(c).Fill())
-	// Escape goes back one page, as in notes; a dialog that is open takes it
-	// first, since it is built after the page.
+	// Escape closes shortcut overlay first, or goes back one page.
 	if root.OverlayShortcut(0, ui.KeyEscape) {
-		a.router.Back()
+		if a.barOverlayID != "" {
+			a.barOverlayID = ""
+		} else {
+			a.router.Back()
+		}
+	}
+	shortcutBars := a.dockedBarComponents(func(pl store.BarPlacement) bool { return pl.Shortcut })
+	if len(shortcutBars) > 0 && root.OverlayShortcut(ui.Alt, ui.KeyW) {
+		if a.barOverlayID != "" {
+			a.barOverlayID = ""
+		} else {
+			a.barOverlayID = shortcutBars[0].ID
+		}
 	}
 	// Cmd+, (macOS) or Ctrl+, (Windows/Linux) opens the settings window.
 	if !isAndroid() && root.OverlayShortcut(ui.Cmd, ui.KeyComma) {
@@ -102,12 +115,19 @@ func (a *app) view(c *ui.Context) {
 					case r.Match("/"):
 						r.Title(tr("首页"))
 						a.home(c, compact)
+					case r.Match("/bar/{id}"):
+						r.Title(tr("菜单管理"))
+						a.selectBarComponent(r.Param("id"))
+						a.barView(c, compact)
+					case r.Match("/bar"):
+						r.Title(tr("菜单管理"))
+						a.barView(c, compact)
 					case r.Match("/edit/{id}"):
-						r.Title(tr("编辑"))
+						r.Title(tr("组件管理"))
 						a.openEditor(r.Param("id"))
 						a.editor(c, compact)
 					case r.Match("/edit"):
-						r.Title(tr("编辑"))
+						r.Title(tr("组件管理"))
 						a.editor(c, compact)
 					case r.Match("/full/{id}"):
 						r.Title(tr("查看"))
@@ -132,13 +152,86 @@ func (a *app) view(c *ui.Context) {
 				pages()
 				a.tabBar(c, p, path)
 			})
+			a.barShortcutOverlay(c, p)
 			return
 		}
+		leftDocks := a.dockedBarComponents(func(pl store.BarPlacement) bool { return pl.LeftSidebar })
+		rightDocks := a.dockedBarComponents(func(pl store.BarPlacement) bool { return pl.RightSidebar })
+		bottomDocks := a.dockedBarComponents(func(pl store.BarPlacement) bool { return pl.BottomBar })
+
 		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 			a.sidebar(c, p, path)
-			pages()
+			if len(leftDocks) > 0 {
+				a.renderBarDockSide(c, p, leftDocks, false)
+			}
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+				ui.Column(c).Grow(1).MinHeight(0).FillWidth().Children(pages)
+				if len(bottomDocks) > 0 {
+					a.renderBarDockBottom(c, p, bottomDocks)
+				}
+			})
+			if len(rightDocks) > 0 {
+				a.renderBarDockSide(c, p, rightDocks, true)
+			}
+		})
+		a.barShortcutOverlay(c, p)
+	})
+}
+
+func (a *app) renderBarDockSide(c *ui.Context, p palette, list []store.Script, right bool) {
+	col := ui.Column(c).
+		Width(324).
+		FillHeight().
+		Background(p.sidebar).
+		BorderColor(p.border).
+		Padding(12)
+	if right {
+		col = col.BorderWidth(0, 0, 0, 1)
+	} else {
+		col = col.BorderWidth(0, 1, 0, 0)
+	}
+	col.Children(func() {
+		ui.Scroll(c).Fill().Children(func() {
+			ui.Column(c).FillWidth().Gap(14).Children(func() {
+				for _, sc := range list {
+					sc := sc
+					a.renderDockedBarPanel(c, sc, p, func() {
+						pl := a.barPlacement(sc.ID)
+						if right {
+							pl.RightSidebar = false
+						} else {
+							pl.LeftSidebar = false
+						}
+						a.setBarPlacement(sc.ID, pl)
+					})
+				}
+			})
 		})
 	})
+}
+
+func (a *app) renderBarDockBottom(c *ui.Context, p palette, list []store.Script) {
+	ui.Column(c).
+		FillWidth().
+		Height(250).
+		Background(p.sidebar).
+		BorderWidth(1, 0, 0, 0).
+		BorderColor(p.border).
+		Padding(10, 16).
+		Children(func() {
+			ui.Scroll(c).Fill().Children(func() {
+				ui.Row(c).Wrap().Gap(16).Children(func() {
+					for _, sc := range list {
+						sc := sc
+						a.renderDockedBarPanel(c, sc, p, func() {
+							pl := a.barPlacement(sc.ID)
+							pl.BottomBar = false
+							a.setBarPlacement(sc.ID, pl)
+						})
+					}
+				})
+			})
+		})
 }
 
 // sidebar is the brand, the places to go and the state of the network. Like

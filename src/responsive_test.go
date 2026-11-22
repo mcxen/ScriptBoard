@@ -76,7 +76,7 @@ func TestWideWindow(t *testing.T) {
 	settle(tt)
 	settle(tt)
 	savePNG(t, tt, "9-home-wide")
-	click(t, tt, "编辑")
+	click(t, tt, "组件管理")
 	requireText(t, tt, "编辑脚本")
 	savePNG(t, tt, "9-editor-wide")
 }

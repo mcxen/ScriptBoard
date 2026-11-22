@@ -136,7 +136,7 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	tt := ui.NewTester(a.view, 1280, 860)
 	settle(tt)
 
-	click(t, tt, "编辑")
+	click(t, tt, "组件管理")
 	requireText(t, tt, "可视化")
 	requireText(t, tt, "源码")
 	requireText(t, tt, "卡片显示")

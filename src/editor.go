@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 )
@@ -91,12 +92,25 @@ func (a *app) saveDraft() {
 		a.status = tr("插件的脚本请在插件文件夹里修改，或用 MCP 工具修改")
 		return
 	}
+	if a.draft.IsBar() {
+		if _, err := bar.Parse(a.draft.Source); err != nil {
+			a.status = tr("保存失败：") + err.Error()
+			return
+		}
+		if inst, ok := a.barInsts[a.draft.ID]; ok {
+			inst.Close()
+			delete(a.barInsts, a.draft.ID)
+		}
+	}
 	if err := a.store.SaveScript(a.draft); err != nil {
 		a.status = tr("保存失败：") + err.Error()
 		return
 	}
 	a.invalidate(a.draft.ID)
 	a.invalidate(draftKey)
+	if a.draft.IsBar() {
+		a.syncBarMenuBar()
+	}
 	a.status = tr("已保存")
 }
 
@@ -140,7 +154,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	}
 	if a.draft.ID == "" {
 		page(c, compact, func() {
-			header(c, tr("编辑"), "", nil)
+			header(c, tr("组件管理"), "", nil)
 			card(c).Children(func() { empty(c, "pencil-line", tr("还没有脚本"), tr("点「新建」写第一个脚本。")) })
 		})
 		return
@@ -151,8 +165,41 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	wide := !compact && avail >= 1000
 	listRow := !wide
 
+	allScripts := a.store.Scripts()
+	q := strings.ToLower(strings.TrimSpace(a.editorSearch))
+	filtered := make([]store.Script, 0, len(allScripts))
+	for _, sc := range allScripts {
+		switch a.editorKind {
+		case 1:
+			if sc.IsTable() || sc.IsBar() {
+				continue
+			}
+		case 2:
+			if !sc.IsTable() {
+				continue
+			}
+		case 3:
+			if !sc.IsBar() {
+				continue
+			}
+		}
+		if q != "" {
+			hay := strings.ToLower(sc.Name + " " + tr(sc.Name) + " " + sc.ID)
+			if !strings.Contains(hay, q) {
+				continue
+			}
+		}
+		filtered = append(filtered, sc)
+	}
+
 	scripts := func() {
-		label(c, tr("脚本与数据表"))
+		ui.Row(c).AlignItems(ui.Center).Children(func() {
+			label(c, tr("组件管理"))
+			ui.Spacer(c)
+			ui.Text(c, fmt.Sprintf("%d", len(filtered))).FontSize(fsTiny).TextColor(p.faint)
+		})
+		textInput(c, &a.editorSearch, tr("搜索组件…")).FillWidth()
+		choose(c, &a.editorKind, tr("全部"), tr("脚本"), tr("数据表"), ".bar")
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
 			if btn(c, tr("+ 脚本")).Clicked() {
 				a.newScript()
@@ -160,21 +207,20 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			if btn(c, tr("+ 数据表")).Clicked() {
 				a.newTable()
 			}
+			if btn(c, "+ .bar").Clicked() {
+				if a.win != nil {
+					a.openBarFileDialog()
+				} else {
+					a.panel, a.transferText, a.transferErr = "import", "", ""
+				}
+			}
 			if btn(c, tr("导入脚本")).Clicked() {
 				a.panel, a.transferText, a.transferErr = "import", "", ""
 			}
 		})
 		if !listRow {
-			textInput(c.Key("ed-filter"), &a.visual.filter, tr("筛选脚本…"))
-			q := strings.ToLower(strings.TrimSpace(a.visual.filter))
 			items := []display.ListItem{}
-			for _, sc := range a.store.Scripts() {
-				if q != "" {
-					name := strings.ToLower(tr(sc.Name))
-					if !strings.Contains(name, q) && !strings.Contains(strings.ToLower(sc.ID), q) {
-						continue
-					}
-				}
+			for _, sc := range filtered {
 				meta, _ := a.metaOf(sc)
 				note := a.scriptNote(sc)
 				if sc.Home {
@@ -195,7 +241,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			return
 		}
 		list := func() {
-			for _, sc := range a.store.Scripts() {
+			for _, sc := range filtered {
 				sc := sc
 				meta, _ := a.metaOf(sc)
 				active := sc.ID == a.editorID
@@ -236,6 +282,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		sourceH = 260
 	}
 	draft := func() {
+		draftMeta, draftMetaErr := a.metaOf(a.draft)
 		ui.Column(c).Gap(8).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 				sectionTitle(c, tr("编辑脚本"))
@@ -266,6 +313,11 @@ func (a *app) editor(c *ui.Context, compact bool) {
 				if btn(c, tr("导出")).Clicked() {
 					a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
 				}
+				if a.draft.IsBar() || (draftMetaErr == nil && draftMeta.Menubar) {
+					if btn(c, tr("在菜单管理中配置")).Clicked() {
+						a.router.Push("/bar/" + a.draft.ID)
+					}
+				}
 				a.resetButton(c, a.draft)
 				if a.canDelete(a.draft) {
 					label := tr("删除")
@@ -280,6 +332,21 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		})
 		a.transferPanel(c)
 		a.specInfo(c, a.draft)
+		if a.draft.IsBar() {
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				if primaryBtn(c, tr("打开组件详情")).Clicked() {
+					a.router.Push("/bar/" + a.draft.ID)
+				}
+			})
+			field(c, tr("名称"), "", func() {
+				textInput(c, &a.draft.Name, tr("组件名称"))
+			})
+			homeSwitch(c, &a.draft.Home)
+			field(c, tr("源码"), tr(".bar XML 组件定义：包含权限、输入参数与 ES 模块脚本"), func() {
+				textArea(c, &a.draft.Source, "", int(sourceH/17)).Font("monospace").FontSize(fsSmall)
+			})
+			return
+		}
 		if choose(c, &a.editMode, tr("可视化"), tr("源码")) {
 			a.invalidate(draftKey)
 		}
@@ -297,6 +364,23 @@ func (a *app) editor(c *ui.Context, compact bool) {
 	}
 
 	preview := func() {
+		if a.draft.IsBar() {
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				sectionTitle(c, tr("预览"))
+				ui.Spacer(c)
+			})
+			inst, _, err := a.ensureBarInstance(a.draft)
+			var snap bar.Snapshot
+			if err == nil && inst != nil {
+				snap = inst.Snapshot()
+			} else if err != nil {
+				snap.Error = err.Error()
+			}
+			renderBarPanel(c, snap, barThemeFor(c, barThemeAuto), 300, func(aid string) {
+				a.invokeBarAction(a.draft.ID, aid)
+			})
+			return
+		}
 		meta, err := a.metaOf(a.draft)
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 			sectionTitle(c, tr("预览"))

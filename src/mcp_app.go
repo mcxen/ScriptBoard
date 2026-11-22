@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/mcpsvc"
 	"scriptboard/src/internal/store"
 )
@@ -77,8 +78,11 @@ func (a *app) applyMCP() {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpsvc.Server{
-		DataDir:  a.dataDir,
-		ReadOnly: func() bool { return a.store.Settings().MCP.ReadOnly },
+		DataDir:         a.dataDir,
+		ReadOnly:        func() bool { return a.store.Settings().MCP.ReadOnly },
+		Displays:        a.mcpDisplays,
+		MenuBarSnapshot: a.mcpMenuBarSnapshot,
+		OnChange:        func() { a.post(a.reloadFromMCP) },
 	}.HTTPHandler(m.Key))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -294,4 +298,146 @@ func (a *app) mcpGroups(c *ui.Context, compact, titled bool) {
 	if a.mcpNote != "" {
 		notice(c, a.mcpNote, feedback.Info)
 	}
+}
+
+func (a *app) mcpDisplays() []mcpsvc.DisplayInfo {
+	if a.win == nil {
+		return nil
+	}
+	ds := connectedDisplays()
+	out := make([]mcpsvc.DisplayInfo, 0, len(ds))
+	for _, d := range ds {
+		kind := "external"
+		if d.Internal {
+			kind = "internal"
+		}
+		out = append(out, mcpsvc.DisplayInfo{
+			ID:       d.ID,
+			Label:    d.Label,
+			Kind:     kind,
+			Internal: d.Internal,
+			Primary:  d.Primary,
+			Width:    d.Bounds.Width,
+			Height:   d.Bounds.Height,
+		})
+	}
+	return out
+}
+
+func (a *app) mcpMenuBarSnapshot(id string) (map[string]any, bool) {
+	type res struct {
+		data map[string]any
+		ok   bool
+	}
+	ch := make(chan res, 1)
+	a.post(func() {
+		sc, ok := a.store.Script(id)
+		if !ok || sc.IsTable() {
+			ch <- res{}
+			return
+		}
+		if sc.IsBar() {
+			pl := a.barPlacement(id)
+			inst, sp, err := a.ensureBarInstance(sc)
+			var snap bar.Snapshot
+			if err == nil && inst != nil {
+				snap = inst.Snapshot()
+			} else if err != nil {
+				snap.Error = err.Error()
+			}
+			disp := pl.Display
+			if disp == "" {
+				disp = "cursor"
+			}
+			title := sp.Title
+			if title == "" {
+				title = sc.Name
+			}
+			ch <- res{
+				ok: true,
+				data: map[string]any{
+					"id":          sc.ID,
+					"name":        title,
+					"kind":        "bar",
+					"enabled":     pl.Enabled,
+					"pinned":      pl.Enabled && pl.MenuBar,
+					"mode":        pl.MenuBarMode,
+					"display":     disp,
+					"inputs":      a.barInputs(sc.ID, sp),
+					"permissions": sp.Permissions,
+					"tray":        snap.Tray,
+					"panelTexts":  collectBarNodeTexts(snap.Panel),
+					"updatedAt":   snap.UpdatedAt,
+					"error":       snap.Error,
+				},
+			}
+			return
+		}
+		meta, err := a.metaOf(sc)
+		if err != nil {
+			ch <- res{}
+			return
+		}
+		_, vals := a.viewOf(sc.ID, meta.Dims)
+		st := a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
+		pl := a.scriptDockPlacement(sc.ID)
+		mode, _ := a.scriptMenuBarKind(sc, st.res)
+		disp := pl.Display
+		if disp == "" {
+			disp = "cursor"
+		}
+		ch <- res{
+			ok: true,
+			data: map[string]any{
+				"id":      sc.ID,
+				"name":    sc.Name,
+				"kind":    "script",
+				"enabled": pl.Enabled,
+				"pinned":  a.menuBarOn(sc.ID),
+				"mode":    mode,
+				"display": disp,
+				"title":   st.res.Title,
+				"big":     st.res.Big,
+				"sub":     st.res.Sub,
+				"icon":    st.res.Icon,
+				"tray":    st.res.MenuBar,
+				"menu":    st.res.Menu,
+				"lines":   st.res.Lines,
+			},
+		}
+	})
+	r := <-ch
+	return r.data, r.ok
+}
+
+func (a *app) reloadFromMCP() {
+	if err := a.store.Reload(); err != nil {
+		return
+	}
+	a.set = a.store.Settings()
+	a.syncPlugins()
+	for _, sc := range a.barScripts() {
+		if sp, err := a.barSpecOf(sc); err == nil {
+			if inst, ok := a.barInsts[sc.ID]; ok {
+				inst.SetOffline(a.set.Offline)
+				inst.UpdateInputs(a.barInputs(sc.ID, sp), curLang())
+			}
+		}
+	}
+	a.invalidateAll()
+	a.syncMenuBar()
+}
+
+func collectBarNodeTexts(n *bar.Node) []string {
+	if n == nil {
+		return nil
+	}
+	var out []string
+	if t := strings.TrimSpace(n.Text); t != "" {
+		out = append(out, t)
+	}
+	for _, ch := range n.Children {
+		out = append(out, collectBarNodeTexts(ch)...)
+	}
+	return out
 }
