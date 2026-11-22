@@ -108,7 +108,7 @@ func resultKey(sc store.Script, run, lang string) string {
 // scripts that read the network keep one: the others are quick, and the values
 // they show can change under the user's hand.
 func (a *app) savedResult(sc store.Script, run string, m engine.Meta) (engine.Result, bool) {
-	if a.cache == nil || len(m.Sources) == 0 || strings.HasPrefix(run, draftKey) {
+	if a.cache == nil || (len(m.Sources) == 0 && m.NetProbe == nil) || strings.HasPrefix(run, draftKey) {
 		return engine.Result{}, false
 	}
 	data, at, ok := a.cache.GetResultOf(sc.ID, resultKey(sc, run, curLang()))
@@ -127,7 +127,7 @@ func (a *app) savedResult(sc store.Script, run string, m engine.Meta) (engine.Re
 
 // saveResult keeps a result that worked.
 func (a *app) saveResult(sc store.Script, run string, m engine.Meta, res engine.Result) {
-	if a.cache == nil || len(m.Sources) == 0 || strings.HasPrefix(run, draftKey) || !hasResult(res) {
+	if a.cache == nil || (len(m.Sources) == 0 && m.NetProbe == nil) || strings.HasPrefix(run, draftKey) || !hasResult(res) {
 		return
 	}
 	if data, err := json.Marshal(res); err == nil {
@@ -153,9 +153,11 @@ func (a *app) cacheSize() string {
 // clearCache forgets every saved response, history and result.
 func (a *app) clearCache() error {
 	if a.cache == nil {
+		a.forgetNetProbe()
 		return nil
 	}
 	err := a.cache.Clear()
+	a.forgetNetProbe()
 	a.invalidateAll()
 	return err
 }

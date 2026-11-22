@@ -127,6 +127,32 @@ func TestExtractTableAcrossWidgetTypes(t *testing.T) {
 			res:      Result{Stats: []Stat{{Label: "Wind", Value: "3", Sub: "NE"}}},
 			wantCols: 3, wantRows: 1,
 		},
+		{
+			name: "bento probes fallback",
+			res: Result{Chart: &Chart{
+				Type: "bento",
+				Bento: &BentoSpec{
+					Hero: &BentoHero{Value: "39.180.138.19"},
+					Probes: &BentoProbeGroup{
+						Items: []BentoProbe{{Name: "GitHub", Tag: "international", Latency: 53, Success: 12, Total: 12}},
+					},
+				},
+			}},
+			wantCols: 5, wantRows: 1,
+		},
+		{
+			name: "bento detailTable",
+			res: Result{Chart: &Chart{
+				Type: "bento",
+				Bento: &BentoSpec{
+					DetailTable: &TableSpec{
+						Columns: []TableColumn{{Title: "Site"}, {Title: "IP"}},
+						Rows:    [][]string{{"claude.ai", "13.158.209.152"}},
+					},
+				},
+			}},
+			wantCols: 2, wantRows: 1,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

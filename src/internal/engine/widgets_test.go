@@ -382,4 +382,59 @@ func TestNewStyleBuiltins(t *testing.T) {
 	if rfEn.Chart == nil || rfEn.Chart.Table == nil || rfEn.Chart.Table.Columns[0].Title != "Currency" {
 		t.Errorf("fxcny-table en columns: %+v", rfEn.Chart)
 	}
+
+	// 12. ip-dashboard: bento IP & network connectivity dashboard (zh, en, group dim, offline)
+	mockProbe := map[string]any{
+		"fetchedAt": now.UnixMilli(),
+		"hero": map[string]any{
+			"ip":          "39.180.138.19",
+			"countryCode": "cn",
+			"isp":         "China Mobile",
+			"geoZh":       "中国 浙江 杭州 余杭 移动",
+			"geoEn":       "China Zhejiang Hangzhou China Mobile",
+			"propertyZh":  "家庭宽带 (ISP)",
+			"propertyEn":  "Residential (ISP)",
+			"risk": map[string]any{
+				"asn":            56041,
+				"asOrganization": "China Mobile",
+				"cidr":           "39.180.138.0/24",
+				"isResidential":  true,
+				"abuser_score":   "0.0008 (Low)",
+				"timezone":       "Asia/Shanghai",
+			},
+		},
+		"probes": []any{
+			map[string]any{"name": "字节跳动", "enName": "ByteDance", "icon": "bytedance", "flag": "cn", "tag": "domestic", "medianMs": 19, "minMs": 17, "maxMs": 22, "success": 12, "total": 12, "dots": []int{19, 18, 20, 19, 19, 21, 18, 19, 20, 18, 19, 22}},
+			map[string]any{"name": "Cloudflare", "enName": "Cloudflare", "icon": "cloudflare", "tag": "international", "medianMs": -1, "minMs": -1, "maxMs": -1, "success": 0, "total": 12, "dots": []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}},
+		},
+		"exits": []any{
+			map[string]any{"ip": "39.180.138.19", "countryCode": "cn", "geoZh": "中国 浙江 杭州", "geoEn": "China Zhejiang Hangzhou", "count": 1, "sites": []string{"网易"}},
+			map[string]any{"ip": "13.158.209.152", "countryCode": "jp", "geoZh": "日本 Tokyo Amazon.com", "geoEn": "Japan Tokyo Amazon.com", "count": 1, "sites": []string{"claude.ai"}},
+		},
+		"splits": []any{
+			map[string]any{"name": "网易", "type": "domestic", "ip": "39.180.138.19", "countryCode": "cn", "geoZh": "中国 浙江 杭州", "geoEn": "China Zhejiang Hangzhou", "latencyMs": 18, "status": "ok"},
+			map[string]any{"name": "claude.ai", "type": "international", "category": "ai", "ip": "13.158.209.152", "countryCode": "jp", "geoZh": "日本 Tokyo Amazon.com", "geoEn": "Japan Tokyo Amazon.com", "latencyMs": 87, "status": "ok"},
+		},
+	}
+	rib := run(t, "ip-dashboard", "zh", Input{NetProbe: mockProbe})
+	if rib.Chart == nil || rib.Chart.Type != "bento" || rib.Chart.Bento == nil || rib.Chart.Bento.Hero == nil {
+		t.Fatalf("ip-dashboard failed: %+v", rib.Chart)
+	}
+	if rib.Chart.Bento.Hero.Value != "39.180.138.19" || len(rib.Chart.Bento.Probes.Items) != 2 || len(rib.Chart.Bento.Pills.Items) != 2 {
+		t.Errorf("ip-dashboard bento mismatch: %+v", rib.Chart.Bento)
+	}
+	if rib.Chart.Bento.DetailTable == nil || len(rib.Chart.Bento.DetailTable.Rows) != 2 {
+		t.Errorf("ip-dashboard detailTable mismatch: %+v", rib.Chart.Bento.DetailTable)
+	}
+	ribAI := run(t, "ip-dashboard", "en", Input{NetProbe: mockProbe, View: map[string]float64{"group": 3}})
+	if ribAI.Chart == nil || ribAI.Chart.Bento == nil || ribAI.Chart.Bento.DetailTable == nil || len(ribAI.Chart.Bento.DetailTable.Rows) != 1 {
+		t.Errorf("ip-dashboard group=3 AI filter mismatch: %+v", ribAI.Chart)
+	}
+	if ribAI.Chart.Bento.Probes.Items[1].Text != "Timeout" {
+		t.Errorf("ip-dashboard en timeout label = %q, want Timeout", ribAI.Chart.Bento.Probes.Items[1].Text)
+	}
+	ribOff := run(t, "ip-dashboard", "zh", Input{NetProbe: map[string]any{"error": "离线模式"}})
+	if ribOff.Big != "--" || ribOff.Chart != nil {
+		t.Errorf("ip-dashboard offline fallback unexpected: %+v", ribOff)
+	}
 }

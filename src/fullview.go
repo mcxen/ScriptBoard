@@ -180,7 +180,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 
 		// The hero: the headline number, the controls, and the component or chart.
 		card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
-			selfHero := isClock(viewRes.Chart) || (isCountdown(viewRes.Chart) && len(viewRes.Chart.Countdown) == 1)
+			selfHero := isClock(viewRes.Chart) || (isCountdown(viewRes.Chart) && len(viewRes.Chart.Countdown) == 1) || isBentoHero(viewRes.Chart)
 			showHeroHead := !selfHero && (res.Big != "" || res.Sub != "" || plot)
 			if showHeroHead {
 				ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
@@ -270,7 +270,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			if comp != nil {
 				comp.RenderFull(c, ComponentRenderReq{
 					App: a, Script: sc, Result: viewRes, Style: subStyle,
-					Size: -1, Height: h, Selected: sel, Pinned: pinned, Now: a.now(), Full: true,
+					Size: -1, Width: a.contentW() - 2*compactPad(compact), Height: h, Selected: sel, Pinned: pinned, Now: a.now(), Full: true,
 				})
 				if compSpec.Capabilities.HasDetail {
 					ui.Row(c).AlignItems(ui.Center).Gap(10).Wrap().Children(func() {
@@ -426,6 +426,13 @@ func (a *app) infoBlock(c *ui.Context, sc store.Script, meta engine.Meta, compac
 	}
 	if len(meta.Feeds) > 0 {
 		rows = append(rows, row{title: tr("数据源"), control: val(joinNames(meta.Feeds))})
+	}
+	if meta.NetProbe != nil {
+		rounds := meta.NetProbe.Rounds
+		if rounds <= 0 {
+			rounds = 12
+		}
+		rows = append(rows, row{title: tr("网络探测"), control: val(fmt.Sprintf(tr("%d 轮连通性 + 网站分流"), rounds))})
 	}
 	// The details fold: one line with a summary, opened by its link. Closed,
 	// they take a line at the foot of the page rather than a block.

@@ -21,7 +21,7 @@ func Builtins() []Builtin {
 		"weight", "cal", "world-clock", "year-countdown",
 		"fx", "fxcny-table", "bing", "weather", "cnwx-kv", "aqi-neon",
 		"gold-kv", "goldacc-kv", "goldk", "hs300", "btc",
-		"ai-claude-neon", "ai-balance-neon", "weight-contrib",
+		"ai-claude-neon", "ai-balance-neon", "weight-contrib", "ip-dashboard",
 	}
 	out := make([]Builtin, 0, len(order))
 	for _, id := range order {

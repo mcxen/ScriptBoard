@@ -222,8 +222,8 @@ func (a *app) visualComponentEditor(c *ui.Context, compact bool) {
 	case 0:
 		a.visualBasicFields(c, false)
 		// Only show Big/Sub inputs for components that actually display them
-		// (clock and countdown draw their own hero display).
-		if cfg.Type != "clock" && cfg.Type != "countdown" {
+		// (clock, countdown, and bento draw their own hero display).
+		if cfg.Type != "clock" && cfg.Type != "countdown" && cfg.Type != "bento" {
 			ui.Row(c).Gap(10).Wrap().Children(func() {
 				ui.Column(c).Grow(1).MinWidth(140).Children(func() {
 					field(c, tr("主数值（可选）"), "", func() {

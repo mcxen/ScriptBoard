@@ -17,7 +17,7 @@ export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [],
 	if !strings.Contains(got, "图表类型 pie 不认识") || !strings.Contains(got, "progress") {
 		t.Errorf("no warning for pie: %q", got)
 	}
-	for _, okType := range []string{"progress", "progressBar", "progressRing", "calendar", "donut", "checklist", "kv", "countdown", "clock", "contrib", "table"} {
+	for _, okType := range []string{"progress", "progressBar", "progressRing", "calendar", "donut", "checklist", "kv", "countdown", "clock", "contrib", "table", "bento"} {
 		if got := chartReport(src(okType)); got != "" {
 			t.Errorf("a warning for %s: %q", okType, got)
 		}

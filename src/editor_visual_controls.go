@@ -36,6 +36,8 @@ func (a *app) visualComponentContent(c *ui.Context, compact bool) {
 			hint(c, tr("当前展示近 12 周示例打卡数据；可在「样式」调整颜色与单位，或在「源码」接入真实数据"))
 		case "table":
 			a.visualTableItems(c, cfg)
+		case "bento":
+			a.visualBentoControls(c, cfg)
 		case "line":
 			a.visualLineItems(c, cfg)
 		}
@@ -50,7 +52,7 @@ func (a *app) visualComponentStyle(c *ui.Context, compact bool) {
 	p := pal(c)
 	cfg := a.visual.cfg
 	switch cfg.Type {
-	case "checklist", "kv", "countdown":
+	case "checklist", "kv", "countdown", "bento":
 		return
 	}
 	ui.Column(c).Gap(12).Padding(14).Radius(radControl + 2).BorderWidth(1).BorderColor(p.hairline).Children(func() {
@@ -721,6 +723,130 @@ func (a *app) visualTableItems(c *ui.Context, cfg *visualConfig) {
 			changed = true
 		}
 	})
+	if changed {
+		a.applyVisualConfig()
+	}
+}
+
+func (a *app) visualBentoControls(c *ui.Context, cfg *visualConfig) {
+	label(c, tr("Bento 看板配置"))
+	changed := false
+	if cfg.Bento.Hero == nil {
+		cfg.Bento.Hero = &engine.BentoHero{Label: "IPV4", Flag: "cn", Value: "203.0.113.10"}
+	}
+	h := cfg.Bento.Hero
+	ui.Row(c).Gap(8).Wrap().Children(func() {
+		ui.Column(c).Grow(1).MinWidth(100).Children(func() {
+			field(c, tr("顶部标签"), "", func() {
+				if textInput(c, &h.Label, "IPV4").Changed() {
+					changed = true
+				}
+			})
+		})
+		ui.Column(c).Width(72).Children(func() {
+			field(c, tr("国旗代码"), "", func() {
+				if textInput(c, &h.Flag, "cn").Changed() {
+					changed = true
+				}
+			})
+		})
+		ui.Column(c).Grow(2).MinWidth(140).Children(func() {
+			field(c, tr("主数值 / IP"), "", func() {
+				if textInput(c, &h.Value, "203.0.113.10").Changed() {
+					changed = true
+				}
+			})
+		})
+	})
+	ui.Row(c).Gap(8).Wrap().Children(func() {
+		ui.Column(c).Grow(2).MinWidth(150).Children(func() {
+			field(c, tr("位置 / 副标题"), "", func() {
+				if textInput(c, &h.Location, "").Changed() {
+					changed = true
+				}
+			})
+		})
+		ui.Column(c).Grow(1).MinWidth(120).Children(func() {
+			field(c, tr("属性说明"), "", func() {
+				if textInput(c, &h.Meta, "").Changed() {
+					changed = true
+				}
+			})
+		})
+	})
+
+	if cfg.Bento.Probes == nil {
+		cfg.Bento.Probes = &engine.BentoProbeGroup{Columns: 3}
+	}
+	pg := cfg.Bento.Probes
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		label(c, tr("探针子卡"))
+		ui.Spacer(c)
+		if btn(c, tr("+ 添加探针")).Clicked() {
+			pg.Items = append(pg.Items, engine.BentoProbe{
+				Name: "Node", Icon: "cloudflare", Latency: 35,
+				Dots: []int{34, 36, 35, 33, 37, 35, 34, 36, 35, 38, 34, 35},
+			})
+			changed = true
+		}
+	})
+	delProbe := -1
+	for i := range pg.Items {
+		it := &pg.Items[i]
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			if textInput(c.Key(fmt.Sprintf("bpn:%d", i)), &it.Name, tr("名称")).Grow(1).Changed() {
+				changed = true
+			}
+			lat := float64(it.Latency)
+			if numberInput(c.Key(fmt.Sprintf("bpl:%d", i)), &lat, -1, 9999, 5).Width(90).Changed() {
+				it.Latency = int(lat)
+				changed = true
+			}
+			if btn(c.Key(fmt.Sprintf("bpdel:%d", i)), tr("删")).Clicked() {
+				delProbe = i
+			}
+		})
+	}
+	if delProbe >= 0 {
+		pg.Items = append(pg.Items[:delProbe], pg.Items[delProbe+1:]...)
+		changed = true
+	}
+
+	if cfg.Bento.Pills == nil {
+		cfg.Bento.Pills = &engine.BentoPillGroup{Columns: 4}
+	}
+	plg := cfg.Bento.Pills
+	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+		label(c, tr("汇总胶囊"))
+		ui.Spacer(c)
+		if btn(c, tr("+ 添加胶囊")).Clicked() {
+			plg.Items = append(plg.Items, engine.BentoPill{Flag: "us", Value: "192.0.2.1"})
+			changed = true
+		}
+	})
+	delPill := -1
+	for i := range plg.Items {
+		pl := &plg.Items[i]
+		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+			if textInput(c.Key(fmt.Sprintf("bplf:%d", i)), &pl.Flag, "cn").Width(56).Changed() {
+				changed = true
+			}
+			if textInput(c.Key(fmt.Sprintf("bplv:%d", i)), &pl.Value, "IP").Grow(1).Changed() {
+				changed = true
+			}
+			if textInput(c.Key(fmt.Sprintf("bplb:%d", i)), &pl.Badge, tr("标签")).Width(80).Changed() {
+				changed = true
+			}
+			if btn(c.Key(fmt.Sprintf("bpld:%d", i)), tr("删")).Clicked() {
+				delPill = i
+			}
+		})
+	}
+	if delPill >= 0 {
+		plg.Items = append(plg.Items[:delPill], plg.Items[delPill+1:]...)
+		changed = true
+	}
+
 	if changed {
 		a.applyVisualConfig()
 	}

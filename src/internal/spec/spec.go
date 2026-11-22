@@ -46,7 +46,7 @@ func Resolve(m engine.Meta) Resolved {
 
 	// What the host sees the script use.
 	inferred := map[string]bool{}
-	if len(m.Sources) > 0 || len(m.Feeds) > 0 {
+	if len(m.Sources) > 0 || len(m.Feeds) > 0 || m.NetProbe != nil {
 		inferred[caps.Network] = true
 	}
 	allowed := map[string]bool{}

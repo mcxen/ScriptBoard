@@ -81,6 +81,53 @@ type Meta struct {
 	// Live names the sources that are asked for again every few seconds while
 	// the card is on screen (see live.go). Their history is kept for the script.
 	Live *Live `json:"live"`
+	// NetProbe enables host-side network, latency, exit-IP, and risk probing
+	// whose structured snapshot is injected into render(ctx) as ctx.netprobe.
+	NetProbe *NetProbeConfig `json:"netprobe,omitempty"`
+}
+
+// NetProbeConfig configures host-side network probing for a script.
+// In meta() it may be written as `netprobe: true` or `{ rounds, includeRisk, includeSplit }`.
+type NetProbeConfig struct {
+	Rounds       int   `json:"rounds,omitempty"`
+	IncludeRisk  *bool `json:"includeRisk,omitempty"`
+	IncludeSplit *bool `json:"includeSplit,omitempty"`
+}
+
+// WantRisk reports whether IP risk / ASN enrichment should be fetched (default true).
+func (n NetProbeConfig) WantRisk() bool {
+	if n.IncludeRisk == nil {
+		return true
+	}
+	return *n.IncludeRisk
+}
+
+// WantSplit reports whether website split-routing exit IP tests should run (default true).
+func (n NetProbeConfig) WantSplit() bool {
+	if n.IncludeSplit == nil {
+		return true
+	}
+	return *n.IncludeSplit
+}
+
+// UnmarshalJSON accepts `true` or an object `{rounds, includeRisk, includeSplit}`.
+func (n *NetProbeConfig) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "true" {
+		*n = NetProbeConfig{Rounds: 12}
+		return nil
+	}
+	if s == "false" || s == "null" {
+		*n = NetProbeConfig{}
+		return nil
+	}
+	type plain NetProbeConfig
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*n = NetProbeConfig(p)
+	return nil
 }
 
 // ManualInput is a value typed in by hand.
@@ -227,6 +274,98 @@ type Chart struct {
 	Contrib *ContribSpec `json:"contrib,omitempty"`
 	// Table is a "table" structured data table component.
 	Table *TableSpec `json:"table,omitempty"`
+	// Bento is a "bento" nested dashboard component.
+	Bento *BentoSpec `json:"bento,omitempty"`
+}
+
+// BentoSpec configures a nested "bento" dashboard component.
+type BentoSpec struct {
+	Theme       string           `json:"theme,omitempty"` // "" (inherit) | "dark" | "light"
+	Maskable   bool             `json:"maskable,omitempty"`
+	Hero        *BentoHero       `json:"hero,omitempty"`
+	Probes      *BentoProbeGroup `json:"probes,omitempty"`
+	Pills       *BentoPillGroup  `json:"pills,omitempty"`
+	Cells       []BentoCell      `json:"cells,omitempty"`
+	DetailTitle string           `json:"detailTitle,omitempty"`
+	DetailDesc  string           `json:"detailDesc,omitempty"`
+	DetailTable *TableSpec       `json:"detailTable,omitempty"`
+}
+
+// BentoHero is the primary identity / KPI block in a Bento dashboard.
+type BentoHero struct {
+	Label      string   `json:"label,omitempty"`
+	Flag       string   `json:"flag,omitempty"`
+	Value      string   `json:"value"`
+	Masked     string   `json:"masked,omitempty"`
+	Location   string   `json:"location,omitempty"`
+	Meta       string   `json:"meta,omitempty"`
+	Badge      string   `json:"badge,omitempty"`
+	BadgeColor string   `json:"badgeColor,omitempty"`
+	Copy       string   `json:"copy,omitempty"`
+	Details    []KVItem `json:"details,omitempty"`
+}
+
+// BentoProbeGroup is a grid of connectivity / health sub-cards inside Bento.
+type BentoProbeGroup struct {
+	Title      string       `json:"title,omitempty"`
+	ActionText string       `json:"actionText,omitempty"`
+	ActionURL  string       `json:"actionUrl,omitempty"`
+	Columns    int          `json:"columns,omitempty"`
+	Items      []BentoProbe `json:"items,omitempty"`
+}
+
+// BentoProbe is one latency / connectivity sub-card inside BentoProbeGroup.
+type BentoProbe struct {
+	Name    string `json:"name"`
+	Icon    string `json:"icon,omitempty"`
+	Color   string `json:"color,omitempty"`
+	Flag    string `json:"flag,omitempty"`
+	Tag     string `json:"tag,omitempty"`
+	Latency int    `json:"latency"` // ms; <0 means timeout/fail
+	MinMs   int    `json:"minMs,omitempty"`
+	MaxMs   int    `json:"maxMs,omitempty"`
+	Success int    `json:"success,omitempty"`
+	Total   int    `json:"total,omitempty"`
+	Status  string `json:"status,omitempty"` // ok | warn | slow | err | pending
+	Text    string `json:"text,omitempty"`   // display override e.g. "24ms" or "超时"
+	Dots    []int  `json:"dots,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
+// BentoPillGroup is a bottom strip of clickable summary pill sub-cards inside Bento.
+type BentoPillGroup struct {
+	Title   string      `json:"title,omitempty"`
+	Columns int         `json:"columns,omitempty"`
+	Items   []BentoPill `json:"items,omitempty"`
+}
+
+// BentoPill is one clickable pill sub-card inside BentoPillGroup.
+type BentoPill struct {
+	Flag       string   `json:"flag,omitempty"`
+	Value      string   `json:"value"`
+	Masked     string   `json:"masked,omitempty"`
+	Sub        string   `json:"sub,omitempty"`
+	Badge      string   `json:"badge,omitempty"`
+	BadgeColor string   `json:"badgeColor,omitempty"`
+	Mono       bool     `json:"mono,omitempty"`
+	Copy       string   `json:"copy,omitempty"`
+	URL        string   `json:"url,omitempty"`
+	Details    []KVItem `json:"details,omitempty"`
+}
+
+// BentoCell is a general-purpose nested sub-card in a Bento grid.
+type BentoCell struct {
+	Title  string   `json:"title,omitempty"`
+	Value  string   `json:"value,omitempty"`
+	Sub    string   `json:"sub,omitempty"`
+	Icon   string   `json:"icon,omitempty"`
+	Flag   string   `json:"flag,omitempty"`
+	Badge  string   `json:"badge,omitempty"`
+	Status string   `json:"status,omitempty"`
+	Color  string   `json:"color,omitempty"`
+	Span   int      `json:"span,omitempty"`
+	Dots   []int    `json:"dots,omitempty"`
+	KV     []KVItem `json:"kv,omitempty"`
 }
 
 // BarStyle styles a progressBar / progress component.
@@ -630,6 +769,8 @@ type Input struct {
 	History    map[string][]HistoryPoint
 	// Vars are the chosen value of each variable (ctx.vars).
 	Vars map[string]string
+	// NetProbe holds the host-side network probe report when meta().netprobe is configured.
+	NetProbe any
 }
 
 // Script is a compiled script. Runs share the compiled module but each gets a
@@ -685,6 +826,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 		"sourceInfo": nonNilInfo(in.SourceInfo),
 		"history":    nonNilHistory(in.History),
 		"vars":       nonNilVars(in.Vars),
+		"netprobe":   nonNilNetProbe(in.NetProbe),
 	})
 	if err != nil {
 		return Result{}, err
@@ -828,4 +970,11 @@ func nonNilVars(m map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	return m
+}
+
+func nonNilNetProbe(v any) any {
+	if v == nil {
+		return map[string]any{}
+	}
+	return v
 }

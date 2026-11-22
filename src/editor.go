@@ -405,7 +405,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			if isCalendar(st.res.Chart) {
 				a.calendarPreview(c, a.selOf(draftKey), 280)
 			} else {
-				selfHero := isClock(st.res.Chart) || (isCountdown(st.res.Chart) && len(st.res.Chart.Countdown) == 1)
+				selfHero := isClock(st.res.Chart) || (isCountdown(st.res.Chart) && len(st.res.Chart.Countdown) == 1) || isBentoHero(st.res.Chart)
 				if st.res.Title != "" && !selfHero {
 					ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
 				}
@@ -432,7 +432,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 					}
 					comp.RenderCard(c, ComponentRenderReq{
 						App: a, Script: a.draft, Result: viewRes, Style: subStyle,
-						Size: pSize, Height: pHeight, Limit: pLimit, Selected: a.selOf(draftKey), Now: a.now(),
+						Size: pSize, Width: 332, Height: pHeight, Limit: pLimit, Selected: a.selOf(draftKey), Now: a.now(),
 					})
 					if pSize >= 2 && comp.Spec().Capabilities.HasDetail {
 						Detail(c, viewRes.Chart, a.selOf(draftKey))

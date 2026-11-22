@@ -304,6 +304,10 @@ func Chart(c *ui.Context, p ChartProps) ui.Element {
 	if isWidget(p.Data) {
 		return widgetView(c, p.Data, h, p.Selected, p.Full, p.Now, 0)
 	}
+	if isBento(p.Data) {
+		var ap *app
+		return ap.bentoWidgetView(c, "chart", p.Data.Bento, 0, 2, p.Full)
+	}
 	return chartWith(c, p.Data, p.Style, h, p.Selected, p.Pinned, p.Full)
 }
 
@@ -320,6 +324,10 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	}
 	if isWidget(ch) {
 		return widgetView(c, ch, h, sel, full, time.Now(), 0)
+	}
+	if isBento(ch) {
+		var ap *app
+		return ap.bentoWidgetView(c, "chart", ch.Bento, 0, 2, full)
 	}
 	if isCombo(ch) {
 		return comboView(c, ch, style, h, sel, pinned, full)
@@ -417,6 +425,10 @@ func SparkStyled(c *ui.Context, ch *engine.Chart, want string, h float32) ui.Ele
 	}
 	if isWidget(ch) {
 		return widgetView(c, ch, h, nil, false, time.Now(), 3)
+	}
+	if isBento(ch) {
+		var ap *app
+		return ap.bentoWidgetView(c, "spark", ch.Bento, 0, 1, false)
 	}
 	if isCombo(ch) {
 		return comboView(c, ch, "", h, nil, nil, false)

@@ -68,7 +68,8 @@ type app struct {
 	hiddenSeries   map[string]map[int]bool      // hidden series indices per script ID for interactive legends
 	checkOverrides map[string]map[int]bool      // interactive local checklist toggle overrides per script
 	tableViews     map[string]*tableWidgetState // per-view sort/search state for table widgets
-	fullModes      map[string]int               // full-view mode per script: 0 visual, 1 table, 2 raw
+	bentoViews     map[string]*bentoViewState  // per-view interactive state for bento widgets
+	fullModes      map[string]int              // full-view mode per script: 0 visual, 1 table, 2 raw
 
 	width    float32 // width of the window, from the last frame
 	height   float32 // height of the window, from the last frame
@@ -141,6 +142,11 @@ type app struct {
 	usage      usageCache
 	usageForms map[string]*usageForm
 	usageDir   string
+
+	// Network probe cache, HTTP client (with system proxy awareness), and test hook.
+	netProbe   netProbeCache
+	probeHTTP  *http.Client
+	netProbeFn func(context.Context, engine.NetProbeConfig, bool) map[string]any
 
 	// The MCP server and what its settings rows show.
 	mcp       mcpRunner
@@ -313,6 +319,7 @@ func (a *app) seed() error {
 		home := defaultHomeBuiltin(b.ID)
 		scripts = append(scripts, store.Script{
 			ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin,
+			Size: defaultSizeBuiltin(b.ID),
 		})
 	}
 	now := time.Now()
@@ -471,7 +478,7 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 				return // superseded by a newer run
 			}
 			st.loading, st.updating = false, false
-			if (err != nil || (len(meta.Sources) > 0 && !hasResult(res))) && st.old && hasResult(saved) {
+			if (err != nil || ((len(meta.Sources) > 0 || meta.NetProbe != nil) && !hasResult(res))) && st.old && hasResult(saved) {
 				st.res, st.res.Stale = saved, true
 				return
 			}
@@ -624,6 +631,12 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
 		history = engine.HistoryOf(opt.Cache, keys, names, n, now)
 	}
+	var netProbe any
+	var npAt int64
+	var npStale bool
+	if s.Meta.NetProbe != nil {
+		netProbe, npAt, npStale = a.netProbeInput(*s.Meta.NetProbe, force, now)
+	}
 	res, err := s.Run(context.Background(), engine.Input{
 		Now:      now,
 		Lang:     curLang(),
@@ -643,9 +656,18 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		SourceInfo: info,
 		History:    history,
 		Vars:       vars,
+		NetProbe:   netProbe,
 	})
 	if err == nil {
 		res.DataAt, res.Stale = dataTimes(info)
+		if s.Meta.NetProbe != nil {
+			if npAt > 0 && (res.DataAt == 0 || npAt < res.DataAt) {
+				res.DataAt = npAt
+			}
+			if npStale && len(s.Meta.Sources) == 0 {
+				res.Stale = true
+			}
+		}
 		res.Images = a.keepImages(sc, res.Images, now)
 	}
 	return res, err
@@ -747,10 +769,14 @@ func (a *app) ensureBuiltins() error {
 			return fmt.Errorf("builtin %s: %w", b.ID, err)
 		}
 		home := defaultHomeBuiltin(b.ID)
+		size := defaultSizeBuiltin(b.ID)
 		if ok {
 			home = sc.Home
+			if sc.Size != "" {
+				size = sc.Size
+			}
 		}
-		if err := a.store.SaveScript(store.Script{ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin}); err != nil {
+		if err := a.store.SaveScript(store.Script{ID: b.ID, Name: s.Meta.Name, Source: b.Source, Home: home, Origin: store.OriginBuiltin, Size: size}); err != nil {
 			return err
 		}
 	}
@@ -899,6 +925,15 @@ func defaultHomeBuiltin(id string) bool {
 		return false
 	}
 	return true
+}
+
+// defaultSizeBuiltin returns the default card size for built-in scripts that
+// naturally span a wider layout.
+func defaultSizeBuiltin(id string) string {
+	if id == "ip-dashboard" {
+		return "wide"
+	}
+	return ""
 }
 
 // builtinIDs are the ids of the scripts that ship with the app.

@@ -38,6 +38,7 @@ type visualConfig struct {
 	Clock     engine.ClockSpec       `json:"clock,omitempty"`
 	Contrib   engine.ContribSpec     `json:"contrib,omitempty"`
 	Table     engine.TableSpec       `json:"table,omitempty"`
+	Bento     engine.BentoSpec       `json:"bento,omitempty"`
 	LineLabel string                 `json:"lineLabel,omitempty"`
 	LineColor string                 `json:"lineColor,omitempty"`
 	LinePts   string                 `json:"linePts,omitempty"`
@@ -63,6 +64,7 @@ var visualTemplates = []visualTemplate{
 	{"clock", "calendar-days", "时钟表盘", "Clock dial", "指针表盘 / 数字 / 多时区", "#F59E0B"},
 	{"contrib", "sparkles", "打卡热力格", "Activity grid", "7 行习惯打卡活跃矩阵", "#22C55E"},
 	{"line", "chart-line", "折线图表", "Line chart", "经典数值走势曲线", "#3B82F6"},
+	{"bento", "layout-grid", "Bento 看板", "Bento board", "主信息 + 探针点阵 + 汇总胶囊嵌套", "#22C55E"},
 }
 
 var visualSwatches = []string{
@@ -245,6 +247,44 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
 			Contrib:     engine.ContribSpec{Cells: cells, Color: "#00F5D4", Max: 4, Weeks: 12, Unit: pick(" 次", "x"), Neon: true},
 		}
+	case "bento":
+		return visualConfig{
+			Type:        "bento",
+			Name:        pick("Bento 看板", "Bento dashboard"),
+			Description: pick("主指标、探针点阵与汇总胶囊嵌套看板", "Nested Bento board with hero, probes, and pills"),
+			Icon:        "layout-grid",
+			Big:         "203.0.113.10",
+			Sub:         pick("网络与节点状态", "Network & edge status"),
+			Layout:      engine.Layout{Legend: "hide", Summary: "hide", Stats: "hide", Actions: "hover", Title: "hide"},
+			Bento: engine.BentoSpec{
+				Maskable: true,
+				Hero: &engine.BentoHero{
+					Label:    "IPV4",
+					Flag:     "cn",
+					Value:    "203.0.113.10",
+					Location: pick("中国 上海 电信", "China Shanghai Telecom"),
+					Meta:     pick("家庭宽带 (ISP)", "Residential (ISP)"),
+				},
+				Probes: &engine.BentoProbeGroup{
+					Title:      pick("网络连通性", "Connectivity"),
+					ActionText: pick("查看更多 ›", "More ›"),
+					Columns:    3,
+					Items: []engine.BentoProbe{
+						{Name: "GitHub", Icon: "github", Latency: 48, Dots: []int{45, 49, 48, 52, 46, 50, 48, 47, 51, 49, 48, 50}},
+						{Name: "Cloudflare", Icon: "cloudflare", Latency: 26, Dots: []int{25, 27, 26, 28, 24, 26, 25, 27, 26, 25, 28, 26}},
+						{Name: "YouTube", Icon: "youtube", Latency: 168, Dots: []int{165, 172, 168, 170, 164, 175, 168, 169, 171, 166, 168, 170}},
+					},
+				},
+				Pills: &engine.BentoPillGroup{
+					Title:   pick("出口汇总", "Exit Summary"),
+					Columns: 3,
+					Items: []engine.BentoPill{
+						{Flag: "cn", Value: "203.0.113.10", Badge: pick("直连", "Direct")},
+						{Flag: "jp", Value: "198.51.100.24", Badge: pick("国际", "Global")},
+					},
+				},
+			},
+		}
 	default: // line
 		return visualConfig{
 			Type:        "line",
@@ -405,6 +445,17 @@ func renderVisualScript(cfg visualConfig) string {
     lines: [],
     chart: { type: "contrib", contrib: CONFIG.contrib },
     layout: CONFIG.layout,
+  };`
+	case "bento":
+		body = `  return {
+    title: CONFIG.name,
+    icon: CONFIG.icon || "layout-grid",
+    big: (CONFIG.bento && CONFIG.bento.hero && CONFIG.bento.hero.value) || CONFIG.big || "",
+    sub: (CONFIG.bento && CONFIG.bento.hero && CONFIG.bento.hero.location) || CONFIG.sub || "",
+    lines: [],
+    chart: { type: "bento", bento: CONFIG.bento },
+    layout: CONFIG.layout,
+    menubar: CONFIG.menubar ? CONFIG.menubarCfg : undefined,
   };`
 	default: // line
 		body = `  const pts = String(CONFIG.linePts || "")

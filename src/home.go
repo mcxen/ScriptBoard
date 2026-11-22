@@ -212,35 +212,50 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// content spilling out of it over the next card.
 	wideChart := 120 * s
 	if size == 3 && ready && !isCalendar(st.res.Chart) {
-		need := 32*s + 36*s // its padding, and the gaps between its parts
-		if showTitle {
-			need += 36 * s
-		}
-		if st.res.Big != "" {
-			need += bigSize * 1.3
-		}
-		if st.res.Sub != "" || hasChart {
-			need += 22 * s
-		}
-		if len(meta.Dims) > 0 {
-			need += 34 * s
-		}
-		if len(meta.Vars) > 0 {
-			need += 34 * s
-		}
-		if hasChart && hasChartDetail(st.res.Chart) {
-			need += 22 * s // the detail line under the chart
-		}
-		if len(st.res.Stats) > 0 {
-			need += 60 * s
-		}
-		need += float32(len(inputs)) * 44 * s
-		if hasChart {
-			wideChart = max(h-need, 96*s)
-			h = need + wideChart
-		} else if hasPB && len(pb.Items) > 0 {
-			barNeed := float32(len(pb.Items)) * 44 * s
-			h = max(h, need+barNeed)
+		if isBento(viewRes.Chart) {
+			needBento := bentoWideHeight(viewRes.Chart.Bento, max(w-32*s, 200), s)
+			if showTitle {
+				needBento += 36 * s
+			}
+			if len(meta.Dims) > 0 && viewRes.Chart.Bento.DetailTable == nil {
+				needBento += 34 * s
+			}
+			if len(meta.Vars) > 0 {
+				needBento += 34 * s
+			}
+			needBento += float32(len(inputs)) * 44 * s
+			h = max(h, needBento)
+		} else {
+			need := 32*s + 36*s // its padding, and the gaps between its parts
+			if showTitle {
+				need += 36 * s
+			}
+			if st.res.Big != "" {
+				need += bigSize * 1.3
+			}
+			if st.res.Sub != "" || hasChart {
+				need += 22 * s
+			}
+			if len(meta.Dims) > 0 {
+				need += 34 * s
+			}
+			if len(meta.Vars) > 0 {
+				need += 34 * s
+			}
+			if hasChart && hasChartDetail(st.res.Chart) {
+				need += 22 * s // the detail line under the chart
+			}
+			if len(st.res.Stats) > 0 {
+				need += 60 * s
+			}
+			need += float32(len(inputs)) * 44 * s
+			if hasChart {
+				wideChart = max(h-need, 96*s)
+				h = need + wideChart
+			} else if hasPB && len(pb.Items) > 0 {
+				barNeed := float32(len(pb.Items)) * 44 * s
+				h = max(h, need+barNeed)
+			}
 		}
 	}
 	base := card(c).Width(w)
@@ -328,14 +343,15 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					break
 				}
 				// A card with no headline, or no summary, does not keep a line empty.
-				// SelfHero widgets (clock, single-target countdown) already draw a hero
-				// display on medium/large cards, so avoid duplicating Big above them.
-				selfHero := size > 0 && hasChart && compSpec.Capabilities.SelfHero &&
-					(!isCountdown(viewRes.Chart) || len(viewRes.Chart.Countdown) == 1)
+				// SelfHero widgets (clock, single-target countdown, and hero Bento boards) already draw a hero
+				// display, so avoid duplicating Big above them.
+				selfHero := hasChart && ((size > 0 && compSpec.Capabilities.SelfHero &&
+					(!isCountdown(viewRes.Chart) || len(viewRes.Chart.Countdown) == 1) && !isBento(viewRes.Chart)) ||
+					isBentoHero(viewRes.Chart))
 				if st.res.Big != "" && !selfHero {
 					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 				}
-				hasSub := lay.Summary != "hide" && st.res.Sub != ""
+				hasSub := lay.Summary != "hide" && st.res.Sub != "" && !isBentoHero(viewRes.Chart)
 				switch {
 				case showTitle && hasSub:
 					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
@@ -359,10 +375,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				}
 				switch size {
 				case 0:
-					if comp != nil && hasPB && len(pb.Items) > 0 {
+					if comp != nil && ((hasPB && len(pb.Items) > 0) || isBento(viewRes.Chart)) {
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: 0, Limit: 1, Now: a.now(),
+							Size: 0, Width: w - 2*padding, Limit: 1, Now: a.now(),
 						})
 					}
 				case 1:
@@ -392,7 +408,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					}
 					comp.RenderCard(c, ComponentRenderReq{
 						App: a, Script: sc, Result: viewRes, Style: subStyle,
-						Size: 1, Height: sparkH, Limit: 3, Now: a.now(),
+						Size: 1, Width: w - 2*padding, Height: sparkH, Limit: 3, Now: a.now(),
 					})
 					for _, in := range inputs {
 						a.quickEntry(c, sc.ID, in)
@@ -415,7 +431,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					if !hasChart || !compSpec.Capabilities.TopAligned || ringVAlign(viewRes.Chart) == "middle" || ringVAlign(viewRes.Chart) == "bottom" {
 						ui.Spacer(c)
 					}
-					a.dimRow(c, idx, meta.Dims)
+					if !isBento(viewRes.Chart) || viewRes.Chart.Bento.DetailTable == nil {
+						a.dimRow(c, idx, meta.Dims)
+					}
 					a.varRow(c, sc, meta)
 					// A wide card is a strip: its chart is shorter than a large card's.
 					chartH := max(120, b.Height-210)*s + lift
@@ -426,7 +444,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						sel := a.selOf("card:" + sc.ID)
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: size, Height: chartH, Selected: sel, Now: a.now(), Legend: showLegend,
+							Size: size, Width: w - 2*padding, Height: chartH, Selected: sel, Now: a.now(), Legend: showLegend,
 						})
 						if compSpec.Capabilities.HasDetail && !isCalendar(viewRes.Chart) {
 							Detail(c, viewRes.Chart, sel)

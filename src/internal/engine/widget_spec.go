@@ -254,6 +254,16 @@ var WidgetSpecs = []WidgetSpec{
 		Swappable:    []string{"table", "kv"},
 		SchemaHint:   `chart: { type: "table", table: { columns: [{ title, align, format }], rows: [[...]], searchable: true, striped: true } }`,
 	},
+	{
+		Type: "bento", Category: CategoryLayout, Icon: "layout-grid",
+		ZhName: "Bento 看板", EnName: "Bento dashboard",
+		DescZh:       "嵌套式 Bento 看板：左侧主指标，右侧探针点阵格，底部汇总胶囊与详情表",
+		DescEn:       "Nested Bento dashboard with hero block, probe dot-matrix grid, summary pills, and detail table",
+		DefaultColor: "#22C55E",
+		Capabilities: WidgetCapabilities{SelfHero: true, TopAligned: true, Interactive: true, SupportsTable: true},
+		Swappable:    []string{"bento", "table"},
+		SchemaHint:   `chart: { type: "bento", bento: { maskable: true, hero: { label, flag, value, location, meta }, probes: { title, items: [...] }, pills: { title, items: [...] }, detailTable: { ... } } }`,
+	},
 }
 
 var widgetSpecIndex = func() map[string]WidgetSpec {
@@ -366,6 +376,7 @@ func canSwapResult(res Result, base, target string) bool {
 		}
 		return len(res.Chart.KV) > 0 || len(res.Chart.Slices) > 0 || len(res.Chart.Checklist) > 0 ||
 			len(res.Chart.Countdown) > 0 ||
+			res.Chart.Bento != nil ||
 			(res.Chart.Type == "barh" && len(res.Chart.Series) > 0) ||
 			(res.Chart.Table != nil && len(res.Chart.Table.Columns) >= 2 && len(res.Chart.Table.Rows) > 0)
 	case "line", "dot":
@@ -650,6 +661,90 @@ func ExtractTable(res Result, lang string) *TableSpec {
 					},
 					Rows:    rows,
 					Striped: true,
+				}
+			}
+		case "bento":
+			if b := ch.Bento; b != nil {
+				if b.DetailTable != nil && len(b.DetailTable.Columns) > 0 {
+					cp := *b.DetailTable
+					cp.Searchable = true
+					return &cp
+				}
+				if b.Probes != nil && len(b.Probes.Items) > 0 {
+					rows := make([][]string, len(b.Probes.Items))
+					for i, pr := range b.Probes.Items {
+						lat := pr.Text
+						if lat == "" {
+							if pr.Latency >= 0 {
+								lat = fmt.Sprintf("%dms", pr.Latency)
+							} else {
+								lat = t("超时", "Timeout")
+							}
+						}
+						succ := "—"
+						if pr.Total > 0 {
+							succ = fmt.Sprintf("%d/%d", pr.Success, pr.Total)
+						}
+						st := pr.Status
+						if st == "" {
+							switch {
+							case pr.Latency < 0:
+								st = "err"
+							case pr.Latency >= 400:
+								st = "warn"
+							default:
+								st = "ok"
+							}
+						}
+						rows[i] = []string{pr.Name, pr.Tag, lat, succ, st}
+					}
+					return &TableSpec{
+						Columns: []TableColumn{
+							{Title: t("站点", "Site")},
+							{Title: t("分组", "Group"), Format: "badge"},
+							{Title: t("延迟", "Latency"), Align: "right"},
+							{Title: t("成功率", "Success"), Align: "right"},
+							{Title: t("状态", "Status"), Format: "status"},
+						},
+						Rows:       rows,
+						Searchable: true,
+						Striped:    true,
+					}
+				}
+				if b.Pills != nil && len(b.Pills.Items) > 0 {
+					rows := make([][]string, len(b.Pills.Items))
+					for i, pl := range b.Pills.Items {
+						rows[i] = []string{pl.Value, strings.ToUpper(pl.Flag), pl.Badge, pl.Sub}
+					}
+					return &TableSpec{
+						Columns: []TableColumn{
+							{Title: t("节点", "Node")},
+							{Title: t("地区", "Region"), Align: "center", Format: "badge"},
+							{Title: t("标签", "Badge"), Format: "badge"},
+							{Title: t("说明", "Note")},
+						},
+						Rows:       rows,
+						Searchable: true,
+						Striped:    true,
+					}
+				}
+				if len(b.Cells) > 0 {
+					rows := make([][]string, len(b.Cells))
+					for i, cl := range b.Cells {
+						rows[i] = []string{cl.Title, cl.Value, cl.Badge, cl.Status, cl.Sub}
+					}
+					return &TableSpec{
+						Columns: []TableColumn{
+							{Title: t("项目", "Item")},
+							{Title: t("数值", "Value"), Align: "right"},
+							{Title: t("标签", "Badge"), Format: "badge"},
+							{Title: t("状态", "Status"), Format: "status"},
+							{Title: t("说明", "Note")},
+						},
+						Rows:       rows,
+						Searchable: true,
+						Striped:    true,
+					}
 				}
 			}
 		case "contrib":

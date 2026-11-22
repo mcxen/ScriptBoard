@@ -123,6 +123,9 @@ func (a *app) resetData(sc store.Script) error {
 			return err
 		}
 	}
+	if m.NetProbe != nil {
+		a.forgetNetProbe()
+	}
 	a.invalidate(sc.ID)
 	a.invalidate(draftKey)
 	a.forced[sc.ID] = true

@@ -145,6 +145,7 @@ Chart(c, ChartProps{
 | `clock` | **指针 / 数字 / 世界时钟**：模拟表盘（可选霓虹发光与秒针）、大字数字表盘或多时区世界时钟 | `clock: {style: "analog"|"digital"|"world", seconds, color, neon, zones: [{label, offset}]}` |
 | `contrib` | **打卡热力格**：7 行 GitHub 风格活跃矩阵、5 级亮度、图例；全屏页支持点选格子查看某天详情 | `contrib: {cells: [{date, value, label}], color, max, weeks, unit, neon}` |
 | `table` | **交互数据表格**：结构化多列表格，支持列对齐、数字/涨跌/徽章/状态着色、表头点击排序、实时搜索、单击复制与 CSV 导出 | `table: {columns: [{title, align, format, width}], rows: [[...]], searchable, striped, compact}` |
+| `bento` | **Bento 嵌套看板**：左侧主信息（国旗/IP/地理/属性）、右侧多站点 12 轮点阵连通性网格、底部可点选分流出口胶囊与全屏分流明细表（内置「IP 与网络看板」即使用此组件与宿主 `netprobe` 探测） | `bento: {maskable, hero, probes, pills, cells, detailTitle, detailDesc, detailTable}` |
 | `calendar` | **月视图日历**：由宿主填充农历、干支、生肖、节气与国际/中国节日；全屏页支持点选或用方向键 / Home 切换日期并查看当天详情（内置的「日历」脚本就是这样） | 无需 `series`，只需 `{type: "calendar"}` |
 
 **独立进度条（含霓虹灯 / LED 点阵灯风格）：`progressBar`。** 在 `render(ctx)` 返回值顶层直接写 `progressBar`（不需要 `chart`）：支持简写数组 `[{name, value, max, unit, color, to}]`，或对象 `{style: "neon"|"matrix"|"gradient"|"solid"|"segmented", height, track: "dark"|"tint"|"neutral"|"none", glow, segments, rows, cols, total, stacked, animate, hideLabel, items: [...]}`。其中 `style: "matrix"` 为深色 LED 点阵发光矩阵（默认 7 行，支持多段同条合并与轻微呼吸/流光动效）。进度条及其他非坐标组件（`donut`、`checklist`、`kv`、`countdown`、`clock`、`contrib`、`progressRing`）在卡片、预览与全屏页中都不会显示折线/柱状等图表样式切换、「大图」开关或悬浮图表详情提示。
@@ -496,7 +497,7 @@ export function render(ctx) {
 | `src/main.go`、`src/app.go` | 窗口、应用状态、脚本运行、手机排版与宽窄判断 |
 | `src/home.go`、`src/layout.go` | 首页与组件卡片、网格布局、编辑布局与卡片尺寸 |
 | `src/fullview.go`、`src/stats.go` | 全屏查看与统计 |
-| `src/chartview.go`、`src/charts2.go`、`src/progress_view.go`、`src/widgets_view.go`、`src/calendar_view.go` | 图表与组件（折线 / K 线 / 复古样式 / 剩余量圆环 / 横置条形 / 热力表 / 叠放面板 / 组合 / 独立霓虹进度条与完成度环 / 环形占比 / 待办清单 / 状态面板 / 倒计时 / 世界时钟 / 打卡热力格 / 月视图日历） |
+| `src/chartview.go`、`src/charts2.go`、`src/progress_view.go`、`src/widgets_view.go`、`src/bento_widget.go`、`src/calendar_view.go` | 图表与组件（折线 / K 线 / 复古样式 / 剩余量圆环 / 横置条形 / 热力表 / 叠放面板 / 组合 / 独立霓虹进度条与完成度环 / 环形占比 / 待办清单 / 状态面板 / 倒计时 / 世界时钟 / 打卡热力格 / Bento 嵌套看板 / 月视图日历） |
 | `src/images_app.go`、`src/images_ui.go` | 图片缓存、历史与轮播卡片 |
 | `src/menubar.go` | 菜单栏图标与自定义菜单 |
 | `src/live_app.go`、`src/refresh.go` | 实时线轮询与卡片刷新 |
@@ -513,6 +514,7 @@ export function render(ctx) {
 | `src/internal/store`、`src/internal/cache` | 数据文件（脚本、记录、设置、数据源）与响应/历史缓存 |
 | `src/internal/table` | 数据表与 Excel / CSV / TSV 导入导出 |
 | `src/internal/feed` | 数据源：协议（http / file / tcp / exec）、curl 解析、取数、重试与备用请求、熔断、样本存储、汇总 |
+| `src/internal/netprobe` | 网络与 IP 探测：本地出口 IP/地理校验、6 站点 12 轮并发延迟点阵、网站分流出口检测与 IP 质量查询（支持 macOS 系统代理） |
 | `src/internal/usage` | AI 用量各提供方 |
 | `src/internal/spec`、`src/internal/caps`、`src/internal/iconcat` | 插件规范校验、平台能力与图标分类 |
 | `src/internal/plugins`、`src/internal/mcpsvc` | 插件与图标文件夹、MCP 协议与工具实现（应用和独立程序共用） |

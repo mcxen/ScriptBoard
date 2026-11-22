@@ -22,6 +22,7 @@ type ComponentRenderReq struct {
 	Result   engine.Result
 	Style    string // user-chosen plot style or swapped component/substyle override
 	Size     int    // -1 full view, 0 small, 1 medium, 2 large, 3 wide
+	Width    float32
 	Height   float32
 	Limit    int // max items for compact cards; 0 = all
 	Selected *int
@@ -326,6 +327,48 @@ func adaptResultForType(res engine.Result, target string) (engine.Result, bool) 
 					}
 					items = append(items, engine.KVItem{Label: lbl, Value: val, Sub: sub})
 				}
+			case res.Chart.Bento != nil:
+				b := res.Chart.Bento
+				if b.Hero != nil {
+					items = append(items, engine.KVItem{
+						Label:  firstNonEmpty(b.Hero.Label, "IP"),
+						Value:  b.Hero.Value,
+						Sub:    b.Hero.Location,
+						Badge:  b.Hero.Meta,
+						Status: "info",
+					})
+				}
+				if b.Probes != nil {
+					for _, pr := range b.Probes.Items {
+						st := "ok"
+						val := pr.Text
+						if val == "" {
+							if pr.Latency >= 0 {
+								val = fmt.Sprintf("%dms", pr.Latency)
+							} else {
+								val = tr("超时")
+							}
+						}
+						if pr.Latency < 0 || pr.Status == "err" {
+							st = "err"
+						} else if pr.Latency >= 400 || pr.Status == "warn" || pr.Status == "slow" {
+							st = "warn"
+						}
+						items = append(items, engine.KVItem{Label: pr.Name, Value: val, Badge: pr.Tag, Status: st})
+					}
+				}
+				if b.Pills != nil {
+					for _, pl := range b.Pills.Items {
+						items = append(items, engine.KVItem{
+							Label: strings.ToUpper(pl.Flag), Value: pl.Value, Sub: pl.Sub, Badge: pl.Badge, Status: "info",
+						})
+					}
+				}
+				for _, cl := range b.Cells {
+					items = append(items, engine.KVItem{
+						Label: cl.Title, Value: cl.Value, Sub: cl.Sub, Badge: cl.Badge, Status: cl.Status, Color: cl.Color,
+					})
+				}
 			}
 		}
 		if len(items) == 0 {
@@ -498,6 +541,26 @@ func init() {
 				return ui.Text(c, tr("暂无数据")).FontSize(fsSmall).TextColor(pal(c).muted)
 			}
 			return req.App.tableWidgetView(c, "full:"+req.Script.ID, req.Result.Chart.Table, true, 0)
+		},
+		tilesFn: func(a *app, c *ui.Context, res engine.Result) bool {
+			return true
+		},
+	})
+
+	// Nested Bento dashboard component.
+	registerComponent(componentAdapter{
+		typ: "bento",
+		cardFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
+			if req.Result.Chart == nil || req.Result.Chart.Bento == nil {
+				return ui.Text(c, tr("暂无看板数据")).FontSize(fsSmall).TextColor(pal(c).muted)
+			}
+			return req.App.bentoWidgetView(c, "card:"+req.Script.ID, req.Result.Chart.Bento, req.Width, req.Size, false)
+		},
+		fullFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
+			if req.Result.Chart == nil || req.Result.Chart.Bento == nil {
+				return ui.Text(c, tr("暂无看板数据")).FontSize(fsSmall).TextColor(pal(c).muted)
+			}
+			return req.App.bentoWidgetView(c, "full:"+req.Script.ID, req.Result.Chart.Bento, req.Width, req.Size, true)
 		},
 		tilesFn: func(a *app, c *ui.Context, res engine.Result) bool {
 			return true

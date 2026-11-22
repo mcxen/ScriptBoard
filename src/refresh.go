@@ -42,6 +42,9 @@ func (a *app) refreshScript(sc store.Script) {
 				a.usage.entries = nil
 				a.usage.mu.Unlock()
 			}
+			if meta.NetProbe != nil {
+				a.forgetNetProbe()
+			}
 			a.invalidate(sc.ID)
 		})
 	}
