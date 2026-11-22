@@ -1,6 +1,8 @@
 package main
 
 import (
+	"image"
+	"image/color"
 	"io"
 	"net/http"
 	"strings"
@@ -212,4 +214,153 @@ func TestComponentManagerFiltering(t *testing.T) {
 	requireText(t, tt, "体重数据")
 
 	click(t, tt, "全部")
+}
+
+func countRGBInBounds(img image.Image, box image.Rectangle, want ui.Color) int {
+	n := 0
+	for y := box.Min.Y; y < box.Max.Y; y++ {
+		for x := box.Min.X; x < box.Max.X; x++ {
+			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			if c.R == want.R && c.G == want.G && c.B == want.B {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func boundingBoxOfRGB(img image.Image, search image.Rectangle, want ui.Color) (image.Rectangle, bool) {
+	var minX, minY, maxX, maxY int
+	found := false
+	for y := search.Min.Y; y < search.Max.Y; y++ {
+		for x := search.Min.X; x < search.Max.X; x++ {
+			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			if c.R == want.R && c.G == want.G && c.B == want.B {
+				if !found {
+					minX, maxX = x, x+1
+					minY, maxY = y, y+1
+					found = true
+				} else {
+					if x < minX {
+						minX = x
+					}
+					if x+1 > maxX {
+						maxX = x + 1
+					}
+					if y < minY {
+						minY = y
+					}
+					if y+1 > maxY {
+						maxY = y + 1
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		return image.Rectangle{}, false
+	}
+	return image.Rect(minX, minY, maxX, maxY), true
+}
+
+func TestScriptMenuCardPreviewFollowsThemeOverride(t *testing.T) {
+	t.Cleanup(func() {
+		setThemeMode(themeSystem)
+		setSkin(skinDefault)
+		setLang(langZH)
+	})
+	a := newTestApp(t)
+	t.Cleanup(a.closeBarInstances)
+
+	fxTableSrc := `export function meta() {
+  return { name: "外汇牌价数据表", icon: "file-spreadsheet", menubar: true, sources: {} };
+}
+export function render() {
+  return {
+    title: "外汇牌价数据表",
+    icon: "file-spreadsheet",
+    big: "¥6.6778",
+    sub: "美元兑人民币 · 2026-11-20",
+    lines: [],
+    menubar: { title: "¥6.6778" },
+    menu: [
+      { label: "复制美元汇率", action: "copy_headline" },
+      { label: "打开设置", action: "settings" }
+    ],
+    chart: {
+      type: "table",
+      table: {
+        striped: true,
+        compact: 5,
+        columns: [
+          { title: "币种", width: 2 },
+          { title: "代码", format: "badge", align: "center" },
+          { title: "折合人民币", align: "right", format: "number" },
+          { title: "100 CNY 换", align: "right", format: "number" },
+          { title: "状态", format: "status" }
+        ],
+        rows: [
+          ["美元", "USD", "6.6778", "14.97", "ok"],
+          ["欧元", "EUR", "7.3380", "13.63", "ok"],
+          ["英镑", "GBP", "8.7640", "11.41", "ok"],
+          ["港币", "HKD", "0.8518", "117.39", "ok"],
+          ["日元 (100)", "JPY", "4.2095", "2375.58", "ok"]
+        ]
+      }
+    }
+  };
+}`
+	if err := a.store.SaveScript(store.Script{
+		ID:     "test-fx-table",
+		Name:   "外汇牌价数据表",
+		Origin: store.OriginUser,
+		Source: fxTableSrc,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tt := ui.NewTester(a.view, 1280, 860)
+
+	// Case A: Dark app window + Light menu card preview override.
+	setThemeMode(themeDark)
+	a.barPreviewTheme = barThemeLight
+	a.router.Push("/bar/test-fx-table")
+	settle(tt)
+	settle(tt)
+	savePNG(t, tt, "34-script-menu-card-light-in-dark")
+
+	requireText(t, tt, "外汇牌价数据表")
+	requireText(t, tt, "复制美元汇率")
+	requireText(t, tt, "打开设置")
+
+	imgLight := tt.Image()
+	b := imgLight.Bounds()
+	// Search inside preview stage area (right of left sidebar & component list).
+	stageArea := image.Rect(b.Min.X+b.Dx()/3, b.Min.Y, b.Max.X, b.Max.Y)
+	cardBox, ok := boundingBoxOfRGB(imgLight, stageArea, ui.Hex("#FFFFFF"))
+	if !ok {
+		t.Fatalf("could not locate white preview card (#FFFFFF) in dark window")
+	}
+	lightHdrN := countRGBInBounds(imgLight, cardBox, ui.Hex("#EDEFF4"))
+	darkHdrN := countRGBInBounds(imgLight, cardBox, ui.Hex("#232731"))
+	if lightHdrN < 100 || darkHdrN != 0 {
+		t.Fatalf("light preview inside dark window used wrong table header theme: lightHdrPixels=%d darkHdrPixels=%d (cardBox=%v)", lightHdrN, darkHdrN, cardBox)
+	}
+
+	// Case B: Light app window + Dark menu card preview override.
+	setThemeMode(themeLight)
+	a.barPreviewTheme = barThemeDark
+	settle(tt)
+	settle(tt)
+
+	imgDark := tt.Image()
+	darkCardBox, ok := boundingBoxOfRGB(imgDark, stageArea, ui.Hex("#1C1F26"))
+	if !ok {
+		t.Fatalf("could not locate dark preview card (#1C1F26) in light window")
+	}
+	darkCardDarkHdrN := countRGBInBounds(imgDark, darkCardBox, ui.Hex("#232731"))
+	darkCardLightHdrN := countRGBInBounds(imgDark, darkCardBox, ui.Hex("#EDEFF4"))
+	if darkCardDarkHdrN < 100 || darkCardLightHdrN != 0 {
+		t.Fatalf("dark preview inside light window used wrong table header theme: darkHdrPixels=%d lightHdrPixels=%d (darkCardBox=%v)", darkCardDarkHdrN, darkCardLightHdrN, darkCardBox)
+	}
 }

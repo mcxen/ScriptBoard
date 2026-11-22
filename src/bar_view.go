@@ -987,11 +987,13 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 	if st.res.Title != "" {
 		title = st.res.Title
 	}
-	cardEl := ui.Column(c).
+	cardEl := ui.Themed(c, brandDefault.Theme(th.dark)).
 		Width(300).
 		Padding(16).
 		Gap(12)
-	if !vibrant {
+	if vibrant {
+		cardEl = cardEl.Background(ui.Transparent)
+	} else {
 		cardEl = cardEl.Background(th.surface).Radius(14).BorderWidth(1).BorderColor(th.border)
 	}
 	cardEl.Children(func() {
@@ -1018,7 +1020,7 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 			if comp != nil {
 				comp.RenderCard(c, ComponentRenderReq{
 					App: a, Script: sc, Result: viewRes, Style: subStyle,
-					Size: 1, Height: 140, Selected: a.selOf(sc.ID), Now: a.now(),
+					Size: 1, Width: 268, Height: 140, Selected: a.selOf(sc.ID), Now: a.now(),
 				})
 			}
 			if len(st.res.Menu) > 0 {
