@@ -123,7 +123,7 @@ func (a *app) showBarInMenuBar(sc store.Script, pl store.BarPlacement) {
 		}
 		isTemplate = snap.Tray.IconTemplate
 		for _, m := range snap.Tray.Menu {
-			menuSig.WriteString(fmt.Sprintf("%v|%s|%s;", m.Separator, m.Label, m.ActionID))
+			menuSig.WriteString(fmt.Sprintf("%v|%s|%v;", m.Separator, m.Label, m.Disabled))
 		}
 	}
 
@@ -282,6 +282,9 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 		f.Close()
 		return
 	}
+	if a.recentlyClosedFlyout(id) {
+		return
+	}
 
 	panelW, panelH := 300, 512
 	if inst, ok := a.barInsts[id]; ok {
@@ -295,49 +298,30 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 		}
 	}
 
-	f := mygo.NewFlyout(mygo.FlyoutOptions{
-		Tray:         t,
-		Placement:    mygo.PlacementBottom,
-		Gap:          4,
-		Width:        panelW,
-		Height:       panelH,
-		FitContent:   true,
-		Focusable:    true,
-		Popover:      true,
-		Shadow:       true,
-		CornerRadius: 14,
-		Content: ui.View(func(c *ui.Context) {
-			applySkin(c)
-			c.Root().Background(ui.Transparent)
-			sc, ok := a.store.Script(id)
-			if !ok {
-				return
-			}
-			inst, _, err := a.ensureBarInstance(sc)
-			if err != nil {
-				return
-			}
-			snap := inst.Snapshot()
-			th := barThemeFor(c, barThemeAuto)
-			if c.Vibrancy() && snap.Panel != nil {
-				box := ui.Column(c).Width(float32(panelW))
-				if ph, ok := propFloat(snap.Panel.Props, "preferredHeight"); ok && ph > 0 {
-					box = box.Height(ph)
-				}
-				box.Children(func() {
-					renderBarNode(c, snap.Panel, th, func(aid string) {
-						a.invokeBarAction(id, aid)
-					})
+	pl := a.barPlacement(id)
+	a.barFlyouts[id] = a.openTrayPanelWindow(id, t, pl.Display, panelW, panelH, func(c *ui.Context) {
+		applySkin(c)
+		c.Root().Background(ui.Transparent)
+		sc, ok := a.store.Script(id)
+		if !ok {
+			return
+		}
+		inst, _, err := a.ensureBarInstance(sc)
+		if err != nil {
+			return
+		}
+		snap := inst.Snapshot()
+		th := barThemeFor(c, barThemeAuto)
+		if c.Vibrancy() && snap.Panel != nil {
+			ui.Column(c).Fill().Children(func() {
+				renderBarNode(c, snap.Panel, th, func(aid string) {
+					a.invokeBarAction(id, aid)
 				})
-				return
-			}
-			renderBarPanel(c, snap, th, float32(panelW), func(aid string) {
-				a.invokeBarAction(id, aid)
 			})
-		}),
+			return
+		}
+		renderBarPanel(c, snap, th, float32(panelW), func(aid string) {
+			a.invokeBarAction(id, aid)
+		})
 	})
-	f.OnClosed(func() {
-		delete(a.barFlyouts, id)
-	})
-	a.barFlyouts[id] = f
 }

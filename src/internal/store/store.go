@@ -173,7 +173,8 @@ type Settings struct {
 type BarPlacement struct {
 	Enabled      bool   `json:"enabled"`
 	MenuBar      bool   `json:"menuBar"`
-	MenuBarMode  string `json:"menuBarMode,omitempty"` // "panel" (default) or "menu"
+	MenuBarMode  string `json:"menuBarMode,omitempty"` // "panel" (default), "menu", or "open"
+	Display      string `json:"display,omitempty"`     // ""/"cursor" (follow click), "internal", or "external"
 	LeftSidebar  bool   `json:"leftSidebar"`
 	RightSidebar bool   `json:"rightSidebar"`
 	BottomBar    bool   `json:"bottomBar"`
@@ -249,26 +250,38 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{path: filepath.Join(dir, "data.json")}
+	if err := s.Reload(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Reload re-reads data.json from disk, updating the in-memory store.
+func (s *Store) Reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var next file
 	b, err := os.ReadFile(s.path)
 	switch {
 	case err == nil:
-		if err := json.Unmarshal(b, &s.f); err != nil {
-			return nil, err
+		if err := json.Unmarshal(b, &next); err != nil {
+			return err
 		}
 	case errors.Is(err, fs.ErrNotExist):
 	default:
-		return nil, err
+		return err
 	}
-	if s.f.Metrics == nil {
-		s.f.Metrics = map[string][]engine.Point{}
+	if next.Metrics == nil {
+		next.Metrics = map[string][]engine.Point{}
 	}
-	if s.f.Settings.WeightUnit == "" {
-		s.f.Settings = Settings{WeightUnit: "kg", RemindAt: "20:00"}
+	if next.Settings.WeightUnit == "" {
+		next.Settings = Settings{WeightUnit: "kg", RemindAt: "20:00"}
 	}
-	if s.f.Settings.CardScale == 0 {
-		s.f.Settings.CardScale = 1
+	if next.Settings.CardScale == 0 {
+		next.Settings.CardScale = 1
 	}
-	return s, nil
+	s.f = next
+	return nil
 }
 
 // Path is the file the data lives in.

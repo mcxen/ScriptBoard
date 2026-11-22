@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/iconcat"
@@ -79,21 +80,54 @@ func extraTools() []Tool {
 			}, "id", "rows"),
 		},
 		{
-			Name:        "tray_list",
-			Description: "List cards currently pinned to the system Tray / Menu Bar and all scripts that support menubar: true.",
+			Name: "tray_list",
+			Description: "List all menubar-capable widgets (.bar components, scripts, and plugins) with their " +
+				"menu bar pinned state, click mode (panel/menu/open), target display (cursor/internal/external), " +
+				"docked placements, inputs, and connected displays.",
 			InputSchema: obj(map[string]any{}),
 		},
 		{
-			Name:        "tray_set",
-			Description: "Pin or unpin a menubar-capable card in the system Tray / Menu Bar.",
+			Name: "tray_set",
+			Description: "Configure a widget's Menu Bar / Tray and display placement: pin or unpin, " +
+				"set click mode (panel/menu/open), target display (cursor/internal/external), dock locations " +
+				"(leftSidebar/rightSidebar/bottomBar/shortcut), and .bar inputs.",
 			InputSchema: obj(map[string]any{
-				"id":      str("script or plugin id (use plugin:<id> for local plugins)"),
-				"enabled": boolProp("true to pin in menu bar, false to remove"),
-			}, "id", "enabled"),
+				"id":           str("widget, script, or plugin id (use plugin:<id> for local plugins)"),
+				"enabled":      boolProp("true to show in menu bar, false to remove"),
+				"mode":         str("menu bar click mode: panel (floating popover), menu (dropdown menu), or open (open detail)"),
+				"display":      str("target monitor for dropdown panel: cursor (follow click), internal (built-in), or external (external monitor)"),
+				"leftSidebar":  boolProp("dock in window left sidebar"),
+				"rightSidebar": boolProp("dock in window right sidebar"),
+				"bottomBar":    boolProp("dock in window bottom bar"),
+				"shortcut":     boolProp("enable Alt+W quick overlay shortcut"),
+				"inputs":       map[string]any{"type": "object", "description": "optional .bar input values map"},
+			}, "id"),
+		},
+		{
+			Name: "menubar_show",
+			Description: "Render and return the current Menu Bar display payload (title, tooltip, icon, " +
+				"mode, target display, menu entries, and panel content) for one widget or all active menubar items.",
+			InputSchema: obj(map[string]any{
+				"id":   str("optional widget/script id; omit to inspect all active menubar items"),
+				"lang": str("zh or en (default zh)"),
+			}),
+		},
+		{
+			Name:        "bar_save",
+			Description: "Create or update a .bar XML component bundle and optionally configure its menu bar display.",
+			InputSchema: obj(map[string]any{
+				"id":      str("optional widget id (defaults to <bar id=\"...\">)"),
+				"source":  str("the .bar XML document"),
+				"home":    boolProp("show as a card on the home page"),
+				"enabled": boolProp("pin in menu bar (default true)"),
+				"mode":    str("panel (default) or menu"),
+				"display": str("cursor (default), internal, or external"),
+				"inputs":  map[string]any{"type": "object", "description": "optional input values map"},
+			}, "source"),
 		},
 		{
 			Name:        "app_info",
-			Description: "Return a machine-readable summary of ScriptBoard host capabilities, supported widgets, tray actions, icons, and store counts.",
+			Description: "Return a machine-readable summary of ScriptBoard host capabilities, supported widgets, tray actions, displays, icons, and store counts.",
 			InputSchema: obj(map[string]any{}),
 		},
 	}
@@ -299,6 +333,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		if err := st.SaveScript(sc); err != nil {
 			return "", true, err
 		}
+		s.notifyChange()
 		return fmt.Sprintf("已保存数据表 %s（%d 列，%d 行）", id, len(cols), len(rows)), true, nil
 
 	case "table_append":
@@ -330,6 +365,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		if err := st.SaveScript(sc); err != nil {
 			return "", true, err
 		}
+		s.notifyChange()
 		return fmt.Sprintf("已向数据表 %s 追加 %d 行（共 %d 行）", id, len(addRows), len(sc.Table.Rows)), true, nil
 
 	case "tray_list":
@@ -337,85 +373,350 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		if err != nil {
 			return "", true, err
 		}
-		pinned := st.Settings().MenuBar
+		set := st.Settings()
+		pinned := set.MenuBar
 		type candidate struct {
-			ID     string `json:"id"`
-			Name   string `json:"name"`
-			Pinned bool   `json:"pinned"`
+			ID      string            `json:"id"`
+			Name    string            `json:"name"`
+			Kind    string            `json:"kind"`
+			Enabled bool              `json:"enabled"`
+			Pinned  bool              `json:"pinned"`
+			Mode    string            `json:"mode"`
+			Display string            `json:"display"`
+			Docks   map[string]bool   `json:"docks"`
+			Inputs  map[string]string `json:"inputs,omitempty"`
 		}
 		var eligible []candidate
+		var allPinned []string
+		allPinned = append(allPinned, pinned...)
 		for _, sc := range st.Scripts() {
 			if sc.IsTable() {
 				continue
 			}
+			if sc.IsBar() {
+				pl := mcpPlacementFor(sc.ID, true, set)
+				sp, _ := bar.Parse(sc.Source)
+				name := sp.Title
+				if name == "" {
+					name = sc.Name
+				}
+				disp := pl.Display
+				if disp == "" {
+					disp = "cursor"
+				}
+				pinBar := pl.Enabled && pl.MenuBar
+				if pinBar && !slices.Contains(allPinned, sc.ID) {
+					allPinned = append(allPinned, sc.ID)
+				}
+				var inputs map[string]string
+				if len(sp.Inputs) > 0 {
+					var saved map[string]string
+					if set.ScriptVars != nil {
+						saved = set.ScriptVars[sc.ID]
+					}
+					inputs = bar.MergeInputs(sp, saved)
+				}
+				eligible = append(eligible, candidate{
+					ID:      sc.ID,
+					Name:    name,
+					Kind:    "bar",
+					Enabled: pl.Enabled,
+					Pinned:  pinBar,
+					Mode:    pl.MenuBarMode,
+					Display: disp,
+					Docks: map[string]bool{
+						"leftSidebar":  pl.LeftSidebar,
+						"rightSidebar": pl.RightSidebar,
+						"bottomBar":    pl.BottomBar,
+						"shortcut":     pl.Shortcut,
+					},
+					Inputs: inputs,
+				})
+				continue
+			}
 			if meta, err := plugins.CheckSource(sc.ID+".js", sc.Source); err == nil && meta.Menubar {
-				eligible = append(eligible, candidate{ID: sc.ID, Name: sc.Name, Pinned: slices.Contains(pinned, sc.ID)})
+				pl := mcpPlacementFor(sc.ID, false, set)
+				disp := pl.Display
+				if disp == "" {
+					disp = "cursor"
+				}
+				eligible = append(eligible, candidate{
+					ID:      sc.ID,
+					Name:    sc.Name,
+					Kind:    "script",
+					Enabled: pl.Enabled,
+					Pinned:  slices.Contains(pinned, sc.ID),
+					Mode:    pl.MenuBarMode,
+					Display: disp,
+					Docks: map[string]bool{
+						"leftSidebar":  pl.LeftSidebar,
+						"rightSidebar": pl.RightSidebar,
+						"bottomBar":    pl.BottomBar,
+						"shortcut":     pl.Shortcut,
+					},
+				})
 			}
 		}
 		if plist, err := plugins.List(s.DataDir); err == nil {
 			for _, p := range plist {
 				pid := "plugin:" + p.Manifest.ID
 				if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil && meta.Menubar {
-					eligible = append(eligible, candidate{ID: pid, Name: p.Manifest.Name, Pinned: slices.Contains(pinned, pid)})
+					pl := mcpPlacementFor(pid, false, set)
+					disp := pl.Display
+					if disp == "" {
+						disp = "cursor"
+					}
+					eligible = append(eligible, candidate{
+						ID:      pid,
+						Name:    p.Manifest.Name,
+						Kind:    "plugin",
+						Enabled: pl.Enabled,
+						Pinned:  slices.Contains(pinned, pid),
+						Mode:    pl.MenuBarMode,
+						Display: disp,
+						Docks: map[string]bool{
+							"leftSidebar":  pl.LeftSidebar,
+							"rightSidebar": pl.RightSidebar,
+							"bottomBar":    pl.BottomBar,
+							"shortcut":     pl.Shortcut,
+						},
+					})
 				}
 			}
 		}
+		var displays []DisplayInfo
+		if s.Displays != nil {
+			displays = s.Displays()
+		}
 		payload := map[string]any{
-			"pinned":      pinned,
-			"eligible":    eligible,
-			"actions":     engine.MenuActions,
-			"paramPrefix": []string{"set_var:<key>=<value>", "set_dim:<key>=<value>"},
-			"icons":       engine.MenuBarIcons,
+			"pinned":       allPinned,
+			"eligible":     eligible,
+			"displays":     displays,
+			"displayModes": []string{"cursor", "internal", "external"},
+			"menuBarModes": []string{"panel", "menu", "open"},
+			"actions":      engine.MenuActions,
+			"paramPrefix":  []string{"set_var:<key>=<value>", "set_dim:<key>=<value>"},
+			"icons":        engine.MenuBarIcons,
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return string(b), true, nil
 
 	case "tray_set":
 		id := strings.TrimSpace(str("id"))
+		if id == "" {
+			return "", true, fmt.Errorf("id 为必填项")
+		}
+		st, err := store.Open(s.DataDir)
+		if err != nil {
+			return "", true, err
+		}
+		sc, foundScript := st.Script(id)
+		isBar := foundScript && sc.IsBar()
+		set := st.Settings()
+		if set.BarPlacements == nil {
+			set.BarPlacements = map[string]store.BarPlacement{}
+		}
+		pl := mcpPlacementFor(id, isBar, set)
+
 		enabled, hasEnabled := a["enabled"].(bool)
-		if id == "" || !hasEnabled {
-			return "", true, fmt.Errorf("id 和 enabled 为必填项")
+		if err := applyPlacementArgs(&pl, a); err != nil {
+			return "", true, err
+		}
+		if hasEnabled {
+			if isBar {
+				pl.MenuBar = enabled
+				if enabled {
+					pl.Enabled = true
+				}
+			} else {
+				pl.MenuBar = enabled
+				if enabled {
+					if !slices.Contains(set.MenuBar, id) {
+						set.MenuBar = append(set.MenuBar, id)
+					}
+				} else {
+					kept := set.MenuBar[:0:0]
+					for _, x := range set.MenuBar {
+						if x != id {
+							kept = append(kept, x)
+						}
+					}
+					set.MenuBar = kept
+				}
+			}
+		}
+		set.BarPlacements[id] = pl
+
+		if rawIn, ok := a["inputs"].(map[string]any); ok && len(rawIn) > 0 {
+			if set.ScriptVars == nil {
+				set.ScriptVars = map[string]map[string]string{}
+			}
+			if set.ScriptVars[id] == nil {
+				set.ScriptVars[id] = map[string]string{}
+			}
+			for k, v := range rawIn {
+				set.ScriptVars[id][k] = fmt.Sprint(v)
+			}
+		}
+		if err := st.SetSettings(set); err != nil {
+			return "", true, err
+		}
+		s.notifyChange()
+		disp := pl.Display
+		if disp == "" {
+			disp = "cursor"
+		}
+		if hasEnabled {
+			if enabled {
+				return fmt.Sprintf("已将 %s 加入菜单栏（mode=%s, display=%s，当前共 %d 项）", id, pl.MenuBarMode, disp, len(set.MenuBar)), true, nil
+			}
+			return fmt.Sprintf("已将 %s 移出菜单栏（当前共 %d 项）", id, len(set.MenuBar)), true, nil
+		}
+		return fmt.Sprintf("已更新 %s 的菜单栏配置（pinned=%v, mode=%s, display=%s）", id, pl.MenuBar, pl.MenuBarMode, disp), true, nil
+
+	case "menubar_show":
+		idFilter := strings.TrimSpace(str("id"))
+		lang := strings.TrimSpace(str("lang"))
+		if lang == "" {
+			lang = "zh"
 		}
 		st, err := store.Open(s.DataDir)
 		if err != nil {
 			return "", true, err
 		}
 		set := st.Settings()
-		if enabled {
-			if !slices.Contains(set.MenuBar, id) {
-				set.MenuBar = append(set.MenuBar, id)
+		var items []map[string]any
+		for _, sc := range st.Scripts() {
+			if idFilter != "" && sc.ID != idFilter {
+				continue
 			}
-		} else {
-			kept := set.MenuBar[:0:0]
-			for _, x := range set.MenuBar {
-				if x != id {
-					kept = append(kept, x)
+			if sc.IsTable() {
+				continue
+			}
+			if sc.IsBar() {
+				pl := mcpPlacementFor(sc.ID, true, set)
+				if idFilter == "" && (!pl.Enabled || !pl.MenuBar) {
+					continue
+				}
+				items = append(items, s.renderBarMCPShow(sc, pl, set, lang))
+				continue
+			}
+			pinned := slices.Contains(set.MenuBar, sc.ID)
+			if idFilter == "" && !pinned {
+				continue
+			}
+			if meta, err := plugins.CheckSource(sc.ID+".js", sc.Source); err == nil && (meta.Menubar || idFilter != "") {
+				items = append(items, s.renderScriptMCPShow(sc.ID, sc.Name, sc.Source, set, lang))
+			}
+		}
+		if plist, err := plugins.List(s.DataDir); err == nil {
+			for _, p := range plist {
+				pid := "plugin:" + p.Manifest.ID
+				if idFilter != "" && pid != idFilter && p.Manifest.ID != idFilter {
+					continue
+				}
+				pinned := slices.Contains(set.MenuBar, pid)
+				if idFilter == "" && !pinned {
+					continue
+				}
+				if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil && (meta.Menubar || idFilter != "") {
+					items = append(items, s.renderScriptMCPShow(pid, p.Manifest.Name, p.Source, set, lang))
 				}
 			}
-			set.MenuBar = kept
+		}
+		var displays []DisplayInfo
+		if s.Displays != nil {
+			displays = s.Displays()
+		}
+		payload := map[string]any{
+			"count":    len(items),
+			"items":    items,
+			"displays": displays,
+		}
+		b, _ := json.MarshalIndent(payload, "", "  ")
+		return string(b), true, nil
+
+	case "bar_save":
+		source := str("source")
+		sp, err := bar.Parse(source)
+		if err != nil {
+			return "", true, err
+		}
+		id := strings.TrimSpace(str("id"))
+		if id == "" {
+			id = sp.ID
+		}
+		st, err := store.Open(s.DataDir)
+		if err != nil {
+			return "", true, err
+		}
+		home, _ := a["home"].(bool)
+		sc := store.Script{
+			ID:     id,
+			Name:   sp.Title,
+			Source: source,
+			Home:   home,
+			Origin: store.OriginUser,
+			Kind:   store.KindBar,
+		}
+		if err := st.SaveScript(sc); err != nil {
+			return "", true, err
+		}
+		set := st.Settings()
+		if set.BarPlacements == nil {
+			set.BarPlacements = map[string]store.BarPlacement{}
+		}
+		pl := mcpPlacementFor(id, true, set)
+		if en, ok := a["enabled"].(bool); ok {
+			pl.Enabled = en
+			pl.MenuBar = en
+		}
+		if err := applyPlacementArgs(&pl, a); err != nil {
+			return "", true, err
+		}
+		set.BarPlacements[id] = pl
+		if rawIn, ok := a["inputs"].(map[string]any); ok && len(rawIn) > 0 {
+			if set.ScriptVars == nil {
+				set.ScriptVars = map[string]map[string]string{}
+			}
+			if set.ScriptVars[id] == nil {
+				set.ScriptVars[id] = map[string]string{}
+			}
+			for k, v := range rawIn {
+				set.ScriptVars[id][k] = fmt.Sprint(v)
+			}
 		}
 		if err := st.SetSettings(set); err != nil {
 			return "", true, err
 		}
-		if enabled {
-			return fmt.Sprintf("已将 %s 加入菜单栏（当前共 %d 项）", id, len(set.MenuBar)), true, nil
-		}
-		return fmt.Sprintf("已将 %s 移出菜单栏（当前共 %d 项）", id, len(set.MenuBar)), true, nil
+		s.notifyChange()
+		return fmt.Sprintf("已保存 .bar 组件 %s（%s，mode=%s, display=%s）", id, sp.Title, pl.MenuBarMode, orStr(pl.Display, "cursor")), true, nil
 
 	case "app_info":
 		st, _ := store.Open(s.DataDir)
 		plist, _ := plugins.List(s.DataDir)
-		tables, scripts, feeds, pinned := 0, 0, 0, 0
+		tables, scripts, bars, feeds, pinned := 0, 0, 0, 0, 0
 		if st != nil {
+			set := st.Settings()
 			for _, sc := range st.Scripts() {
-				if sc.IsTable() {
+				switch {
+				case sc.IsTable():
 					tables++
-				} else {
+				case sc.IsBar():
+					bars++
+					if pl := mcpPlacementFor(sc.ID, true, set); pl.Enabled && pl.MenuBar {
+						pinned++
+					}
+				default:
 					scripts++
 				}
 			}
 			feeds = len(st.Feeds())
-			pinned = len(st.Settings().MenuBar)
+			pinned += len(set.MenuBar)
+		}
+		var displays []DisplayInfo
+		if s.Displays != nil {
+			displays = s.Displays()
 		}
 		payload := map[string]any{
 			"name":            "ScriptBoard",
@@ -425,10 +726,14 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			"widgetTypes":     engine.ChartTypes,
 			"trayActions":     append(append([]string(nil), engine.MenuActions...), "set_var:<k>=<v>", "set_dim:<k>=<v>"),
 			"trayIcons":       engine.MenuBarIcons,
+			"displayModes":    []string{"cursor", "internal", "external"},
+			"menuBarModes":    []string{"panel", "menu", "open"},
+			"displays":        displays,
 			"shippedIcons":    len(iconcat.Names()),
 			"counts": map[string]int{
 				"scripts":     scripts,
 				"tables":      tables,
+				"bars":        bars,
 				"plugins":     len(plist),
 				"feeds":       feeds,
 				"trayPinned":  pinned,
@@ -439,6 +744,161 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		return string(b), true, nil
 	}
 	return "", false, nil
+}
+
+func mcpPlacementFor(id string, isBar bool, set store.Settings) store.BarPlacement {
+	if set.BarPlacements != nil {
+		if pl, ok := set.BarPlacements[id]; ok {
+			if pl.MenuBarMode == "" {
+				if isBar {
+					pl.MenuBarMode = "panel"
+				} else {
+					pl.MenuBarMode = "menu"
+				}
+			}
+			return pl
+		}
+	}
+	if isBar {
+		return store.BarPlacement{Enabled: true, MenuBar: true, MenuBarMode: "panel", ShortcutKey: "Alt+W"}
+	}
+	return store.BarPlacement{Enabled: true, MenuBar: slices.Contains(set.MenuBar, id), MenuBarMode: "menu", ShortcutKey: "Alt+W"}
+}
+
+func applyPlacementArgs(pl *store.BarPlacement, a map[string]any) error {
+	if mode, ok := a["mode"].(string); ok && strings.TrimSpace(mode) != "" {
+		m := strings.ToLower(strings.TrimSpace(mode))
+		if m != "panel" && m != "menu" && m != "open" {
+			return fmt.Errorf("无效的 mode %q，可选值：panel / menu / open", mode)
+		}
+		pl.MenuBarMode = m
+	}
+	if disp, ok := a["display"].(string); ok {
+		d := strings.ToLower(strings.TrimSpace(disp))
+		switch d {
+		case "", "cursor":
+			pl.Display = ""
+		case "internal", "external":
+			pl.Display = d
+		default:
+			return fmt.Errorf("无效的 display %q，可选值：cursor / internal / external", disp)
+		}
+	}
+	if v, ok := a["leftSidebar"].(bool); ok {
+		pl.LeftSidebar = v
+	}
+	if v, ok := a["rightSidebar"].(bool); ok {
+		pl.RightSidebar = v
+	}
+	if v, ok := a["bottomBar"].(bool); ok {
+		pl.BottomBar = v
+	}
+	if v, ok := a["shortcut"].(bool); ok {
+		pl.Shortcut = v
+	}
+	return nil
+}
+
+func (s Server) renderBarMCPShow(sc store.Script, pl store.BarPlacement, set store.Settings, lang string) map[string]any {
+	if s.MenuBarSnapshot != nil {
+		if live, ok := s.MenuBarSnapshot(sc.ID); ok {
+			return live
+		}
+	}
+	sp, err := bar.Parse(sc.Source)
+	if err != nil {
+		return map[string]any{"id": sc.ID, "name": sc.Name, "kind": "bar", "error": err.Error()}
+	}
+	var saved map[string]string
+	if set.ScriptVars != nil {
+		saved = set.ScriptVars[sc.ID]
+	}
+	inputs := bar.MergeInputs(sp, saved)
+	var snap bar.Snapshot
+	inst, err := bar.NewInstance(sp, bar.Options{Inputs: inputs, Lang: lang, Offline: true})
+	if err == nil {
+		snap = inst.Snapshot()
+		inst.Close()
+	} else {
+		snap.Error = err.Error()
+	}
+	return map[string]any{
+		"id":          sc.ID,
+		"name":        orStr(sp.Title, sc.Name),
+		"kind":        "bar",
+		"enabled":     pl.Enabled,
+		"pinned":      pl.Enabled && pl.MenuBar,
+		"mode":        pl.MenuBarMode,
+		"display":     orStr(pl.Display, "cursor"),
+		"inputs":      inputs,
+		"permissions": sp.Permissions,
+		"tray":        snap.Tray,
+		"panelTexts":  extractBarTexts(snap.Panel),
+		"error":       snap.Error,
+	}
+}
+
+func (s Server) renderScriptMCPShow(id, name, source string, set store.Settings, lang string) map[string]any {
+	if s.MenuBarSnapshot != nil {
+		if live, ok := s.MenuBarSnapshot(id); ok {
+			return live
+		}
+	}
+	pl := mcpPlacementFor(id, false, set)
+	out := map[string]any{
+		"id":      id,
+		"name":    name,
+		"kind":    "script",
+		"enabled": pl.Enabled,
+		"pinned":  slices.Contains(set.MenuBar, id),
+		"mode":    pl.MenuBarMode,
+		"display": orStr(pl.Display, "cursor"),
+	}
+	compiled, err := engine.CompileLang(name, source, lang)
+	if err != nil {
+		out["error"] = err.Error()
+		return out
+	}
+	res, err := compiled.Run(context.Background(), engine.Input{
+		Now:  time.Now(),
+		Lang: lang,
+		OS:   caps.OS(),
+		Kind: caps.Platform(),
+		Vars: engine.ResolveVars(compiled.Meta.Vars, set.ScriptVars[id]),
+	})
+	if err != nil {
+		out["error"] = err.Error()
+		return out
+	}
+	out["title"] = res.Title
+	out["big"] = res.Big
+	out["sub"] = res.Sub
+	out["icon"] = res.Icon
+	out["tray"] = res.MenuBar
+	out["menu"] = res.Menu
+	out["lines"] = res.Lines
+	return out
+}
+
+func extractBarTexts(n *bar.Node) []string {
+	if n == nil {
+		return nil
+	}
+	var out []string
+	if strings.TrimSpace(n.Text) != "" {
+		out = append(out, strings.TrimSpace(n.Text))
+	}
+	for _, ch := range n.Children {
+		out = append(out, extractBarTexts(ch)...)
+	}
+	return out
+}
+
+func orStr(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
 }
 
 func toStringSlice(v any) []string {

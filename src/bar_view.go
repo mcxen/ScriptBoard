@@ -26,6 +26,7 @@ var (
 	barDockBottomSVG = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/></svg>`))
 	barKeySVG        = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`))
 	barMenuBarSVG    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 8h18"/></svg>`))
+	barDisplaySVG    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>`))
 )
 
 var barMoreOpen bool
@@ -464,6 +465,8 @@ func (a *app) barPlacementSection(c *ui.Context, p palette, id string, pl store.
 				}
 			})
 
+			a.barDisplayRow(c, p, id, pl, nil)
+
 			a.barPlacementRow(c, p, barDockLeftSVG, tr("左侧栏"), true, func() {
 				on := pl.LeftSidebar
 				if sw(c, &on).Changed() {
@@ -497,7 +500,43 @@ func (a *app) barPlacementSection(c *ui.Context, p palette, id string, pl store.
 				}
 			})
 		})
+		a.barDisplayNote(c, p)
 	})
+}
+
+func (a *app) barDisplayRow(c *ui.Context, p palette, id string, pl store.BarPlacement, extra func()) {
+	dispIdx := 0
+	switch pl.Display {
+	case "internal":
+		dispIdx = 1
+	case "external":
+		dispIdx = 2
+	}
+	a.barPlacementRow(c, p, barDisplaySVG, tr("显示器"), true, func() {
+		if dropdown(c, &dispIdx, tr("跟随点击"), tr("内接显示器"), tr("外接显示器")) {
+			switch dispIdx {
+			case 1:
+				pl.Display = "internal"
+			case 2:
+				pl.Display = "external"
+			default:
+				pl.Display = ""
+			}
+			a.setBarPlacement(id, pl)
+			if extra != nil {
+				extra()
+			}
+		}
+	})
+}
+
+func (a *app) barDisplayNote(c *ui.Context, p palette) {
+	if a.win == nil {
+		return
+	}
+	if sum := displaysSummary(connectedDisplays()); sum != "" {
+		ui.Text(c, sum).FontSize(fsTiny).TextColor(p.faint)
+	}
 }
 
 func (a *app) barPlacementRow(c *ui.Context, p palette, svg *ui.SVG, lbl string, divider bool, right func()) {
@@ -840,6 +879,7 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 						a.toggleMenuBar(sc.ID)
 					}
 				})
+				a.barDisplayRow(c, p, sc.ID, pl, a.syncMenuBar)
 				a.barPlacementRow(c, p, barDockLeftSVG, tr("左侧栏"), true, func() {
 					on := pl.Enabled && pl.LeftSidebar
 					if sw(c, &on).Changed() {
@@ -874,6 +914,7 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 					}
 				})
 			})
+			a.barDisplayNote(c, p)
 		})
 
 		// Inputs: script vars and dimensions

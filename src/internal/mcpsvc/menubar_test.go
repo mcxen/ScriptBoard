@@ -54,3 +54,76 @@ func TestMCPScriptCheckWarnsAboutTheMenuBar(t *testing.T) {
 		t.Errorf("a warning for a good script: %s", clean)
 	}
 }
+
+func TestMCPMenubarDisplayBarSaveTrayListSetAndShow(t *testing.T) {
+	dir := t.TempDir()
+	barXML := `<bar id="mcp-ping" title="MCP Ping" version="1.0.0" category="system" icon="activity">
+  <inputs>
+    <input name="target" type="string" label="Target" default="8.8.8.8" />
+  </inputs>
+  <script><![CDATA[
+    export default {
+      render(env) {
+        const target = (env && env.inputs && env.inputs.target) || "none";
+        return {
+          tray: { title: target, tooltip: "Ping " + target },
+          panel: { type: "Text", props: { fontSize: 13 }, children: ["Target: ", target] }
+        };
+      }
+    };
+  ]]></script>
+</bar>`
+
+	changes := 0
+	srv := Server{
+		DataDir: dir,
+		Displays: func() []DisplayInfo {
+			return []DisplayInfo{
+				{ID: 1, Label: "Built-in Retina", Kind: "internal", Internal: true, Primary: true, Width: 1512, Height: 982},
+				{ID: 2, Label: "Studio Display", Kind: "external", Internal: false, Primary: false, Width: 2560, Height: 1440},
+			}
+		},
+		OnChange: func() { changes++ },
+	}
+
+	msgs := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		reqCall(2, "bar_save", map[string]any{
+			"source":  barXML,
+			"enabled": true,
+			"mode":    "panel",
+			"display": "external",
+			"inputs":  map[string]any{"target": "1.1.1.1"},
+		}),
+		reqCall(3, "tray_list", map[string]any{}),
+		reqCall(4, "tray_set", map[string]any{
+			"id":          "mcp-ping",
+			"mode":        "panel",
+			"display":     "internal",
+			"leftSidebar": true,
+			"inputs":      map[string]any{"target": "9.9.9.9"},
+		}),
+		reqCall(5, "menubar_show", map[string]any{"id": "mcp-ping"}),
+		reqCall(6, "app_info", map[string]any{}),
+	}
+	var out bytes.Buffer
+	if err := srv.Serve(strings.NewReader(strings.Join(msgs, "\n")+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if changes != 2 {
+		t.Fatalf("OnChange called %d times, want 2", changes)
+	}
+	for _, want := range []string{
+		"已保存 .bar 组件 mcp-ping",
+		"Studio Display",
+		`\"display\": \"external\"`,
+		"已更新 mcp-ping 的菜单栏配置",
+		"Target: 9.9.9.9",
+		`\"bars\": 1`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in MCP output:\n%s", want, text)
+		}
+	}
+}

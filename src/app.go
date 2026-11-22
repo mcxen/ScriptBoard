@@ -165,8 +165,9 @@ type app struct {
 	barSpecs        map[string]bar.Spec
 	barTrays        map[string]*mygo.Tray
 	barTraySig      map[string]string
-	barFlyouts      map[string]*mygo.Window
-	barFlyoutActive map[string]bool
+	barFlyouts         map[string]*mygo.Window
+	barFlyoutActive    map[string]bool
+	barFlyoutClosedAt  map[string]time.Time
 	barPreviewTheme int
 	barSearch       string
 	barSelectedID   string
@@ -239,8 +240,9 @@ func newApp(dir string, offline bool) (*app, error) {
 		barSpecs:        map[string]bar.Spec{},
 		barTrays:        map[string]*mygo.Tray{},
 		barTraySig:      map[string]string{},
-		barFlyouts:      map[string]*mygo.Window{},
-		barFlyoutActive: map[string]bool{},
+		barFlyouts:        map[string]*mygo.Window{},
+		barFlyoutActive:   map[string]bool{},
+		barFlyoutClosedAt: map[string]time.Time{},
 		barInputDrafts:  map[string]map[string]string{},
 	}
 	a.dataDir = filepath.Dir(st.Path())

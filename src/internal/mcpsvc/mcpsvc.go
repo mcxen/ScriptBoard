@@ -52,15 +52,41 @@ type Tool struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
+// DisplayInfo describes one connected monitor reported by the host app.
+type DisplayInfo struct {
+	ID       int64  `json:"id"`
+	Label    string `json:"label"`
+	Kind     string `json:"kind"` // "internal" or "external"
+	Internal bool   `json:"internal"`
+	Primary  bool   `json:"primary"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
+}
+
 // Server is the MCP server over a data folder.
 type Server struct {
 	DataDir string
 	// ReadOnly, when set and true, refuses the tools that change anything:
 	// the read tools still work.
 	ReadOnly func() bool
+	// Displays returns connected monitors (built-in / external) when running
+	// inside the desktop app.
+	Displays func() []DisplayInfo
+	// MenuBarSnapshot optionally provides the live rendered state of a menubar
+	// item when running inside the desktop app.
+	MenuBarSnapshot func(id string) (map[string]any, bool)
+	// OnChange is invoked after write tools update store.json so the live app
+	// can reload settings and sync trays/views immediately.
+	OnChange func()
 }
 
 func (s Server) readOnly() bool { return s.ReadOnly != nil && s.ReadOnly() }
+
+func (s Server) notifyChange() {
+	if s.OnChange != nil {
+		s.OnChange()
+	}
+}
 
 // Serve reads JSON-RPC messages from in, one per line, and writes the replies
 // to out. The protocol uses stdout only; diagnostics go to stderr.
@@ -270,7 +296,7 @@ func Tools() []Tool {
 func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	dataDir := s.DataDir
 	switch name {
-	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set":
+	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set", "bar_save":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}
@@ -345,6 +371,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		if err := plugins.Save(dataDir, m, str("source")); err != nil {
 			return "", err
 		}
+		s.notifyChange()
 		out := fmt.Sprintf("已保存插件 %s，在 %s", m.ID, plugins.PluginDir(dataDir))
 		if meta, err := plugins.CheckSource(m.ID+".js", str("source")); err == nil {
 			out += "\n" + contractReport(meta)
@@ -354,6 +381,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		if err := plugins.Delete(dataDir, str("id")); err != nil {
 			return "", err
 		}
+		s.notifyChange()
 		return "已删除插件 " + str("id"), nil
 	case "plugin_guide":
 		return Guide(), nil
@@ -371,6 +399,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		s.notifyChange()
 		return "已保存图标 " + str("name") + "，在 " + path, nil
 	case "icon_list":
 		names := plugins.ListIcons(dataDir)

@@ -282,32 +282,20 @@ func (a *app) toggleScriptFlyout(id string, t *mygo.Tray) {
 		f.Close()
 		return
 	}
-	f := mygo.NewFlyout(mygo.FlyoutOptions{
-		Tray:         t,
-		Placement:    mygo.PlacementBottom,
-		Gap:          4,
-		Width:        300,
-		Height:       320,
-		FitContent:   true,
-		Focusable:    true,
-		Popover:      true,
-		Shadow:       true,
-		CornerRadius: 14,
-		Content: ui.View(func(c *ui.Context) {
-			applySkin(c)
-			c.Root().Background(ui.Transparent)
-			sc, st, ok := a.menuBarCard(id)
-			if !ok {
-				return
-			}
-			meta, _ := a.metaOf(sc)
-			a.renderScriptMenuCard(c, sc, st, meta, barThemeFor(c, barThemeAuto), c.Vibrancy())
-		}),
+	if a.recentlyClosedFlyout(id) {
+		return
+	}
+	pl := a.scriptDockPlacement(id)
+	a.barFlyouts[id] = a.openTrayPanelWindow(id, t, pl.Display, 300, 320, func(c *ui.Context) {
+		applySkin(c)
+		c.Root().Background(ui.Transparent)
+		sc, st, ok := a.menuBarCard(id)
+		if !ok {
+			return
+		}
+		meta, _ := a.metaOf(sc)
+		a.renderScriptMenuCard(c, sc, st, meta, barThemeFor(c, barThemeAuto), c.Vibrancy())
 	})
-	f.OnClosed(func() {
-		delete(a.barFlyouts, id)
-	})
-	a.barFlyouts[id] = f
 }
 
 // menuBarKind is how an item behaves, by what the script asked: what a click
