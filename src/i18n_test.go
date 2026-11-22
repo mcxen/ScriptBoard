@@ -40,9 +40,12 @@ func TestEnglish(t *testing.T) {
 	onlyEnglish(t, tt, "home")
 	savePNG(t, tt, "14-en-home")
 
-	click(t, tt, "Edit")
+	click(t, tt, "Widgets")
 	onlyEnglish(t, tt, "edit")
 	savePNG(t, tt, "14-en-edit")
+
+	click(t, tt, "Menu bar")
+	onlyEnglish(t, tt, "menubar")
 
 	click(t, tt, "Community")
 	onlyEnglish(t, tt, "community")

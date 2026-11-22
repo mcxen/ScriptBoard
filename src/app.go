@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/cache"
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
@@ -76,8 +77,9 @@ type app struct {
 	cardSize int     // 0 small, 1 medium, 2 large
 
 	// Editor.
-	editorID string
-	// confirmDelete is the script whose delete button was clicked once.
+	editorID      string
+	editorSearch  string
+	editorKind    int // 0: all, 1: script, 2: table, 3: .bar
 	confirmDelete string
 	draft         store.Script
 	tablePage     int    // the page of rows the table editor shows
@@ -157,6 +159,22 @@ type app struct {
 	authUser   string
 	authPass   string
 	uploadDesc string
+
+	// .bar component runtime, menu bar flyouts, and Component Studio state.
+	barInsts        map[string]*bar.Instance
+	barSpecs        map[string]bar.Spec
+	barTrays        map[string]*mygo.Tray
+	barTraySig      map[string]string
+	barFlyouts      map[string]*mygo.Window
+	barFlyoutActive map[string]bool
+	barPreviewTheme int
+	barSearch       string
+	barSelectedID   string
+	barImportOpen   bool
+	barImportText   string
+	barImportErr    string
+	barOverlayID    string
+	barInputDrafts  map[string]map[string]string
 }
 
 type runState struct {
@@ -204,19 +222,26 @@ func newApp(dir string, offline bool) (*app, error) {
 		return nil, err
 	}
 	a := &app{
-		router:     ui.NewRouter("/"),
-		store:      st,
-		client:     &http.Client{Timeout: 10 * time.Second},
-		now:        time.Now,
-		runs:       map[string]*runState{},
-		metas:      map[string]metaEntry{},
-		dims:       map[string][]int{},
-		styles:     map[string]string{},
-		quick:      map[string]*float64{},
-		refreshing: map[string]bool{},
-		usageForms: map[string]*usageForm{},
-		sels:       map[string]*int{},
-		cardSize:   1, // medium cards to start with
+		router:          ui.NewRouter("/"),
+		store:           st,
+		client:          &http.Client{Timeout: 10 * time.Second},
+		now:             time.Now,
+		runs:            map[string]*runState{},
+		metas:           map[string]metaEntry{},
+		dims:            map[string][]int{},
+		styles:          map[string]string{},
+		quick:           map[string]*float64{},
+		refreshing:      map[string]bool{},
+		usageForms:      map[string]*usageForm{},
+		sels:            map[string]*int{},
+		cardSize:        1, // medium cards to start with
+		barInsts:        map[string]*bar.Instance{},
+		barSpecs:        map[string]bar.Spec{},
+		barTrays:        map[string]*mygo.Tray{},
+		barTraySig:      map[string]string{},
+		barFlyouts:      map[string]*mygo.Window{},
+		barFlyoutActive: map[string]bool{},
+		barInputDrafts:  map[string]map[string]string{},
 	}
 	a.dataDir = filepath.Dir(st.Path())
 	a.cache = cache.Open(filepath.Join(a.dataDir, "cache"))
@@ -233,6 +258,9 @@ func newApp(dir string, offline bool) (*app, error) {
 		return nil, err
 	}
 	if err := a.ensureBuiltinTables(); err != nil {
+		return nil, err
+	}
+	if err := a.ensureBuiltinBars(); err != nil {
 		return nil, err
 	}
 	a.syncPlugins()
@@ -316,9 +344,11 @@ func (a *app) attach(w *mygo.Window) {
 	go a.watchPlugins()
 	go a.feedLoop()
 	go a.menuBarLoop()
+	go a.barLoop()
 	go a.liveLoop()
 	a.applyMCP()
 	a.syncMenuBar()
+	a.syncBarMenuBar()
 }
 
 // post runs fn on the main thread.
@@ -334,6 +364,9 @@ func (a *app) post(fn func()) {
 func (a *app) metaOf(sc store.Script) (engine.Meta, error) {
 	if sc.IsTable() {
 		return tableMeta(sc), nil
+	}
+	if sc.IsBar() {
+		return a.barMeta(sc), nil
 	}
 	k := curLang() + "\x00" + sc.ID + "\x00" + sc.Source
 	if e, ok := a.metas[k]; ok {
@@ -546,6 +579,10 @@ func (a *app) execute(sc store.Script, vals map[string]float64) (engine.Result, 
 func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (engine.Result, error) {
 	if sc.IsTable() {
 		return a.tableResult(sc), nil
+	}
+	if sc.IsBar() {
+		m := a.barMeta(sc)
+		return engine.Result{Title: m.Name, Icon: m.Icon}, nil
 	}
 	// The system first, then the user's permission: a script that cannot run
 	// here, or that uses what it was not allowed, does not start.
@@ -824,7 +861,9 @@ func defaultHomeBuiltin(id string) bool {
 
 // builtinIDs are the ids of the scripts that ship with the app.
 func builtinIDs() map[string]bool {
-	ids := map[string]bool{}
+	ids := map[string]bool{
+		"sb-weather": true,
+	}
 	for _, b := range engine.Builtins() {
 		ids[b.ID] = true
 	}

@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
@@ -51,9 +53,9 @@ func (a *app) menuBarOn(id string) bool {
 	return false
 }
 
-// menuBarActive says whether a card is in the bar. Then the app keeps running
+// menuBarActive says whether a card or .bar component is in the bar. Then the app keeps running
 // with its window hidden, so that the bar can show the window again.
-func (a *app) menuBarActive() bool { return len(a.set.MenuBar) > 0 }
+func (a *app) menuBarActive() bool { return len(a.set.MenuBar) > 0 || a.barMenuBarActive() }
 
 // toggleMenuBar puts a card in the menu bar, or takes it out, and keeps the
 // choice. When the last card leaves, the window comes back.
@@ -138,11 +140,16 @@ func (a *app) syncMenuBar() {
 			t.Destroy()
 			delete(a.bars, id)
 			delete(a.barSig, id)
+			if f, ok := a.barFlyouts[id]; ok {
+				f.Close()
+				delete(a.barFlyouts, id)
+			}
 		}
 	}
 	for _, c := range cards {
 		a.showInBar(c.sc, c.st)
 	}
+	a.syncBarMenuBar()
 }
 
 // showInBar shows a card's icon with its title, tooltip and menu. An icon whose
@@ -151,7 +158,7 @@ func (a *app) syncMenuBar() {
 // when it is made.
 func (a *app) showInBar(sc store.Script, st *runState) {
 	title, tip := menuBarText(sc, st)
-	click, mono := menuBarKind(st.res)
+	click, mono := a.scriptMenuBarKind(sc, st.res)
 	iconShape, iconColor := menuBarIconSpec(st.res.MenuBar)
 	kind := fmt.Sprintf("%s|%v|%s|%s\x00", click, mono, iconShape, iconColor)
 	varSig := ""
@@ -165,14 +172,21 @@ func (a *app) showInBar(sc store.Script, st *runState) {
 			t.Destroy()
 			delete(a.bars, sc.ID)
 			delete(a.barSig, sc.ID)
+			if f, ok := a.barFlyouts[sc.ID]; ok {
+				f.Close()
+				delete(a.barFlyouts, sc.ID)
+			}
 		} else {
+			if f, ok := a.barFlyouts[sc.ID]; ok && f.IsVisible() {
+				f.Update(func() {})
+			}
 			if a.barSig[sc.ID] == sig {
 				return
 			}
 			t.SetTitle(title)
 			t.SetToolTip(tip)
-			if click == "menu" {
-				t.SetMenu(a.menuBarMenu(sc, st))
+			if click == "menu" || runtime.GOOS == "linux" {
+				t.SetMenu(a.scriptTrayMenu(sc, st, t, click == "panel"))
 			}
 			a.barSig[sc.ID] = sig
 			return
@@ -187,28 +201,113 @@ func (a *app) showInBar(sc store.Script, st *runState) {
 		ToolTip:         tip,
 		MonospacedTitle: mono,
 	}
-	if click == "menu" {
-		opts.Menu = a.menuBarMenu(sc, st)
-	}
 	t, err := mygo.NewTray(opts)
 	if err != nil {
 		log.Printf("menu bar: %v", err)
 		return
 	}
-	if click == "open" {
+	switch {
+	case click == "menu" || runtime.GOOS == "linux":
+		t.SetMenu(a.scriptTrayMenu(sc, st, t, click == "panel"))
+	case click == "panel":
+		id := sc.ID
+		t.OnClick(func() { a.toggleScriptFlyout(id, t) })
+		t.OnRightClick(func() {
+			if f, ok := a.barFlyouts[id]; ok {
+				f.Close()
+			}
+			if card, run, ok := a.menuBarCard(id); ok {
+				t.SetMenu(a.menuBarMenu(card, run))
+				defer t.SetMenu(nil)
+				t.PopUpMenu()
+			}
+		})
+	case click == "open":
 		// A click opens the card; the menu is on a right click.
 		id := sc.ID
 		t.OnClick(func() { a.openCard(id) })
 		t.OnRightClick(func() {
 			if card, run, ok := a.menuBarCard(id); ok {
 				t.SetMenu(a.menuBarMenu(card, run))
+				defer t.SetMenu(nil)
 				t.PopUpMenu()
-				t.SetMenu(nil)
 			}
 		})
 	}
 	a.bars[sc.ID] = t
 	a.barSig[sc.ID] = sig
+}
+
+func (a *app) scriptMenuBarKind(sc store.Script, res engine.Result) (click string, mono bool) {
+	click, mono = menuBarKind(res)
+	if a.set.BarPlacements != nil {
+		if pl, ok := a.set.BarPlacements[sc.ID]; ok && pl.MenuBarMode != "" {
+			switch pl.MenuBarMode {
+			case "panel", "menu", "open":
+				click = pl.MenuBarMode
+			}
+		}
+	}
+	return click, mono
+}
+
+func (a *app) scriptTrayMenu(sc store.Script, st *runState, t *mygo.Tray, includeOpenPanel bool) *mygo.Menu {
+	m := a.menuBarMenu(sc, st)
+	if !includeOpenPanel || t == nil {
+		return m
+	}
+	items := m.Items()
+	id := sc.ID
+	openPanel := &mygo.MenuItem{
+		Label: tr("打开浮动面板"),
+		Click: func(*mygo.MenuItem, *mygo.Window) {
+			a.toggleScriptFlyout(id, t)
+		},
+	}
+	out := make([]*mygo.MenuItem, 0, len(items)+1)
+	if len(items) > 0 {
+		out = append(out, items[0], openPanel)
+		out = append(out, items[1:]...)
+	} else {
+		out = append(out, openPanel)
+	}
+	return mygo.NewMenu(out)
+}
+
+func (a *app) toggleScriptFlyout(id string, t *mygo.Tray) {
+	if a.barFlyouts == nil {
+		a.barFlyouts = map[string]*mygo.Window{}
+	}
+	if f, ok := a.barFlyouts[id]; ok {
+		f.Close()
+		return
+	}
+	f := mygo.NewFlyout(mygo.FlyoutOptions{
+		Tray:         t,
+		Placement:    mygo.PlacementBottom,
+		Gap:          4,
+		Width:        300,
+		Height:       320,
+		FitContent:   true,
+		Focusable:    true,
+		Popover:      true,
+		Shadow:       true,
+		CornerRadius: 14,
+		Content: ui.View(func(c *ui.Context) {
+			applySkin(c)
+			c.Root().Background(ui.Transparent)
+			sc, st, ok := a.menuBarCard(id)
+			if !ok {
+				return
+			}
+			meta, _ := a.metaOf(sc)
+			a.renderScriptMenuCard(c, sc, st, meta, barThemeFor(c, barThemeAuto), c.Vibrancy())
+		}),
+	})
+	f.OnClosed(func() {
+		delete(a.barFlyouts, id)
+	})
+	a.barFlyouts[id] = f
 }
 
 // menuBarKind is how an item behaves, by what the script asked: what a click
@@ -517,7 +616,10 @@ func (a *app) showWindow() {
 // all go through OnBeforeQuit.
 func (a *app) keepRunning(w *mygo.Window) {
 	w.OnClose(func(e *mygo.CloseEvent) { a.onMainClose(e, w.Minimize) })
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		a.quitting = true
+		a.closeBarInstances()
+	})
 }
 
 // onMainClose is what closing the main window does: the close is cancelled and

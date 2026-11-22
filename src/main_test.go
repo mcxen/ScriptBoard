@@ -116,7 +116,7 @@ func TestHomePage(t *testing.T) {
 func TestEditorPage(t *testing.T) {
 	a := newTestApp(t)
 	tt := ui.NewTester(a.view, 960, 900)
-	click(t, tt, "编辑")
+	click(t, tt, "组件管理")
 	requireText(t, tt, "体重 · kg") // the first script opens in the editor
 	savePNG(t, tt, "2-editor")
 

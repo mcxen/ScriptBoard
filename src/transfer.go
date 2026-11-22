@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 )
@@ -25,8 +26,11 @@ type shareDoc struct {
 	Source string `json:"source"`
 }
 
-// exportScript returns sc as shareable JSON.
+// exportScript returns sc as shareable JSON (or raw XML for .bar components).
 func exportScript(sc store.Script) string {
+	if sc.IsBar() {
+		return sc.Source
+	}
 	doc := shareDoc{Format: shareFormat, Name: sc.Name, Source: sc.Source}
 	if s, err := engine.Compile(sc.Name, sc.Source); err == nil {
 		doc.Icon = s.Meta.Icon
@@ -74,6 +78,22 @@ func (a *app) importText(text string) error {
 // importScript is importText for a script of a known origin: one downloaded
 // from the community is kept with its community id.
 func (a *app) importScript(text, origin, communityID string) error {
+	if bar.IsBarSource(text) {
+		sc, err := a.importBarSource(text)
+		if err != nil {
+			return err
+		}
+		if origin != "" {
+			sc.Origin = origin
+			sc.CommunityID = communityID
+			if err := a.store.SaveScript(sc); err != nil {
+				return err
+			}
+		}
+		a.status = tr("已导入")
+		a.router.Push("/bar/" + sc.ID)
+		return nil
+	}
 	sc, err := parseScript(text)
 	if err != nil {
 		return err

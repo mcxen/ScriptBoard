@@ -20,7 +20,7 @@ func TestPhoneLayout(t *testing.T) {
 	requireTextStart(t, tt, "USD /")
 	savePNG(t, tt, "4-phone-home")
 
-	click(t, tt, "编辑")
+	click(t, tt, "组件管理")
 	requireText(t, tt, "脚本与数据表") // the list comes first
 	savePNG(t, tt, "4-phone-editor")
 	click(t, tt, "体重记录")
