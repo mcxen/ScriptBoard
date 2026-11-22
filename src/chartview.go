@@ -332,7 +332,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 	}
 	if isGaugeOrBars(ch) {
 		if ch.Type == "gauge" {
-			return gaugeView(c, ch, h)
+			return gaugeViewWith(c, ch, style, h)
 		}
 		return barhView(c, ch, h)
 	}

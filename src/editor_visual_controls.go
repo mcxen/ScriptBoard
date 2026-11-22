@@ -94,7 +94,7 @@ func (a *app) colorSwatchRow(c *ui.Context, current *string, onChange func()) {
 
 func (a *app) visualProgressBarStyle(c *ui.Context, cfg *visualConfig) {
 	label(c, tr("进度条样式"))
-	styles := []string{"neon", "gradient", "solid", "segmented"}
+	styles := []string{"neon", "matrix", "gradient", "solid", "segmented"}
 	styleIdx := indexOf(styles, cfg.Bar.Style, 0)
 	tracks := []string{"dark", "tint", "neutral", "none"}
 	trackIdx := indexOf(tracks, cfg.Bar.Track, 0)
@@ -102,10 +102,15 @@ func (a *app) visualProgressBarStyle(c *ui.Context, cfg *visualConfig) {
 
 	ui.Row(c).Gap(14).Wrap().Children(func() {
 		field(c, tr("进度条风格"), "", func() {
-			if choose(c, &styleIdx, tr("霓虹灯"), tr("渐变"), tr("纯色"), tr("分段")) {
+			if choose(c, &styleIdx, tr("霓虹灯"), tr("点阵灯"), tr("渐变"), tr("纯色"), tr("分段")) {
 				cfg.Bar.Style = styles[styleIdx]
-				if cfg.Bar.Style == "neon" && cfg.Bar.Track == "" {
+				if (cfg.Bar.Style == "neon" || cfg.Bar.Style == "matrix") && cfg.Bar.Track == "" {
 					cfg.Bar.Track = "dark"
+				}
+				if cfg.Bar.Style == "matrix" && cfg.Bar.Height < 28 {
+					cfg.Bar.Height = 0
+				} else if cfg.Bar.Style != "matrix" && cfg.Bar.Height > 24 {
+					cfg.Bar.Height = 10
 				}
 				changed = true
 			}
@@ -119,17 +124,40 @@ func (a *app) visualProgressBarStyle(c *ui.Context, cfg *visualConfig) {
 	})
 
 	ui.Row(c).Gap(16).AlignItems(ui.Start).Wrap().Children(func() {
-		h := float64(cfg.Bar.Height)
-		if h <= 0 {
-			h = 10
-		}
-		field(c, fmt.Sprintf(tr("高度 %d"), int(h)), "", func() {
-			if slider(c, &h, 6, 20).Width(120).Changed() {
-				cfg.Bar.Height = float32(h)
-				changed = true
+		if cfg.Bar.Style == "matrix" {
+			h := float64(cfg.Bar.Height)
+			if h <= 0 {
+				h = 62
 			}
-		})
-		if cfg.Bar.Style == "neon" || cfg.Bar.Style == "segmented" {
+			field(c, fmt.Sprintf(tr("高度 %d"), int(h)), "", func() {
+				if slider(c, &h, 36, 96).Width(120).Changed() {
+					cfg.Bar.Height = float32(h)
+					changed = true
+				}
+			})
+			rows := float64(cfg.Bar.Rows)
+			if rows <= 0 {
+				rows = 7
+			}
+			field(c, fmt.Sprintf(tr("点阵行数 %d"), int(rows)), "", func() {
+				if slider(c, &rows, 3, 10).Width(110).Changed() {
+					cfg.Bar.Rows = int(rows)
+					changed = true
+				}
+			})
+		} else {
+			h := float64(cfg.Bar.Height)
+			if h <= 0 {
+				h = 10
+			}
+			field(c, fmt.Sprintf(tr("高度 %d"), int(h)), "", func() {
+				if slider(c, &h, 6, 20).Width(120).Changed() {
+					cfg.Bar.Height = float32(h)
+					changed = true
+				}
+			})
+		}
+		if cfg.Bar.Style == "neon" || cfg.Bar.Style == "matrix" || cfg.Bar.Style == "segmented" {
 			g := float64(cfg.Bar.Glow)
 			if g <= 0 {
 				g = 1.0
@@ -151,6 +179,28 @@ func (a *app) visualProgressBarStyle(c *ui.Context, cfg *visualConfig) {
 					cfg.Bar.Segments = int(seg)
 					changed = true
 				}
+			})
+		}
+		if cfg.Bar.Style == "matrix" {
+			stacked := matrixIsStacked(&engine.ProgressBar{Items: cfg.Progress, BarStyle: cfg.Bar}, cfg.Progress)
+			field(c, tr("合并点阵"), "", func() {
+				ui.Row(c).AlignItems(ui.Center).Height(26).Children(func() {
+					if toggle(c, &stacked) {
+						v := stacked
+						cfg.Bar.Stacked = &v
+						changed = true
+					}
+				})
+			})
+			anim := cfg.Bar.Animate == nil || *cfg.Bar.Animate
+			field(c, tr("呼吸流光"), "", func() {
+				ui.Row(c).AlignItems(ui.Center).Height(26).Children(func() {
+					if toggle(c, &anim) {
+						v := anim
+						cfg.Bar.Animate = &v
+						changed = true
+					}
+				})
 			})
 		}
 		field(c, tr("隐藏数值标签"), "", func() {
@@ -218,7 +268,7 @@ func (a *app) visualProgressRingStyle(c *ui.Context, cfg *visualConfig) {
 	label(c, tr("完成度环样式"))
 	layouts := []string{"row", "concentric"}
 	layIdx := indexOf(layouts, cfg.Ring.Layout, 0)
-	fills := []string{"gradient", "solid"}
+	fills := []string{"gradient", "solid", "matrix"}
 	fillIdx := indexOf(fills, cfg.Ring.Fill, 0)
 	changed := false
 	ui.Row(c).Gap(14).Wrap().Children(func() {
@@ -229,7 +279,7 @@ func (a *app) visualProgressRingStyle(c *ui.Context, cfg *visualConfig) {
 			}
 		})
 		field(c, tr("填充方式"), "", func() {
-			if choose(c, &fillIdx, tr("渐变"), tr("纯色")) {
+			if choose(c, &fillIdx, tr("渐变"), tr("纯色"), tr("点阵灯")) {
 				cfg.Ring.Fill = fills[fillIdx]
 				changed = true
 			}
@@ -242,8 +292,16 @@ func (a *app) visualProgressRingStyle(c *ui.Context, cfg *visualConfig) {
 
 func (a *app) visualDonutStyle(c *ui.Context, cfg *visualConfig) {
 	label(c, tr("环形占比样式"))
+	styles := []string{"", "matrix"}
+	stIdx := indexOf(styles, cfg.Donut.Style, 0)
 	changed := false
 	ui.Row(c).Gap(10).Wrap().AlignItems(ui.Start).Children(func() {
+		field(c, tr("风格"), "", func() {
+			if choose(c, &stIdx, tr("经典"), tr("点阵灯")) {
+				cfg.Donut.Style = styles[stIdx]
+				changed = true
+			}
+		})
 		ui.Column(c).Grow(1).MinWidth(120).Children(func() {
 			field(c, tr("中心文字"), "", func() {
 				if textInput(c, &cfg.Donut.Center, tr("留空显示合计")).Changed() {
@@ -258,13 +316,15 @@ func (a *app) visualDonutStyle(c *ui.Context, cfg *visualConfig) {
 				}
 			})
 		})
-		field(c, tr("霓虹微光"), "", func() {
-			ui.Row(c).AlignItems(ui.Center).Height(32).Children(func() {
-				if toggle(c, &cfg.Donut.Neon) {
-					changed = true
-				}
+		if cfg.Donut.Style != "matrix" {
+			field(c, tr("霓虹微光"), "", func() {
+				ui.Row(c).AlignItems(ui.Center).Height(32).Children(func() {
+					if toggle(c, &cfg.Donut.Neon) {
+						changed = true
+					}
+				})
 			})
-		})
+		}
 	})
 	if changed {
 		a.applyVisualConfig()
@@ -451,12 +511,12 @@ func (a *app) visualCountdownControls(c *ui.Context, cfg *visualConfig) {
 
 func (a *app) visualClockStyle(c *ui.Context, cfg *visualConfig) {
 	label(c, tr("时钟样式"))
-	styles := []string{"analog", "digital", "world"}
+	styles := []string{"analog", "digital", "matrix", "world"}
 	stIdx := indexOf(styles, cfg.Clock.Style, 0)
 	changed := false
 	ui.Row(c).Gap(14).AlignItems(ui.Start).Wrap().Children(func() {
 		field(c, tr("表盘风格"), "", func() {
-			if choose(c, &stIdx, tr("指针表盘"), tr("数字"), tr("世界时钟")) {
+			if choose(c, &stIdx, tr("指针表盘"), tr("数字"), tr("点阵灯"), tr("世界时钟")) {
 				cfg.Clock.Style = styles[stIdx]
 				changed = true
 			}
@@ -525,20 +585,30 @@ func (a *app) visualClockZones(c *ui.Context, cfg *visualConfig) {
 
 func (a *app) visualContribControls(c *ui.Context, cfg *visualConfig) {
 	label(c, tr("打卡热力格样式"))
+	styles := []string{"", "matrix"}
+	stIdx := indexOf(styles, cfg.Contrib.Style, 0)
 	changed := false
 	ui.Row(c).Gap(14).AlignItems(ui.Start).Wrap().Children(func() {
+		field(c, tr("风格"), "", func() {
+			if choose(c, &stIdx, tr("方块"), tr("点阵灯")) {
+				cfg.Contrib.Style = styles[stIdx]
+				changed = true
+			}
+		})
 		field(c, tr("主题色"), "", func() {
 			ui.Row(c).AlignItems(ui.Center).Height(32).Children(func() {
 				a.colorSwatchRow(c, &cfg.Contrib.Color, func() { changed = true })
 			})
 		})
-		field(c, tr("高亮边框"), "", func() {
-			ui.Row(c).AlignItems(ui.Center).Height(32).Children(func() {
-				if toggle(c, &cfg.Contrib.Neon) {
-					changed = true
-				}
+		if cfg.Contrib.Style != "matrix" {
+			field(c, tr("高亮边框"), "", func() {
+				ui.Row(c).AlignItems(ui.Center).Height(32).Children(func() {
+					if toggle(c, &cfg.Contrib.Neon) {
+						changed = true
+					}
+				})
 			})
-		})
+		}
 		field(c, tr("单位"), "", func() {
 			if textInput(c, &cfg.Contrib.Unit, tr("次")).Width(72).Changed() {
 				changed = true

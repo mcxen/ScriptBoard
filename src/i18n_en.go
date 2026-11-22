@@ -538,7 +538,7 @@ var enText = map[string]string{
 	"待完成":                  "Remaining",
 	"完成率":                  "Completion",
 	"可视化":                  "Visual",
-	"霓虹发光 / 渐变 / 分段":       "Neon, gradient or segmented",
+	"霓虹发光 / 点阵灯 / 渐变 / 分段": "Neon, LED matrix, gradient or segmented",
 	"并排或同心活动圆环":            "Side-by-side or concentric activity rings",
 	"多分类占比环图与图例":           "Multi-category share donut with legend",
 	"勾选状态、徽章与完成进度":         "Checkboxes, badges and completion progress",
@@ -739,4 +739,11 @@ var enText = map[string]string{
 	"中卡":                              "Medium",
 	"大卡":                              "Large",
 	"时钟表盘":                            "Clock dial",
+	// Matrix LED widget family
+	"点阵灯":     "LED matrix",
+	"点阵行数 %d": "Matrix rows %d",
+	"合并点阵":    "Merged strip",
+	"呼吸流光":    "Breathing glow",
+	"经典":      "Classic",
+	"方块":      "Squares",
 }

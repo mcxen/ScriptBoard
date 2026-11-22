@@ -53,7 +53,7 @@ type visualTemplate struct {
 }
 
 var visualTemplates = []visualTemplate{
-	{"progressBar", "zap", "霓虹进度条", "Neon bar", "霓虹发光 / 渐变 / 分段", "#00F5D4"},
+	{"progressBar", "zap", "霓虹进度条", "Neon bar", "霓虹发光 / 点阵灯 / 渐变 / 分段", "#00F5D4"},
 	{"progressRing", "gauge", "完成度环", "Progress rings", "并排或同心活动圆环", "#F43F5E"},
 	{"donut", "circle-dollar-sign", "环形占比", "Donut share", "多分类占比环图与图例", "#3B82F6"},
 	{"checklist", "activity", "待办清单", "Checklist", "勾选状态、徽章与完成进度", "#10B981"},
@@ -310,10 +310,15 @@ func renderVisualScript(cfg visualConfig) string {
     lines: [],
     progressBar: {
       style: (CONFIG.bar && CONFIG.bar.style) || "neon",
-      height: (CONFIG.bar && CONFIG.bar.height) || 10,
+      height: (CONFIG.bar && CONFIG.bar.height) || 0,
       track: (CONFIG.bar && CONFIG.bar.track) || "dark",
       glow: (CONFIG.bar && CONFIG.bar.glow) || 1,
       segments: (CONFIG.bar && CONFIG.bar.segments) || 10,
+      rows: (CONFIG.bar && CONFIG.bar.rows) || 0,
+      cols: (CONFIG.bar && CONFIG.bar.cols) || 0,
+      total: (CONFIG.bar && CONFIG.bar.total) || 0,
+      stacked: CONFIG.bar ? CONFIG.bar.stacked : undefined,
+      animate: CONFIG.bar ? CONFIG.bar.animate : undefined,
       hideLabel: !!(CONFIG.bar && CONFIG.bar.hideLabel),
       items: CONFIG.progress || [],
     },

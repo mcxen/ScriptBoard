@@ -84,6 +84,10 @@ func donut(p *ui.Painter, r ui.Rect, frac float64, color, track ui.Color) {
 // gaugeView draws a gauge: the ring, and beside it how much is left, how much
 // is used and when it renews. h is the ring's size.
 func gaugeView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
+	return gaugeViewWith(c, ch, "", h)
+}
+
+func gaugeViewWith(c *ui.Context, ch *engine.Chart, style string, h float32) ui.Element {
 	p := pal(c)
 	g := ch.Gauge
 	if g == nil {
@@ -92,10 +96,23 @@ func gaugeView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 	left, frac := remaining(g)
 	color := gaugeColor(p, frac)
 	size := clampF(h*0.62, 64, 200)
+	isMatrix := style == "matrix" || (style == "" && g.Style == "matrix")
+	if isMatrix {
+		size = clampF(h*0.72, 88, 210)
+	}
 	return ui.Row(c).AlignItems(ui.Center).Gap(18).Children(func() {
-		ui.Box(c).Size(size, size).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
-			donut(pt, r, frac, color, p.chip)
-		})
+		if isMatrix {
+			ui.Column(c).Size(size, size).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
+				Draw(func(pt *ui.Painter, r ui.Rect) {
+					paintMatrixGauge(pt, r, frac, color)
+				}).Children(func() {
+				ui.Text(c, fmt.Sprintf("%.0f%%", math.Round(frac*100))).FontSize(clampF(size*0.21, 13, 24)).FontWeight(700).TextColor(ui.Hex("#F8FAFC")).NoWrap()
+			})
+		} else {
+			ui.Box(c).Size(size, size).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
+				donut(pt, r, frac, color, p.chip)
+			})
+		}
 		ui.Column(c).Gap(3).MinWidth(0).Children(func() {
 			ui.Text(c, fmt.Sprintf(tr("剩余 %.0f%%"), frac*100)).FontSize(fsCount).FontWeight(650).TextColor(color).NoWrap()
 			ui.Text(c, fmt.Sprintf("%s %s", formatAmount(left), g.Unit)).FontSize(fsBody).NoWrap()

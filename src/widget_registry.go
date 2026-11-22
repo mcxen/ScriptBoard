@@ -443,10 +443,10 @@ func init() {
 				d = 64
 				limit = 0
 			}
-			return progressRingView(c, req.Result.Chart, limit, d)
+			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), limit, d)
 		},
 		fullFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
-			return progressRingView(c, req.Result.Chart, 0, 84)
+			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), 0, 84)
 		},
 		tilesFn: func(a *app, c *ui.Context, res engine.Result) bool {
 			return a.kindTiles(c, res.Chart)
@@ -510,10 +510,33 @@ func applyBarStyleOverride(pb *engine.ProgressBar, style string) *engine.Progres
 		return nil
 	}
 	switch style {
-	case "neon", "gradient", "solid", "segmented":
+	case "neon", "matrix", "gradient", "solid", "segmented":
 		cp := *pb
 		cp.Style = style
+		if style == "matrix" && cp.Height < 28 {
+			cp.Height = 0
+		} else if style != "matrix" && cp.Height > 24 {
+			cp.Height = 0
+		}
 		return &cp
 	}
 	return pb
+}
+
+func applyRingFillOverride(ch *engine.Chart, style string) *engine.Chart {
+	if ch == nil {
+		return nil
+	}
+	switch style {
+	case "gradient", "solid", "matrix":
+		cp := *ch
+		var r engine.RingStyle
+		if ch.Ring != nil {
+			r = *ch.Ring
+		}
+		r.Fill = style
+		cp.Ring = &r
+		return &cp
+	}
+	return ch
 }

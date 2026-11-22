@@ -85,6 +85,46 @@ export function render(ctx) {
 	if pb.Items[0].To != "#38BDF8" {
 		t.Errorf("expected gradient target #38BDF8, got %q", pb.Items[0].To)
 	}
+
+	// 3. Matrix LED dot progressBar with custom rows, total, stacked, and animate.
+	matrixSrc := `export function meta() { return { name: "点阵额度", sources: {} }; }
+export function render() {
+  return {
+    title: "点阵额度",
+    big: "84%",
+    sub: "本月配额",
+    lines: [],
+    progressBar: {
+      style: "matrix",
+      rows: 7,
+      cols: 42,
+      total: 100,
+      stacked: true,
+      animate: true,
+      glow: 1.1,
+      track: "dark",
+      items: [
+        { name: "Sonnet", value: 24, color: "#3B82F6" },
+        { name: "Opus", value: 16, color: "#22C55E" },
+        { name: "Haiku", value: 28, color: "#06B6D4" },
+        { name: "Cache", value: 16, color: "#F97316" },
+      ],
+    },
+  };
+}`
+	s3, err := CompileLang("pb-matrix.js", matrixSrc, "zh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res3, err := s3.Run(context.Background(), Input{Now: time.Now(), Lang: "zh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mpb := res3.ProgressBar
+	if mpb == nil || mpb.Style != "matrix" || mpb.Rows != 7 || mpb.Cols != 42 || mpb.Total != 100 ||
+		mpb.Stacked == nil || !*mpb.Stacked || mpb.Animate == nil || !*mpb.Animate || len(mpb.Items) != 4 {
+		t.Fatalf("matrix progressBar %+v", mpb)
+	}
 }
 
 func TestRichWidgetsFromScript(t *testing.T) {

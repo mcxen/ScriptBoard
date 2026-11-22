@@ -177,6 +177,7 @@ type Gauge struct {
 	Unit  string  `json:"unit"`
 	Label string  `json:"label"` // what the quantity is, such as "本月额度"
 	Reset string  `json:"reset"` // when it renews, such as "3 天后重置"
+	Style string  `json:"style,omitempty"` // "" (classic ring) | "matrix" (LED dot-matrix dial)
 }
 
 // Chart is what a result draws. Type "gauge" draws Gauge as a ring of what is
@@ -231,16 +232,28 @@ type Chart struct {
 // BarStyle styles a progressBar / progress component.
 type BarStyle struct {
 	// Style is "solid" (default), "gradient", "neon" (glowing neon tube),
-	// or "segmented" (discrete blocks).
+	// "segmented" (discrete blocks), or "matrix" (glowing LED dot matrix).
 	Style string `json:"style,omitempty"`
-	// Height is the bar thickness in DIPs, 4 to 24; 0 is 8 (10 for neon).
+	// Height is the bar thickness in DIPs (4 to 24 for bars; 28 to 120 for matrix, 0 is auto).
 	Height float32 `json:"height,omitempty"`
 	// Track is "neutral" (default), "tint", "dark", or "none".
 	Track string `json:"track,omitempty"`
-	// Glow is neon halo intensity (0.2 to 1.5; 0 defaults to 1.0 for neon).
+	// Glow is neon/LED halo intensity (0.2 to 1.5; 0 defaults to 1.0 for neon/matrix).
 	Glow float32 `json:"glow,omitempty"`
 	// Segments is block count when Style == "segmented" (4 to 30; 0 is 10).
 	Segments int `json:"segments,omitempty"`
+	// Rows is the LED dot row count when Style == "matrix" (3 to 10; 0 is 7).
+	Rows int `json:"rows,omitempty"`
+	// Cols is the LED dot column count when Style == "matrix" (12 to 80; 0 fits width).
+	Cols int `json:"cols,omitempty"`
+	// Total is the optional overall capacity for stacked matrix mode.
+	Total float64 `json:"total,omitempty"`
+	// Stacked controls whether Style == "matrix" merges items into one multi-segment
+	// LED matrix strip (nil = auto, true = merged, false = one matrix bar per item).
+	Stacked *bool `json:"stacked,omitempty"`
+	// Animate enables subtle LED breathing and flowing shimmer for Style == "matrix"
+	// (nil defaults to true).
+	Animate *bool `json:"animate,omitempty"`
 	// HideLabel hides the "value / max · pct%" readout on the right.
 	HideLabel bool `json:"hideLabel,omitempty"`
 }
@@ -295,6 +308,7 @@ type DonutStyle struct {
 	Sub       string  `json:"sub,omitempty"`       // caption under center
 	Thickness float32 `json:"thickness,omitempty"` // 0.12 to 0.45; 0 is 0.26
 	Neon      bool    `json:"neon,omitempty"`
+	Style     string  `json:"style,omitempty"` // "" (classic) | "matrix" (LED dot-matrix ring)
 }
 
 // CheckItem is one row of a "checklist" component.
@@ -336,7 +350,7 @@ type ClockZone struct {
 
 // ClockSpec configures a "clock" component.
 type ClockSpec struct {
-	Style   string      `json:"style,omitempty"` // analog (default) | digital | world
+	Style   string      `json:"style,omitempty"` // analog (default) | digital | matrix | world
 	Zones   []ClockZone `json:"zones,omitempty"`
 	Seconds bool        `json:"seconds,omitempty"`
 	Color   string      `json:"color,omitempty"`
@@ -358,6 +372,7 @@ type ContribSpec struct {
 	Weeks int           `json:"weeks,omitempty"`
 	Unit  string        `json:"unit,omitempty"`
 	Neon  bool          `json:"neon,omitempty"`
+	Style string        `json:"style,omitempty"` // "" (classic squares) | "matrix" (LED dot matrix)
 }
 
 // Progress is one bar of a "progress" chart: Value out of Max. A Max of 0
@@ -407,8 +422,8 @@ type RingStyle struct {
 	// Track is the ring under the arc: "tint" (the default: the arc's color,
 	// faint), "neutral" (gray) or "none".
 	Track string `json:"track,omitempty"`
-	// Fill is "gradient" (the default: the color deepens along the arc) or
-	// "solid".
+	// Fill is "gradient" (the default: the color deepens along the arc),
+	// "solid", or "matrix" (glowing LED dot-matrix ring).
 	Fill string `json:"fill,omitempty"`
 	// Center is what a ring shows inside: "percent" (the default), "value" or
 	// "none".
