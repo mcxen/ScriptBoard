@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.11
+
+- IP & Network Bento dashboard: new reusable nested `bento` component (Hero IP, 6-target 12-dot connectivity probes, split-routing exit IP pills, IP quality inspector, hide-IP mask toggle and split-routing detail table), host `netprobe` capability with system/environment proxy support, built-in `ip-dashboard` script and visual editor Bento template.
+- `.bar` component runtime & Menu Bar studio: adds `.bar` XML bundle runtime, tray flyouts, Component Manager (`组件管理`) and Menu Bar Manager (`菜单管理`) tabs, internal/external display placement, sidebar/shortcut dock placements, MCP menubar tools, flyout jitter fix, and a fix for script menu card light/dark preview theme inheritance.
+- Redesigned visual component editor & built-in cleanup: splits visual editing into 3 focused tabs (`内容` / `样式` / `更多`), streamlines chart/widget styles, and retires unmodified legacy duplicate built-in scripts automatically on startup.
+- Matrix LED dot-matrix widget family: adds glowing LED dot-matrix styles with breathing and flowing shimmer across `progressBar`, `donut`, `progressRing`, `gauge`, `contrib` and `clock`, selectable in the detail view and visual editor.
+- Settings tabs, pluggable components, interactive tables & rich tray: Settings split into 7 left-sidebar tabs (desktop/Mac OS 9) and horizontal tab strip (mobile); single-source `WidgetSpecs`, `ExtractTable` and pluggable `ComponentView` registry with runtime view swapping; native interactive `table` widget, 3-mode detail viewer (Visual / Data Table / Raw Data) and built-in `fxcny-table` script; upgraded data-table editor (filter, any-column sort, numeric summaries, row duplicate, JSON import/export); interactive chart legend toggles, keyboard scrubbing and widget interactions; expanded Tray/MenuBar API and 9 new MCP tools (`widget_catalog`, `script_run`, `table_*`, `tray_*`, `app_info`).
+
 ## 0.1.10
 
 - Universal source fallback: any entry in `meta.sources` can declare an ordered fallback chain (array of sources or `{url, ..., fallback: [...]}`) so scripts automatically try secondary endpoints on failure across regular fetches, caching, live polling and MCP checks; built-in `gold`, `fx`, `fxcny`, `btc` and `cnwx` use fallback endpoints.
