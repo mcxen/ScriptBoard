@@ -55,23 +55,23 @@ func TestBuiltinsFollowTheContract(t *testing.T) {
 // it reads the computer's files, so it is for the computer, and says so.
 func TestClaudeCodeScriptIsDesktopAndFiles(t *testing.T) {
 	for _, b := range engine.Builtins() {
-		if b.ID != "ai-claude" {
+		if b.ID != "ai-claude-neon" {
 			continue
 		}
-		s, err := engine.Compile("ai-claude.js", b.Source)
+		s, err := engine.Compile("ai-claude-neon.js", b.Source)
 		if err != nil {
 			t.Fatal(err)
 		}
 		r := Resolve(s.Meta)
 		if !r.DesktopOnly() || !r.PlatformDependent() || !r.Needing(caps.Files) {
-			t.Errorf("ai-claude: %+v", r)
+			t.Errorf("ai-claude-neon: %+v", r)
 		}
 		if r.Supports(caps.Mobile) {
-			t.Errorf("ai-claude claims the phone")
+			t.Errorf("ai-claude-neon claims the phone")
 		}
 		return
 	}
-	t.Fatal("no ai-claude builtin")
+	t.Fatal("no ai-claude-neon builtin")
 }
 
 // The scripts that make requests say so, and the one that only reads the user's
@@ -79,10 +79,9 @@ func TestClaudeCodeScriptIsDesktopAndFiles(t *testing.T) {
 func TestBuiltinNeedsMatchTheirUse(t *testing.T) {
 	want := map[string]bool{ // needs the network
 		"weight": false, "cal": false, "goldk": false,
-		"fx": true, "fxcny": true, "weather": true, "bing": true, "cnwx": true, "aqi": true, "gold": true, "goldacc": true, "hs300": true, "btc": true,
-		"ai-deepseek": true, "ai-openrouter": true, "ai-claude": false,
+		"fx": true, "weather": true, "bing": true, "hs300": true, "btc": true,
 		"ai-claude-neon": false, "ai-balance-neon": true,
-		"goldacc-kv": true, "fxcny-kv": true, "gold-kv": true,
+		"goldacc-kv": true, "gold-kv": true,
 		"aqi-neon": true, "cnwx-kv": true,
 		"weight-contrib": false, "year-countdown": false, "world-clock": false, "fxcny-table": true,
 	}

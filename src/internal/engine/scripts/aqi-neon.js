@@ -16,9 +16,9 @@ const CITIES = [
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("空气质量霓虹条", "Air quality bars"),
-    description: t("用霓虹进度条展示所选城市的 US AQI、PM2.5 与 PM10 等级", "Neon progress bars for US AQI, PM2.5 and PM10"),
-    version: "1.0.0",
+    name: t("空气质量", "Air quality"),
+    description: t("用进度条展示所选城市的 US AQI、PM2.5 与 PM10 等级", "Progress bars for US AQI, PM2.5 and PM10"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "wind",
@@ -28,16 +28,6 @@ export function meta(a) {
         label: t("城市", "City"),
         default: CITIES[0].value,
         options: CITIES.map((c) => ({ value: c.value, label: t(c.zh, c.en) })),
-      },
-    ],
-    dims: [
-      {
-        key: "style",
-        label: t("风格", "Style"),
-        options: [
-          { value: 0, label: t("霓虹灯", "Neon") },
-          { value: 1, label: t("分段", "Segmented") },
-        ],
       },
     ],
     sources: {

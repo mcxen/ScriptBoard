@@ -95,12 +95,12 @@ func TestFilesNeedTheUsersPermission(t *testing.T) {
 // The app's own scripts are trusted while unchanged; a changed one is not.
 func TestBuiltinsAreTrustedUntilChanged(t *testing.T) {
 	a := newTestApp(t)
-	claude, _ := a.store.Script("ai-claude")
+	claude, _ := a.store.Script("ai-claude-neon")
 	if !a.trusted(claude) || len(a.missingGrants(claude)) != 0 {
 		t.Fatalf("an unchanged built-in is not trusted")
 	}
 	if _, err := a.execute(claude, nil); err != nil {
-		t.Errorf("ai-claude: %v", err)
+		t.Errorf("ai-claude-neon: %v", err)
 	}
 	claude.Source += "\n// changed\n"
 	if a.trusted(claude) {

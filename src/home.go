@@ -323,10 +323,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					break
 				}
 				// A card with no headline, or no summary, does not keep a line empty.
-				// Clock and single-target countdown widgets already draw a hero display
-				// on medium/large cards, so avoid duplicating Big above them (mini/small
-				// cards still show Big).
-				selfHero := size > 0 && hasChart && (isClock(st.res.Chart) || (isCountdown(st.res.Chart) && len(st.res.Chart.Countdown) == 1))
+				// SelfHero widgets (clock, single-target countdown) already draw a hero
+				// display on medium/large cards, so avoid duplicating Big above them.
+				selfHero := size > 0 && hasChart && compSpec.Capabilities.SelfHero &&
+					(!isCountdown(viewRes.Chart) || len(viewRes.Chart.Countdown) == 1)
 				if st.res.Big != "" && !selfHero {
 					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
 				}
@@ -454,8 +454,30 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			a.resizeHandle(c, sc.ID, span, b)
 		}
 	})
-	// Right click on this card: a menu in the window with its four sizes. It
-	// changes this card only.
+	// Right click on this card: a menu in the window with its sizes, legend,
+	// menu bar toggle, and compatible visual view swaps.
+	a.cardContextMenu(c, sc, meta, st, viewRes, compSpec, el)
+	if a.editing {
+		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
+		if a.rz != nil && a.rz.id == sc.ID {
+			el.Border(2, p.accent)
+		} else {
+			el.Border(1, accent.Alpha(0.55))
+		}
+		if ref, ok := ui.Drop[cardRef](el); ok && ref.id != sc.ID {
+			a.moveCard(ref.id, sc.ID)
+		}
+	}
+	if el.Hovered() {
+		el.Border(1, accent.Alpha(0.55))
+	}
+	if el.Clicked() && !a.editing {
+		a.router.Push("/full/" + sc.ID)
+	}
+}
+
+func (a *app) cardContextMenu(c *ui.Context, sc store.Script, meta engine.Meta, st *runState, viewRes engine.Result, compSpec engine.WidgetSpec, el ui.Element) {
+	p := pal(c)
 	open := a.cardMenuOpen(sc.ID)
 	ui.ContextMenuBase(c, el, open).Popup(func(panel ui.Element) {
 		panel.Padding(6).Gap(2).Background(p.card).Radius(10).BorderWidth(1).BorderColor(p.border).Children(func() {
@@ -466,14 +488,16 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					*open = false
 				}
 			}
-			// The legend of this card: shown or hidden, the user's choice.
-			legend := tr("隐藏图例")
-			if a.set.LegendHidden[sc.ID] {
-				legend = tr("显示图例")
-			}
-			if btn(c, legend).Clicked() {
-				a.toggleLegend(sc.ID)
-				*open = false
+			// The legend of this card: only offered when the chart actually has multiple series.
+			if compSpec.Capabilities.Plot && viewRes.Chart != nil && len(viewRes.Chart.Series) > 1 {
+				legend := tr("隐藏图例")
+				if a.set.LegendHidden[sc.ID] {
+					legend = tr("显示图例")
+				}
+				if btn(c, legend).Clicked() {
+					a.toggleLegend(sc.ID)
+					*open = false
+				}
 			}
 			// The menu bar: offered when the script asks for it, and the user
 			// chooses whether the card is there.
@@ -488,7 +512,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				}
 			}
 			// Runtime component swapping directly from the card's context menu.
-			if swaps := engine.SwappableTypes(st.res); len(swaps) > 1 {
+			if swaps := visualSwapOptions(st.res); len(swaps) > 1 {
 				ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
 				baseType := engine.ResultWidgetType(st.res)
 				for _, target := range swaps {
@@ -509,23 +533,6 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			}
 		})
 	})
-	if a.editing {
-		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
-		if a.rz != nil && a.rz.id == sc.ID {
-			el.Border(2, p.accent)
-		} else {
-			el.Border(1, accent.Alpha(0.55))
-		}
-		if ref, ok := ui.Drop[cardRef](el); ok && ref.id != sc.ID {
-			a.moveCard(ref.id, sc.ID)
-		}
-	}
-	if el.Hovered() {
-		el.Border(1, accent.Alpha(0.55))
-	}
-	if el.Clicked() && !a.editing {
-		a.router.Push("/full/" + sc.ID)
-	}
 }
 
 // dimRow shows a row of options for each dimension, such as the range of

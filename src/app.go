@@ -644,11 +644,53 @@ func (a *app) homeScripts() []store.Script {
 	return out
 }
 
+// retiredBuiltins are old or duplicate built-in scripts that were removed in
+// favor of cleaner modern replacements. Unmodified copies from earlier versions
+// are cleaned up automatically in ensureBuiltins. Extra SHA-256 hashes listed
+// here cover retired scripts that have no legacy testdata fixture.
+var retiredBuiltins = map[string][]string{
+	"ai-claude":     nil,
+	"ai-deepseek":   nil,
+	"ai-openrouter": nil,
+	"fxcny":         nil,
+	"fxcny-kv":      {"77adc2af5afeda8f208c02f447687804077da14f676accddecdf23fecc4cabed"},
+	"gold":          nil,
+	"goldacc":       nil,
+	"cnwx":          nil,
+	"aqi":           nil,
+}
+
+func isRetiredUnmodified(id, source string) bool {
+	if refreshBuiltin(id, source) {
+		return true
+	}
+	if fps := retiredBuiltins[id]; len(fps) > 0 {
+		sum := sha256.Sum256([]byte(source))
+		h := hex.EncodeToString(sum[:])
+		for _, f := range fps {
+			if h == f {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ensureBuiltins adds the built-in scripts a data file from an earlier version
-// does not have yet (including goldacc, aqi, hs300, btc, fxcny, cnwx, cal), and refreshes gold /
-// goldk when they still use the old mock or hand-entered source. Scripts that
-// need a key start off the home page.
+// does not have yet, refreshes unmodified built-ins to the latest version, and
+// removes unmodified retired built-ins that were replaced by modern ones.
 func (a *app) ensureBuiltins() error {
+	for id := range retiredBuiltins {
+		sc, ok := a.store.Script(id)
+		if !ok {
+			continue
+		}
+		if (sc.Origin == store.OriginBuiltin || sc.Origin == "") && isRetiredUnmodified(id, sc.Source) {
+			if err := a.store.DeleteScript(id); err != nil {
+				return err
+			}
+		}
+	}
 	for _, b := range engine.Builtins() {
 		sc, ok := a.store.Script(b.ID)
 		if ok && !refreshBuiltin(b.ID, sc.Source) {
@@ -735,6 +777,7 @@ var previousBuiltins = map[string][]string{
 		"0277a3e4520967925e85a84ab230fd42976bb96c83823e9d29ff0fcfbdf53d74",
 		"18b7d852d6d4215d88c1dc50dded64bda84598f840c5992e01802dfc6944143c",
 		"4b0ed00df43b50c9128e73e8e0a38c47883b96e1527f807fc4173fd307da8f48",
+		"506f1b9ebf031bd163db5a441bcaa43ded005599faeac77d1185321380d8c83a",
 		"5f7e420061fd66e6450d66cc0332f2da22fa747d7f356653996bd536c50f510e",
 		"bf7b399b3581617ddcd24ee6f2670efc92842e3dc6524e8c4a7d2d512cdb3601",
 	},
@@ -758,6 +801,7 @@ var previousBuiltins = map[string][]string{
 		"e8d2bcaa0e5f41badc0fe7b8f0f230df2bd5a090547fecd157a26f05f3e90578",
 	},
 	"fxcny": {
+		"4889b8f502a3c31454a19124dd67d08662d4dab0b87081ed03de9543270d384e",
 		"4efe2a6d4d67206c4b8b92d5d7eae023d9560e70bab67684fbbc6b6d8c03c35e",
 		"bf9de9193b07055e571f89ad903f681fa2f9ad98a33910ef627d1b9e030167e9",
 		"deaf30589c4cbdb5f65446f58f319cfae4c8e3aea697f50b74aa04f3163766b7",
@@ -784,6 +828,7 @@ var previousBuiltins = map[string][]string{
 		"abe59a2b07c31ef986f3af058828b88865afc623fcafb003519a3ccdaba5ec4d",
 	},
 	"cnwx": {
+		"a2a145f8e9f4c9e4bbfe5c60b7366640e17b25c8cbadee83d8e5de28d37dac34",
 		"d46fda97fcf2256357d352919bfbeb555b1f3e3a6fee491ddb4f169fe7bc53ee",
 	},
 	"hs300": {
@@ -807,16 +852,11 @@ func legacyColors(src string) string {
 }
 
 // defaultHomeBuiltin reports whether a newly added built-in script starts on
-// the home page. Scripts that require an API key, as well as the extra style
-// variants and companions, start off-home so users can enable the ones they
-// want without crowding their existing grid.
+// the home page. Scripts that require an API key or local AI logs, as well as
+// optional companions, start off-home so users can enable them when needed.
 func defaultHomeBuiltin(id string) bool {
 	switch id {
-	case "ai-deepseek", "ai-openrouter",
-		"ai-claude-neon", "ai-balance-neon",
-		"goldacc-kv", "fxcny-kv", "gold-kv",
-		"aqi-neon", "cnwx-kv", "weight-contrib",
-		"year-countdown", "world-clock", "fxcny-table":
+	case "ai-claude-neon", "ai-balance-neon", "weight-contrib":
 		return false
 	}
 	return true

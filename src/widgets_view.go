@@ -360,14 +360,14 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bo
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
 	}
-	rowPad := float32(10)
+	rowPadY, rowPadX := float32(10), float32(6)
 	if !full {
-		rowPad = 4.5
+		rowPadY, rowPadX = 4.5, 2
 	}
 	return ui.Column(c).Gap(0).Children(func() {
 		for i, it := range shown {
 			it := it
-			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 6).Radius(6)
+			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPadY, rowPadX).Radius(6)
 			if i > 0 {
 				row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
 			}
@@ -382,7 +382,7 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bo
 				if hasDot {
 					ui.Box(c).Size(8, 8).Radius(4).Background(col).Shrink(0)
 				}
-				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+				ui.Column(c).Gap(1).Grow(1).MinWidth(0).ClipX().Children(func() {
 					ui.Text(c, it.Label).FontSize(fsSmall).TextColor(p.muted).NoWrap()
 					if it.Sub != "" && (full || len(shown) <= 2) {
 						ui.Text(c, it.Sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()

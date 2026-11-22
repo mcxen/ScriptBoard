@@ -91,7 +91,7 @@ func TestCandleStyles(t *testing.T) {
 		{O: 10.5, H: 14, L: 10, C: 13.2},
 	}}
 	styles := stylesFor(ch)
-	want := map[string]bool{"candle": false, "hollow": false, "ohlc": false, "close": false, "bar": false}
+	want := map[string]bool{"candle": false, "hollow": false, "close": false}
 	for _, o := range styles {
 		if _, ok := want[o.key]; ok {
 			want[o.key] = true
@@ -101,6 +101,9 @@ func TestCandleStyles(t *testing.T) {
 		if !ok {
 			t.Errorf("candle style %q missing from the menu", k)
 		}
+	}
+	if len(styles) != 3 {
+		t.Errorf("candle menu has %d styles, want 3 uncluttered styles", len(styles))
 	}
 	for _, style := range []string{"candle", "hollow", "ohlc"} {
 		style := style

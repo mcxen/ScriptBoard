@@ -103,7 +103,7 @@ func TestHomePage(t *testing.T) {
 	settle(tt)
 	requireText(t, tt, "首页")
 	requireTextStart(t, tt, "USD / CNY") // fx script, sample data offline; the title gives way to the buttons on a narrow card
-	requireText(t, tt, "金价 · 元/克")
+	requireText(t, tt, "世界时钟")
 	savePNG(t, tt, "1-home-medium")
 
 	click(t, tt, "大")

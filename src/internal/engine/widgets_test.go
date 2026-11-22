@@ -233,13 +233,13 @@ func TestNewStyleBuiltins(t *testing.T) {
 		t.Errorf("ai-claude-neon view=2: %+v", r2.Chart)
 	}
 
-	// 2. ai-balance-neon: standalone progressBar (neon & segmented)
+	// 2. ai-balance-neon: standalone progressBar
 	balUsage := map[string]any{
 		"deepseek-balance":   map[string]any{"balance": 42.5, "limit": 100.0, "used": 57.5, "unit": "CNY"},
 		"openrouter-credits": map[string]any{"balance": 12.0, "limit": 50.0, "used": 38.0, "unit": "USD"},
 	}
-	rb := run(t, "ai-balance-neon", "zh", Input{Usage: balUsage, View: map[string]float64{"style": 1}})
-	if rb.Chart != nil || rb.ProgressBar == nil || rb.ProgressBar.Style != "segmented" || len(rb.ProgressBar.Items) != 2 {
+	rb := run(t, "ai-balance-neon", "zh", Input{Usage: balUsage})
+	if rb.Chart != nil || rb.ProgressBar == nil || rb.ProgressBar.Style != "neon" || len(rb.ProgressBar.Items) != 2 {
 		t.Errorf("ai-balance-neon: chart=%+v pb=%+v", rb.Chart, rb.ProgressBar)
 	}
 
@@ -252,15 +252,7 @@ func TestNewStyleBuiltins(t *testing.T) {
 		t.Errorf("goldacc-kv: %+v", rga.Chart)
 	}
 
-	// 4. fxcny-kv: kv currency board
-	rfx := run(t, "fxcny-kv", "en", Input{Sources: rawSources(map[string]any{
-		"fx": map[string]any{"date": "2026-11-21", "rates": map[string]any{"USD": 0.138, "EUR": 0.130, "JPY": 21.0, "GBP": 0.109, "HKD": 1.075}},
-	})})
-	if rfx.Chart == nil || rfx.Chart.Type != "kv" || len(rfx.Chart.KV) != 5 || rfx.Chart.KV[0].Badge != "USD" {
-		t.Errorf("fxcny-kv: %+v", rfx.Chart)
-	}
-
-	// 5. gold-kv: kv store gold board
+	// 4. gold-kv: kv store gold board
 	rg := run(t, "gold-kv", "zh", Input{Sources: rawSources(map[string]any{
 		"gold": map[string]any{
 			"date":   "2026-11-21",
@@ -315,18 +307,13 @@ func TestNewStyleBuiltins(t *testing.T) {
 		t.Errorf("year-countdown view=1: %+v", ry1.Chart)
 	}
 
-	// 10. world-clock: world / analog / digital + menubar
-	for _, m := range []struct {
-		v    float64
-		want string
-	}{{0, "world"}, {1, "analog"}, {2, "digital"}} {
-		rc := run(t, "world-clock", "zh", Input{View: map[string]float64{"style": m.v}})
-		if rc.Chart == nil || rc.Chart.Type != "clock" || rc.Chart.Clock == nil || rc.Chart.Clock.Style != m.want {
-			t.Errorf("world-clock style=%v: %+v", m.v, rc.Chart)
-		}
-		if rc.MenuBar == nil || rc.MenuBar.Title == "" {
-			t.Errorf("world-clock missing menubar: %+v", rc.MenuBar)
-		}
+	// 10. world-clock: world clock + menubar (style switching is handled by clockStylePicker)
+	rc := run(t, "world-clock", "zh", Input{})
+	if rc.Chart == nil || rc.Chart.Type != "clock" || rc.Chart.Clock == nil || rc.Chart.Clock.Style != "world" {
+		t.Errorf("world-clock: %+v", rc.Chart)
+	}
+	if rc.MenuBar == nil || rc.MenuBar.Title == "" {
+		t.Errorf("world-clock missing menubar: %+v", rc.MenuBar)
 	}
 
 	// 11. fxcny-table: native interactive table + fallback + menubar

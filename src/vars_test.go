@@ -179,9 +179,9 @@ func TestWeatherShowsTheChosenCity(t *testing.T) {
 
 func TestCnwxShowsTheChosenCity(t *testing.T) {
 	a := newTestApp(t)
-	sc, ok := a.store.Script("cnwx")
+	sc, ok := a.store.Script("cnwx-kv")
 	if !ok {
-		t.Fatal("no cnwx script")
+		t.Fatal("no cnwx-kv script")
 	}
 	res, err := a.execute(sc, nil)
 	if err != nil || !strings.Contains(res.Title, "上海") {

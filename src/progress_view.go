@@ -79,9 +79,13 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 	}
 	segs = min(max(segs, 4), 30)
 
+	compactCard := limit > 0
 	gap := float32(10)
 	if isNeon {
 		gap = 12
+	}
+	if compactCard {
+		gap = 7
 	}
 	return ui.Column(c).Gap(gap).Children(func() {
 		if len(items) == 0 {
@@ -119,6 +123,9 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 				padY := float32(0)
 				if isNeon || glow > 0 {
 					padY = 6
+					if compactCard {
+						padY = 3
+					}
 				}
 				ui.Box(c).Height(barH + padY*2).Draw(func(pt *ui.Painter, r ui.Rect) {
 					track := ui.Rect{X: r.X, Y: r.Y + padY, W: r.W, H: barH}

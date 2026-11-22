@@ -15,22 +15,12 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("AI 余额总览", "AI balances"),
-    description: t("用霓虹或分段进度条汇总 DeepSeek、OpenRouter、Moonshot 与 SiliconFlow 余额", "Neon or segmented progress bars for DeepSeek, OpenRouter, Moonshot and SiliconFlow balances"),
-    version: "1.0.0",
+    description: t("汇总 DeepSeek、OpenRouter、Moonshot 与 SiliconFlow 余额", "Progress bars for DeepSeek, OpenRouter, Moonshot and SiliconFlow balances"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network", "key"],
     icon: "zap",
     usage: PROVIDERS.map((p) => p.id),
-    dims: [
-      {
-        key: "style",
-        label: t("风格", "Style"),
-        options: [
-          { value: 0, label: t("霓虹灯", "Neon") },
-          { value: 1, label: t("分段", "Segmented") },
-        ],
-      },
-    ],
     sources: {},
   };
 }

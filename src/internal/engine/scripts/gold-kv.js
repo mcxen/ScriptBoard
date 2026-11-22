@@ -7,9 +7,9 @@ const t = (zh, en) => (EN ? en : zh);
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("门市金价看板", "Store gold board"),
+    name: t("门市金价", "Store gold"),
     description: t("用键值面板展示各金店、银行金条与回收当日金价", "Key-value board for store, bank bar and recycle gold prices"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "coins",

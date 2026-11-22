@@ -21,35 +21,66 @@ import (
 type styleOpt struct{ key, label string }
 
 var seriesStyles = []styleOpt{
-	{"line", "折线"}, {"area", "面积"}, {"dot", "点状"}, {"bar", "柱状"}, {"step", "阶梯"},
-	// The retro styles: they work with any skin, on any series chart.
+	{"line", "折线"}, {"area", "面积"}, {"bar", "柱状"}, {"dot", "点状"},
+}
+
+var retroSeriesStyles = []styleOpt{
+	{"line", "折线"}, {"area", "面积"}, {"bar", "柱状"}, {"dot", "点状"},
 	{"stripe", "条纹柱"}, {"pixel", "像素点"}, {"grid", "网格折线"},
 }
 
-var candleStyles = []styleOpt{
-	{"candle", "K 线"}, {"hollow", "空心K线"}, {"ohlc", "美国线"}, {"close", "收盘线"}, {"bar", "收盘柱"},
+var dotStyles = []styleOpt{
+	{"dot", "点状"}, {"line", "折线"}, {"area", "面积"},
 }
 
-// stylesFor lists the styles a chart can be drawn in.
+var comboStyles = []styleOpt{
+	{"line", "折线"}, {"area", "面积"},
+}
+
+var candleStyles = []styleOpt{
+	{"candle", "K 线"}, {"hollow", "空心K线"}, {"close", "收盘线"},
+}
+
+// stylesFor lists the user-facing styles a chart offers in the UI.
+// Charts that do not benefit from global style switching (such as multi-panel
+// charts where each panel defines its own style) return nil.
 func stylesFor(ch *engine.Chart) []styleOpt {
-	if ch != nil && ch.Type == "candle" {
-		return candleStyles
+	if ch == nil {
+		return seriesStyles
 	}
-	return seriesStyles
+	switch ch.Type {
+	case "panels":
+		return nil
+	case "combo":
+		return comboStyles
+	case "dot":
+		return dotStyles
+	case "candle":
+		return candleStyles
+	default:
+		if isMac() {
+			return retroSeriesStyles
+		}
+		return seriesStyles
+	}
 }
 
 // resolveStyle returns want when the chart can be drawn that way, and the
-// chart's own default style otherwise.
+// chart's own default style otherwise. Accepts all supported render styles
+// (including retro styles and OHLC/step) even when hidden from the default picker.
 func resolveStyle(ch *engine.Chart, want string) string {
-	for _, o := range stylesFor(ch) {
-		if o.key == want {
+	if ch != nil && ch.Type == "candle" {
+		switch want {
+		case "candle", "hollow", "ohlc", "close", "bar":
 			return want
 		}
-	}
-	switch {
-	case ch != nil && ch.Type == "candle":
 		return "candle"
-	case ch != nil && ch.Type == "dot":
+	}
+	switch want {
+	case "line", "area", "dot", "bar", "step", "stripe", "pixel", "grid":
+		return want
+	}
+	if ch != nil && ch.Type == "dot" {
 		return "dot"
 	}
 	return "line"

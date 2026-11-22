@@ -38,25 +38,32 @@ func fixtureLogs(t *testing.T, now time.Time) string {
 	return dir
 }
 
-// The Claude Code script shows what is left of a budget as a ring, the models
-// as horizontal bars, and the days as a curve; cards of different sizes share
-// the home page.
+// The Claude Code board shows quotas as neon progress bars, models as a donut,
+// and daily activity as a contrib heatmap; cards of different sizes share the home page.
 func TestAIUsageCards(t *testing.T) {
 	a := newTestApp(t)
 	now := time.Now()
 	a.usageDir = fixtureLogs(t, now)
 
-	sc, _ := a.store.Script("ai-claude")
-	// No budget: bars by model, with a hint.
-	res, err := a.execute(sc, map[string]float64{"view": 0, "window": 0})
-	if err != nil || res.Chart == nil || res.Chart.Type != "barh" {
-		t.Fatalf("without a budget: %+v %v", res.Chart, err)
+	sc, ok := a.store.Script("ai-claude-neon")
+	if !ok {
+		t.Fatal("missing ai-claude-neon builtin")
 	}
-	if len(res.Chart.Labels) != 3 || res.Chart.Labels[0] != "sonnet-5-5" {
-		t.Errorf("models %q, want the busiest first", res.Chart.Labels)
+	sc.Home = true
+	if err := a.store.SaveScript(sc); err != nil {
+		t.Fatal(err)
 	}
 
-	// A budget turns it into a gauge.
+	// View 1: donut by model.
+	res, err := a.execute(sc, map[string]float64{"view": 1})
+	if err != nil || res.Chart == nil || res.Chart.Type != "donut" || len(res.Chart.Slices) != 3 {
+		t.Fatalf("model donut: %+v %v", res.Chart, err)
+	}
+	if res.Chart.Slices[0].Name != "sonnet-5-5" {
+		t.Errorf("models %+v, want the busiest first", res.Chart.Slices)
+	}
+
+	// A budget turns view 0 into neon progress bars.
 	st := a.store.Settings()
 	st.Usage = map[string]store.UsageConfig{"claude-code": {Budget: 100e6, BlockBudget: 5e6}}
 	if err := a.store.SetSettings(st); err != nil {
@@ -64,16 +71,16 @@ func TestAIUsageCards(t *testing.T) {
 	}
 	a.set = st
 	a.forgetUsage()
-	res, err = a.execute(sc, map[string]float64{"view": 0, "window": 0})
-	if err != nil || res.Chart.Type != "gauge" || res.Chart.Gauge.Limit != 100e6 || res.Chart.Gauge.Used <= 0 {
-		t.Fatalf("with a budget: %+v %v", res.Chart, err)
+	res, err = a.execute(sc, map[string]float64{"view": 0})
+	if err != nil || res.ProgressBar == nil || len(res.ProgressBar.Items) == 0 {
+		t.Fatalf("with a budget: %+v %v", res.ProgressBar, err)
 	}
-	if res, _ = a.execute(sc, map[string]float64{"view": 2, "window": 0}); res.Chart.Type != "line" || len(res.Chart.Series[0].Points) != 14 {
-		t.Errorf("daily view: %+v", res.Chart)
+	if res, _ = a.execute(sc, map[string]float64{"view": 2}); res.Chart == nil || res.Chart.Type != "contrib" {
+		t.Errorf("activity view: %+v", res.Chart)
 	}
 
 	// Mixed sizes on the home page.
-	a.set.CardSizes = map[string]int{"ai-claude": 2, "weight": 0, "fx": 0}
+	a.set.CardSizes = map[string]int{"ai-claude-neon": 2, "weight": 0, "fx": 0}
 	if err := a.store.SetSettings(a.set); err != nil {
 		t.Fatal(err)
 	}
@@ -81,14 +88,14 @@ func TestAIUsageCards(t *testing.T) {
 	tt := ui.NewTester(a.view, 1280, 1000)
 	settle(tt)
 	settle(tt)
-	requireText(t, tt, "Claude Code · 本月")
+	requireText(t, tt, "Claude Code 看板")
 	savePNG(t, tt, "13-home-mixed-sizes")
 
-	a.router.Push("/full/ai-claude")
+	a.router.Push("/full/ai-claude-neon")
 	settle(tt)
-	requireText(t, tt, "剩余")
+	requireText(t, tt, "霓虹额度")
 	savePNG(t, tt, "13-full-gauge")
-	click(t, tt, "按模型")
+	click(t, tt, "模型占比")
 	savePNG(t, tt, "13-full-barh")
 }
 

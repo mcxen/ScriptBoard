@@ -139,7 +139,8 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	click(t, tt, "编辑")
 	requireText(t, tt, "可视化")
 	requireText(t, tt, "源码")
-	requireText(t, tt, "组件类型模板")
+	requireText(t, tt, "卡片显示")
+	requireText(t, tt, "高级设置")
 
 	// Create a new script -> visual templates open automatically.
 	click(t, tt, "+ 脚本")
@@ -148,7 +149,7 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	requireText(t, tt, "待办清单")
 	requireText(t, tt, "状态面板")
 	requireText(t, tt, "倒计时")
-	requireText(t, tt, "世界时钟")
+	requireText(t, tt, "时钟表盘")
 	requireText(t, tt, "打卡热力格")
 	savePNG(t, tt, "26-visual-editor-templates")
 
@@ -160,18 +161,21 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	if !strings.Contains(a.draft.Source, "progressBar:") || strings.Contains(a.draft.Source, "chart:") {
 		t.Fatalf("progressBar template should output standalone progressBar without chart:\n%s", a.draft.Source)
 	}
-	requireText(t, tt, "进度条外观（无图表组件）")
+	requireText(t, tt, "进度条目")
 	requireText(t, tt, "季度 OKR")
 	absent(t, tt, "悬浮图表查看详情")
 	savePNG(t, tt, "23-visual-editor-neon")
 
-	// Switch progress bar style to segmented via visual segmented control.
+	// Switch to 样式 tab and switch progress bar style to segmented.
+	click(t, tt, "样式")
+	requireText(t, tt, "进度条样式")
 	click(t, tt, "分段")
 	if !strings.Contains(a.draft.Source, `"style": "segmented"`) {
 		t.Fatalf("expected segmented style in source:\n%s", a.draft.Source)
 	}
 
-	// Open visual icon picker and pick an icon.
+	// Switch back to 内容 tab, open visual icon picker and pick an icon.
+	click(t, tt, "内容")
 	click(t, tt, "更换图标")
 	requireText(t, tt, "天气")
 	requireText(t, tt, "财经")
@@ -185,10 +189,11 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 	click(t, tt, "源码")
 	requireText(t, tt, "ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里")
 	click(t, tt, "可视化")
-	requireText(t, tt, "进度条外观（无图表组件）")
+	requireText(t, tt, "进度条目")
 
 	// Verify all other visual templates apply cleanly with zero preview errors.
-	for _, tplName := range []string{"完成度环", "环形占比", "待办清单", "状态面板", "倒计时", "世界时钟", "打卡热力格", "折线图表"} {
+	for _, tplName := range []string{"完成度环", "环形占比", "待办清单", "状态面板", "倒计时", "时钟表盘", "打卡热力格", "折线图表"} {
+		click(t, tt, "更多")
 		click(t, tt, "选择模板")
 		click(t, tt, tplName)
 		if !strings.Contains(a.draft.Source, visualMarker) {
@@ -199,37 +204,43 @@ func TestVisualEditorTemplatesStyleIconAndEnglish(t *testing.T) {
 		}
 	}
 
-	// Verify English mode in visual editor with template picker & neon progress bar.
+	// Verify English mode in visual editor with Style tab & neon progress bar.
 	t.Cleanup(func() { setLang(langZH) })
 	a.set.Lang = langEN
 	setLang(langEN)
 	a.applyTemplate("progressBar")
-	a.visual.tplOpen = true
+	a.visual.tab = 1
 	settle(tt)
 	settle(tt)
 	requireText(t, tt, "Visual")
-	requireText(t, tt, "Progress bar style (no chart)")
+	requireText(t, tt, "Progress bar style")
 	onlyEnglish(t, tt, "visual-editor-en")
 }
 
-// New style built-in scripts are present in the store, start off-home by
-// default, and render cleanly on Home and in Full Detail view without plot
-// chart controls.
+// Modern built-in scripts are present in the store, retired legacy duplicates
+// are absent, and they render cleanly on Home and in Full Detail view without
+// unnecessary plot chart controls.
 func TestNewStyleBuiltinsRegisteredAndRenderCleanly(t *testing.T) {
 	a := newTestApp(t)
-	newIDs := []string{
+	wantPresent := []string{
 		"ai-claude-neon", "ai-balance-neon",
-		"goldacc-kv", "fxcny-kv", "gold-kv",
+		"goldacc-kv", "gold-kv", "fxcny-table",
 		"aqi-neon", "cnwx-kv",
 		"weight-contrib", "year-countdown", "world-clock",
 	}
-	for _, id := range newIDs {
-		sc, ok := a.store.Script(id)
-		if !ok {
-			t.Fatalf("missing new builtin %q", id)
+	for _, id := range wantPresent {
+		if _, ok := a.store.Script(id); !ok {
+			t.Fatalf("missing builtin %q", id)
 		}
-		if sc.Home {
-			t.Errorf("new builtin %q should default to Home=false", id)
+	}
+	for id := range retiredBuiltins {
+		if _, ok := a.store.Script(id); ok {
+			t.Errorf("retired builtin %q should not ship anymore", id)
+		}
+	}
+	for _, offHome := range []string{"ai-claude-neon", "ai-balance-neon", "weight-contrib"} {
+		if sc, ok := a.store.Script(offHome); ok && sc.Home {
+			t.Errorf("builtin %q should default to Home=false", offHome)
 		}
 	}
 
@@ -293,13 +304,13 @@ func TestAllComponentTypesFullViewAudit(t *testing.T) {
 	absent(t, tt, "样式", "大图", "折线", "悬浮图表查看详情")
 	savePNG(t, tt, "30-full-countdown")
 
-	// 4. world-clock (clock world & analog modes, NO plot controls)
+	// 4. world-clock (clock world & analog modes via single clockStylePicker, NO plot controls)
 	a.router.Replace("/full/world-clock")
 	settle(tt)
 	settle(tt)
 	requireText(t, tt, "北京 / 上海")
 	absent(t, tt, "大图", "折线", "悬浮图表查看详情")
-	click(t, tt, "霓虹表盘")
+	click(t, tt, "指针表盘")
 	settle(tt)
 	savePNG(t, tt, "31-full-clock")
 

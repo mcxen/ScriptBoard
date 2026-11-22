@@ -32,12 +32,13 @@ const WIND = { "北": "N", "东北": "NE", "东": "E", "东南": "SE", "南": "S
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("国内实况面板", "China weather panel"),
+    name: t("国内实况", "China weather"),
     description: t("用状态面板一屏展示城市实况天气、湿度、AQI、气压与日出日落", "Status panel of live weather, humidity, AQI, pressure and sun times"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "sun",
+    menubar: true,
     vars: [
       {
         key: "city",
@@ -156,6 +157,10 @@ export function render(ctx) {
     big: Math.round(temp) + "°",
     sub: place + " · " + sky.text + (wind ? " · " + wind : ""),
     lines: wx.updated ? [String(wx.updated)] : [],
+    menubar: {
+      title: Math.round(temp) + "°",
+      tooltip: place + " · " + sky.text + " · " + Math.round(temp) + "°",
+    },
     chart: { type: "kv", kv: kv },
     layout: { legend: "hide" },
   };

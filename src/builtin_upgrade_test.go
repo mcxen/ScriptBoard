@@ -9,13 +9,14 @@ import (
 	"scriptboard/src/internal/store"
 )
 
-// variableBuiltins are the built-ins that switch a variable (city, currency...).
-var variableBuiltins = map[string]bool{"fx": true, "weather": true, "aqi": true, "btc": true, "hs300": true}
+// variableBuiltins are the active built-ins that switch a variable (city, currency...).
+var variableBuiltins = map[string]bool{"fx": true, "weather": true, "btc": true, "hs300": true}
 
 // The built-in scripts that took switchable variables: an unedited copy of the
 // version before takes the new script on start, and an edited copy is kept.
+// Retired built-ins that are unedited are cleaned up, while edited copies are kept.
 func TestUnchangedBuiltinsUpgradeToVariables(t *testing.T) {
-	for _, id := range []string{"fx", "weather", "aqi", "btc", "hs300", "ai-claude", "ai-deepseek", "ai-openrouter", "gold", "goldacc", "goldk", "weight", "fxcny"} {
+	for _, id := range []string{"fx", "weather", "btc", "hs300", "goldk", "weight"} {
 		old, err := os.ReadFile("testdata/legacy/" + id + ".js")
 		if err != nil {
 			t.Fatal(err)
@@ -55,6 +56,35 @@ func TestUnchangedBuiltinsUpgradeToVariables(t *testing.T) {
 		}
 		if kept, _ := a.store.Script(id); kept.Source != edited {
 			t.Errorf("%s: an edited copy was overwritten", id)
+		}
+	}
+
+	// Retired built-ins: unedited copies are removed, edited copies are kept.
+	for _, id := range []string{"aqi", "ai-claude", "ai-deepseek", "ai-openrouter", "gold", "goldacc", "fxcny", "cnwx"} {
+		old, err := os.ReadFile("testdata/legacy/" + id + ".js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := newTestApp(t)
+		if err := a.store.SaveScript(store.Script{ID: id, Name: "old", Source: string(old), Home: true, Origin: store.OriginBuiltin}); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.ensureBuiltins(); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := a.store.Script(id); ok {
+			t.Errorf("%s: unedited retired builtin was not cleaned up", id)
+		}
+
+		edited := string(old) + "\n// my change\n"
+		if err := a.store.SaveScript(store.Script{ID: id, Name: "mine", Source: edited, Home: true, Origin: store.OriginBuiltin}); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.ensureBuiltins(); err != nil {
+			t.Fatal(err)
+		}
+		if kept, ok := a.store.Script(id); !ok || kept.Source != edited {
+			t.Errorf("%s: user-edited retired builtin was not preserved", id)
 		}
 	}
 }

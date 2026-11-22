@@ -16,9 +16,9 @@ const BANKS = [
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("积存金行情板", "Bank gold board"),
+    name: t("积存金", "Bank gold"),
     description: t("用状态面板展示各银行积存金实时价与涨跌幅", "Status panel of live bank gold prices and daily changes"),
-    version: "1.0.0",
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: ["network"],
     icon: "hand-coins",

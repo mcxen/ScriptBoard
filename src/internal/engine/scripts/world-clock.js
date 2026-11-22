@@ -6,24 +6,13 @@ const t = (zh, en) => (EN ? en : zh);
 export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
-    name: t("霓虹世界时钟", "Neon world clock"),
-    description: t("支持世界多时区、霓虹指针表盘与数字大表，离线可用", "World time zones, glowing analog dial and digital clock, offline"),
-    version: "1.0.0",
+    name: t("世界时钟", "World clock"),
+    description: t("支持世界多时区、指针表盘与数字大表，离线可用", "World time zones, analog dial and digital clock, offline"),
+    version: "1.1.0",
     platforms: ["desktop", "mobile"],
     needs: [],
     icon: "calendar-days",
     menubar: true,
-    dims: [
-      {
-        key: "style",
-        label: t("样式", "Style"),
-        options: [
-          { value: 0, label: t("世界时钟", "World") },
-          { value: 1, label: t("霓虹表盘", "Analog") },
-          { value: 2, label: t("数字大表", "Digital") },
-        ],
-      },
-    ],
     sources: {},
   };
 }
@@ -54,7 +43,7 @@ export function render(ctx) {
   ];
 
   return {
-    title: t("霓虹世界时钟", "Neon world clock"),
+    title: t("世界时钟", "World clock"),
     icon: "calendar-days",
     big: hhmm,
     sub: "",

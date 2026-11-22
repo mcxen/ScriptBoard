@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -9,6 +10,18 @@ import (
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
 )
+
+// draftDirty reports whether a.draft differs from the saved script in store.
+func (a *app) draftDirty() bool {
+	if a.draft.ID == "" || isPluginScript(a.draft.ID) {
+		return false
+	}
+	saved, ok := a.store.Script(a.draft.ID)
+	if !ok {
+		return true
+	}
+	return saved.Name != a.draft.Name || saved.Source != a.draft.Source || saved.Home != a.draft.Home
+}
 
 // openEditor selects script id in the editor. It does nothing when id is
 // already selected, so the view may call it every frame.
@@ -26,6 +39,8 @@ func (a *app) openEditor(id string) {
 	a.visual.sourceSig = ""
 	a.visual.iconOpen = false
 	a.visual.tplOpen = false
+	a.visual.tab = 0
+	a.visual.advOpen = false
 	a.loadBound(&a.draft)
 	a.afterOpenTable()
 }
@@ -39,6 +54,8 @@ func (a *app) newScript() {
 	a.visual.sourceSig = ""
 	a.visual.iconOpen = false
 	a.visual.tplOpen = true
+	a.visual.tab = 0
+	a.visual.advOpen = false
 	a.editMode = 0
 	a.afterOpenTable()
 }
@@ -148,13 +165,29 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			}
 		})
 		if !listRow {
+			textInput(c.Key("ed-filter"), &a.visual.filter, tr("筛选脚本…"))
+			q := strings.ToLower(strings.TrimSpace(a.visual.filter))
 			items := []display.ListItem{}
 			for _, sc := range a.store.Scripts() {
+				if q != "" {
+					name := strings.ToLower(tr(sc.Name))
+					if !strings.Contains(name, q) && !strings.Contains(strings.ToLower(sc.ID), q) {
+						continue
+					}
+				}
 				meta, _ := a.metaOf(sc)
-				it := display.ListItem{Key: sc.ID, Label: tr(sc.Name), Icon: icon(meta.Icon), Description: a.scriptNote(sc)}
+				note := a.scriptNote(sc)
+				if sc.Home {
+					note = tr("首页") + " · " + note
+				}
+				it := display.ListItem{Key: sc.ID, Label: tr(sc.Name), Icon: icon(meta.Icon), Description: note}
 				items = append(items, it)
 			}
 			ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+				if len(items) == 0 {
+					ui.Text(c, tr("没有匹配的脚本")).FontSize(fsSmall).TextColor(p.muted).Padding(8)
+					return
+				}
 				if key := display.List(c, display.ListProps{Items: items, Active: a.editorID}); key != "" {
 					a.openEditor(key)
 				}
@@ -206,6 +239,9 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		ui.Column(c).Gap(8).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 				sectionTitle(c, tr("编辑脚本"))
+				if a.draftDirty() {
+					chip(c, tr("未保存"), p.warn, p.warn.Alpha(0.14))
+				}
 				if a.status != "" {
 					ui.Text(c, a.status).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
 				} else {
@@ -262,9 +298,10 @@ func (a *app) editor(c *ui.Context, compact bool) {
 
 	preview := func() {
 		meta, err := a.metaOf(a.draft)
-		ui.Row(c).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 			sectionTitle(c, tr("预览"))
 			ui.Spacer(c)
+			choose(c, &a.visual.previewSize, tr("中卡"), tr("大卡"))
 		})
 		if err != nil {
 			ui.Text(c, err.Error()).FontSize(fsSmall).TextColor(p.up)
@@ -284,10 +321,11 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			if isCalendar(st.res.Chart) {
 				a.calendarPreview(c, a.selOf(draftKey), 280)
 			} else {
-				if st.res.Title != "" {
+				selfHero := isClock(st.res.Chart) || (isCountdown(st.res.Chart) && len(st.res.Chart.Countdown) == 1)
+				if st.res.Title != "" && !selfHero {
 					ui.Text(c, st.res.Title).FontSize(fsSmall).TextColor(p.muted)
 				}
-				if st.res.Big != "" || (!hasPB && isPlotChart(st.res.Chart)) {
+				if !selfHero && (st.res.Big != "" || (!hasPB && isPlotChart(st.res.Chart))) {
 					ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 						if st.res.Big != "" {
 							ui.Text(c, st.res.Big).FontSize(30).Bold()
@@ -299,16 +337,20 @@ func (a *app) editor(c *ui.Context, compact bool) {
 						}
 					})
 				}
-				if st.res.Sub != "" {
+				if st.res.Sub != "" && !selfHero {
 					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
 				}
 				comp, viewRes, subStyle := resolveComponent(st.res, "")
 				if comp != nil {
+					pSize, pHeight, pLimit := 1, float32(120), 3
+					if a.visual.previewSize == 1 {
+						pSize, pHeight, pLimit = 2, 185, 0
+					}
 					comp.RenderCard(c, ComponentRenderReq{
 						App: a, Script: a.draft, Result: viewRes, Style: subStyle,
-						Size: 2, Height: 175, Selected: a.selOf(draftKey), Now: a.now(),
+						Size: pSize, Height: pHeight, Limit: pLimit, Selected: a.selOf(draftKey), Now: a.now(),
 					})
-					if comp.Spec().Capabilities.HasDetail {
+					if pSize >= 2 && comp.Spec().Capabilities.HasDetail {
 						Detail(c, viewRes.Chart, a.selOf(draftKey))
 					}
 				}

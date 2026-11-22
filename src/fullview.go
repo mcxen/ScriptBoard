@@ -215,19 +215,23 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			}
 
 			swaps := visualSwapOptions(res)
+			plotOpts := []styleOpt(nil)
+			if plot {
+				plotOpts = stylesFor(viewRes.Chart)
+			}
+			showPlotStylePicker := len(plotOpts) > 1
 			showBarStylePicker := hasPB
 			showClockStylePicker := isClock(viewRes.Chart)
-			if plot || showBarStylePicker || showClockStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
+			if showPlotStylePicker || showBarStylePicker || showClockStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
 				ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
 					if len(swaps) > 1 {
 						a.componentSwapPicker(c, sc.ID, swaps, compSpec.Type, compact)
 					}
-					if plot {
-						opts := stylesFor(viewRes.Chart)
-						labels := make([]string, len(opts))
+					if showPlotStylePicker {
+						labels := make([]string, len(plotOpts))
 						cur := 0
 						want := resolveStyle(viewRes.Chart, subStyle)
-						for i, o := range opts {
+						for i, o := range plotOpts {
 							labels[i] = tr(o.label)
 							if o.key == want {
 								cur = i
@@ -240,7 +244,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 								pick = dropdown
 							}
 							if pick(c, &cur, labels...) {
-								a.setCardStyle(sc.ID, opts[cur].key)
+								a.setCardStyle(sc.ID, plotOpts[cur].key)
 							}
 						})
 					} else if showBarStylePicker {

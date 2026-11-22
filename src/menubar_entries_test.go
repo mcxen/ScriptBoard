@@ -116,9 +116,9 @@ func TestRichTrayActionsSubmenusAndCustomIcons(t *testing.T) {
 	settingsOpened := 0
 	a.openSettingsHook = func() { settingsOpened++ }
 
-	sc, ok := a.store.Script("cnwx")
+	sc, ok := a.store.Script("cnwx-kv")
 	if !ok {
-		t.Fatal("cnwx builtin missing")
+		t.Fatal("cnwx-kv builtin missing")
 	}
 	st := &runState{res: engine.Result{
 		Title: "国内实况",
@@ -175,7 +175,7 @@ func TestRichTrayActionsSubmenusAndCustomIcons(t *testing.T) {
 		t.Fatal("toggle_offline did not flip offline flag")
 	}
 	clickLabel("切换北京")
-	if a.set.ScriptVars["cnwx"]["city"] != "beijing" {
+	if a.set.ScriptVars["cnwx-kv"]["city"] != "beijing" {
 		t.Fatalf("set_var did not update city: %+v", a.set.ScriptVars)
 	}
 

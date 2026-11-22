@@ -50,7 +50,14 @@ func TestVisualEditorTableAndInPlaceSwap(t *testing.T) {
 	tt := ui.NewTester(a.view, 1400, 900)
 	a.router.Push("/edit/" + a.draft.ID)
 	settle(tt)
+	// Tab 0 (内容): data table config.
 	requireText(t, tt, "数据表格配置")
+	// Tab 1 (样式): table style + card display.
+	click(t, tt, "样式")
+	requireText(t, tt, "表格样式")
+	requireText(t, tt, "卡片显示")
+	// Tab 2 (更多): platform & menu bar display options.
+	click(t, tt, "更多")
 	requireText(t, tt, "菜单栏显示配置")
 	savePNG(t, tt, "30-visual-editor-table")
 }

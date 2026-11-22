@@ -101,7 +101,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Used vs limit ring gauge showing remaining share and reset cycle",
 		DefaultColor: "#10B981",
 		Capabilities: WidgetCapabilities{TopAligned: true, SupportsTable: true},
-		Swappable:    []string{"gauge", "progressBar", "progressRing", "table"},
+		Swappable:    []string{"gauge", "progressBar", "table"},
 		SchemaHint:   `chart: { type: "gauge", gauge: { used, limit, unit, label, reset } }`,
 	},
 	{
@@ -111,7 +111,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Horizontal comparison bars across categories",
 		DefaultColor: "#3B82F6",
 		Capabilities: WidgetCapabilities{Interactive: true, SupportsTable: true},
-		Swappable:    []string{"barh", "donut", "kv", "table"},
+		Swappable:    []string{"barh", "donut", "table"},
 		SchemaHint:   `chart: { type: "barh", labels: [...], series: [{ name, points: [...] }] }`,
 	},
 	{
@@ -151,7 +151,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Legacy progress bars (prefer standalone progressBar field)",
 		DefaultColor: "#3B82F6",
 		Capabilities: WidgetCapabilities{TopAligned: true, Interactive: true, SupportsTable: true},
-		Swappable:    []string{"progressBar", "progressRing", "barh", "table"},
+		Swappable:    []string{"progressBar", "progressRing", "table"},
 		SchemaHint:   `chart: { type: "progress", progress: [{ name, value, max, unit, color }] }`,
 	},
 	{
@@ -161,7 +161,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Standalone progress bar with neon glow, gradient, solid, and segmented styles",
 		DefaultColor: "#00F5D4",
 		Capabilities: WidgetCapabilities{TopAligned: true, Interactive: true, SupportsTable: true},
-		Swappable:    []string{"progressBar", "progressRing", "barh", "table"},
+		Swappable:    []string{"progressBar", "progressRing", "table"},
 		SchemaHint:   `progressBar: { style: "neon"|"gradient"|"solid"|"segmented", height: 10, glow: 1, items: [{ name, value, max, unit, color, to }] }`,
 	},
 	{
@@ -171,7 +171,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Side-by-side or concentric activity completion rings",
 		DefaultColor: "#F43F5E",
 		Capabilities: WidgetCapabilities{TopAligned: true, Interactive: true, SupportsTable: true},
-		Swappable:    []string{"progressRing", "progressBar", "barh", "table"},
+		Swappable:    []string{"progressRing", "progressBar", "table"},
 		SchemaHint:   `chart: { type: "progressRing", ring: { layout: "row"|"concentric", ... }, progress: [...] }`,
 	},
 	{
@@ -191,7 +191,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Multi-slice share breakdown donut with interactive legend highlight",
 		DefaultColor: "#3B82F6",
 		Capabilities: WidgetCapabilities{TopAligned: true, Interactive: true, SupportsTable: true},
-		Swappable:    []string{"donut", "barh", "kv", "table"},
+		Swappable:    []string{"donut", "barh", "table"},
 		SchemaHint:   `chart: { type: "donut", donut: { center, sub, thickness, neon }, slices: [{ name, value, color, unit }] }`,
 	},
 	{
@@ -201,7 +201,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Interactive task/habit checklist with badges and completion progress",
 		DefaultColor: "#10B981",
 		Capabilities: WidgetCapabilities{TopAligned: true, Interactive: true, SupportsTable: true},
-		Swappable:    []string{"checklist", "kv", "table"},
+		Swappable:    []string{"checklist", "table"},
 		SchemaHint:   `chart: { type: "checklist", checklist: [{ label, done, note, badge, color }] }`,
 	},
 	{
@@ -221,7 +221,7 @@ var WidgetSpecs = []WidgetSpec{
 		DescEn:       "Target date countdown / anniversary cards with optional progress bar",
 		DefaultColor: "#A855F7",
 		Capabilities: WidgetCapabilities{SelfHero: true, TopAligned: true, SupportsTable: true},
-		Swappable:    []string{"countdown", "kv", "table"},
+		Swappable:    []string{"countdown", "table"},
 		SchemaHint:   `chart: { type: "countdown", countdown: [{ label, target, start, note, color, to, style }] }`,
 	},
 	{

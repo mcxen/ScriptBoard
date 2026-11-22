@@ -49,9 +49,9 @@ export function render(ctx) { return { title: "x", big: "1", sub: "", lines: [],
 func TestDesktopOnlyScriptOnAPhone(t *testing.T) {
 	t.Cleanup(func() { caps.SetPlatform("") })
 	a := newTestApp(t)
-	claude, ok := a.store.Script("ai-claude")
+	claude, ok := a.store.Script("ai-claude-neon")
 	if !ok {
-		t.Fatal("no ai-claude script")
+		t.Fatal("no ai-claude-neon script")
 	}
 	claude.Home = true
 	a.store.SaveScript(claude)
@@ -59,19 +59,19 @@ func TestDesktopOnlyScriptOnAPhone(t *testing.T) {
 	caps.SetPlatform(caps.Desktop)
 	onHome := func() bool {
 		for _, sc := range a.homeScripts() {
-			if sc.ID == "ai-claude" {
+			if sc.ID == "ai-claude-neon" {
 				return true
 			}
 		}
 		return false
 	}
 	if !onHome() {
-		t.Fatal("ai-claude is not on the computer's home")
+		t.Fatal("ai-claude-neon is not on the computer's home")
 	}
 
 	caps.SetPlatform(caps.Mobile)
 	if onHome() {
-		t.Errorf("ai-claude has a card on a phone")
+		t.Errorf("ai-claude-neon has a card on a phone")
 	}
 	_, err := a.execute(claude, nil)
 	if err == nil || !strings.Contains(err.Error(), "电脑") {
@@ -120,7 +120,7 @@ func TestDeleteAndRestore(t *testing.T) {
 // The editor shows the contract of the script being edited.
 func TestEditorShowsTheContract(t *testing.T) {
 	a := newTestApp(t)
-	a.openEditor("ai-claude")
+	a.openEditor("ai-claude-neon")
 	tt := ui.NewTester(a.view, 1300, 900)
 	click(t, tt, "编辑")
 	requireText(t, tt, "仅电脑")
@@ -133,7 +133,7 @@ func TestContractBlockInEnglish(t *testing.T) {
 	t.Cleanup(func() { setLang(langZH) })
 	a := newTestApp(t)
 	setLang(langEN)
-	a.openEditor("ai-claude")
+	a.openEditor("ai-claude-neon")
 	tt := ui.NewTester(a.view, 1300, 900)
 	click(t, tt, "Edit")
 	requireText(t, tt, "Computer only")
