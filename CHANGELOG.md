@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Apple-native `.bar` design system, `$ui` UIKit & `barui` renderer: introduces shared `src/internal/barui` renderer (with `contentTransition`, container `safeArea`, borderless vibrancy segmented controls, plain list icons, and 14 new Lucide wireframe icons), `$ui` helper toolkit (`iconButton`, `topBar`, `hero`, `rangeBar`, `rangeRow`, `staleError`, `skeleton`), 6 curated Weather-bar styled templates led by `native-glass`, and updated MCP `bar_guide`, `bar_template_*` & `bar_preview` layout auditing.
+- Full-app Weather-bar UI harmonization: unifies the app around cool-neutral Light/Dark tokens with OS `VibrancySidebar` support on desktop main and settings windows, unified `navRow` / `ghostIconBtn` / native checkmark context popovers, light-weight tabular-numeric (`tnum`) hero figures with `ContentTransition` on Home cards and Full View, Weather-style script flyout cards, split-pane desktop Component Editor, and refined Settings & Community layouts while keeping the Mac OS 9 skin intact.
+- Cross-platform menubar polish: wires `Vibrancy` into single-screen `mygo.NewFlyout` for Windows 11 Acrylic tray backdrops, renders `.bar` panels interactively inside Home cards, and detects Android in Menu Bar placement settings to hide desktop-only switches with a mobile hint.
+
 ## 0.1.12
 
 - `.bar` persistent CookieJar, KV storage & expanded runtime: adds per-component `CookieJar` (`cookies.json`, `0600`) with automatic `Set-Cookie` capture/reuse, `KVStore` (`storage.json`, `0600`), `$metrix.{cookies,storage,copy}`, `localStorage`, wildcard subdomain network permissions (`https://*.example.com`), `Badge` and `Progress` VDOM nodes, `Button` variants, render-only refresh support, and desktop Cookie session manager (`curl` / `Cookie:` import, refresh and clear) with English localization.
