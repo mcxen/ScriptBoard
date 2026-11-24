@@ -13,6 +13,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
+	"scriptboard/src/internal/barui"
 	"scriptboard/src/internal/engine"
 )
 
@@ -24,9 +25,9 @@ import (
 const (
 	padPage    = 24 // padding around a page on a wide window
 	padPhone   = 16 // and on a phone
-	gapSection = 20 // between the blocks of a page
+	gapSection = 18 // between the blocks of a page
 	gapItem    = 12 // between items inside a block
-	radCard    = 14
+	radCard    = 16
 	formMaxW   = 440 // the widest a form of fields grows
 	radControl = 8
 )
@@ -60,10 +61,21 @@ type palette struct {
 
 func pal(c *ui.Context) palette {
 	tk := theme.TokensOf(c)
+	sidebar := ui.Hex("#EEF0F5")
+	if tk.Dark {
+		sidebar = ui.Hex("#15181F")
+	}
+	if c.Vibrancy() && !isMac() {
+		sidebar = ui.Transparent
+	}
+	rowSel := ui.RGBA(255, 255, 255, 0.85)
+	if tk.Dark {
+		rowSel = ui.RGBA(255, 255, 255, 0.095)
+	}
 	return palette{
 		dark:         tk.Dark,
 		canvas:       tk.BgLayout,
-		sidebar:      tk.BgLayout,
+		sidebar:      sidebar,
 		card:         tk.BgContainer,
 		hover:        tk.FillQuaternary,
 		border:       tk.BorderSecondary,
@@ -72,10 +84,10 @@ func pal(c *ui.Context) palette {
 		muted:        tk.TextSecondary,
 		faint:        tk.TextTertiary,
 		chip:         tk.FillTertiary,
-		rowSel:       tk.BgContainer,
+		rowSel:       rowSel,
 		rowSelBorder: tk.BorderSecondary,
 		accent:       tk.Primary,
-		accentSoft:   tk.Primary.Alpha(0.10),
+		accentSoft:   tk.Primary.Alpha(0.12),
 		up:           tk.Error,
 		down:         tk.Success,
 		warn:         tk.Warning,
@@ -218,9 +230,9 @@ func pageHead(c *ui.Context, a *app, titleSize float32, title, subtitle string, 
 			ui.BackButton(c, a.router)
 		}
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(titleSize).FontWeight(650)
+			ui.Text(c, title).FontSize(titleSize).FontWeight(650).LetterSpacing(-0.4)
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(fsCaption).TextColor(p.muted)
+				ui.Text(c, subtitle).FontSize(fsCaption).FontFeatures("tnum").TextColor(p.muted)
 			}
 		})
 		ui.Spacer(c)
@@ -282,12 +294,13 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 		if title != "" && isMac() {
 			macCategory(c, title)
 		} else if title != "" {
-			ui.Text(c, title).FontSize(fsSmall).FontWeight(600).TextColor(p.muted).Padding(0, 4)
+			ui.Text(c, title).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted).Padding(0, 4)
 		}
-		// Settings sit on the same white surface as the cards of the home page.
-		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined}).Padding(2, 16)
+		var panel ui.Element
 		if isMac() {
 			panel = macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel).Padding(2, 16), false)
+		} else {
+			panel = ui.Column(c).Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(2, 16)
 		}
 		panel.Children(func() {
 			for i, r := range rows {
@@ -297,9 +310,9 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 				}
 				body := func() {
 					ui.Column(c).Gap(3).Grow(1).MinWidth(0).Children(func() {
-						ui.Text(c, r.title).FontSize(fsBody)
+						ui.Text(c, r.title).FontSize(fsBody).FontWeight(500)
 						if r.note != "" {
-							ui.Text(c, r.note).FontSize(fsSmall).TextColor(p.muted).LineHeight(1.35)
+							ui.Text(c, r.note).FontSize(fsSmall).TextColor(p.muted).LineHeight(1.4)
 						}
 					})
 					if r.control != nil && !(compact && r.stack) {
@@ -307,13 +320,13 @@ func group(c *ui.Context, title string, compact bool, rows ...row) {
 					}
 				}
 				if compact && r.stack && r.control != nil {
-					ui.Column(c).Gap(10).Padding(11, 0).Children(func() {
+					ui.Column(c).Gap(10).Padding(12, 0).Children(func() {
 						ui.Row(c).Children(body)
 						ui.Row(c).Gap(8).Wrap().AlignItems(ui.Center).Children(r.control)
 					})
 					continue
 				}
-				ui.Row(c).AlignItems(ui.Center).Gap(16).Padding(11, 0).Children(body)
+				ui.Row(c).AlignItems(ui.Center).Gap(16).Padding(12, 0).Children(body)
 			}
 		})
 	})
@@ -349,9 +362,94 @@ func iconBadge(c *ui.Context, name string, color ui.Color, size float32) ui.Elem
 			ui.Icon(c, icon(name)).FontSize(size * 0.56).TextColor(macBlack)
 		})
 	}
-	return ui.Row(c).Size(size, size).Radius(size * 0.28).Background(color.Alpha(0.13)).
+	return ui.Row(c).Size(size, size).Radius(size * 0.26).Background(color.Alpha(0.11)).
 		AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 		ui.Icon(c, icon(name)).FontSize(size * 0.52).TextColor(color)
+	})
+}
+
+// navRow draws one Apple-native sidebar / settings navigation item.
+func navRow(c *ui.Context, key, iconName, label string, active bool, width float32, trailing func()) bool {
+	p := pal(c)
+	icCol, txtCol, weight := p.muted, p.text.Alpha(0.84), 500
+	if active {
+		icCol, txtCol, weight = p.accent, p.text, 600
+	}
+	b := ui.ButtonBase(c.Key(key)).
+		Width(width).
+		Height(32).
+		Padding(0, 10).
+		Radius(radControl).
+		Gap(9).
+		AlignItems(ui.Center).
+		Label(label)
+	if active {
+		b = b.Background(p.rowSel)
+		if !p.dark {
+			b = b.BorderWidth(1).BorderColor(p.hairline)
+		}
+	} else if b.Hovered() {
+		b = b.Background(p.hover)
+	}
+	return b.Children(func() {
+		ui.Icon(c, icon(iconName)).FontSize(15).TextColor(icCol)
+		ui.Text(c, label).FontSize(fsBody).FontWeight(weight).TextColor(txtCol).SingleLine()
+		ui.Spacer(c)
+		if trailing != nil {
+			trailing()
+		}
+	}).Clicked()
+}
+
+// ghostIconBtn draws a 26x26 borderless hoverable action icon matching Weather Bar.
+func ghostIconBtn(c *ui.Context, svg *ui.SVG, tip string, active bool) ui.Element {
+	p := pal(c)
+	b := ui.ButtonBase(c).
+		Size(26, 26).
+		Radius(7).
+		AlignItems(ui.Center).
+		Justify(ui.Center).
+		Cursor(ui.CursorPointer).
+		Label(tip).
+		Tooltip(tip)
+	if active || b.Hovered() {
+		b = b.Background(p.hover)
+	}
+	return b.Children(func() {
+		ui.Icon(c, svg).FontSize(14).TextColor(p.muted)
+	})
+}
+
+// popoverMenuRow draws a compact Apple-style menu item inside context/floating popovers.
+func popoverMenuRow(c *ui.Context, label string, checked, danger bool) ui.Element {
+	p := pal(c)
+	b := ui.ButtonBase(c).
+		FillWidth().
+		Height(28).
+		Padding(0, 10).
+		Radius(7).
+		Gap(8).
+		AlignItems(ui.Center).
+		Justify(ui.Start).
+		Cursor(ui.CursorPointer).
+		Label(label)
+	if b.Hovered() {
+		b = b.Background(p.hover)
+	}
+	fg, weight := p.text, 500
+	if danger {
+		fg = p.up
+	} else if checked {
+		fg, weight = p.accent, 600
+	}
+	checkSVG := barui.DefaultIcon("check")
+	return b.Children(func() {
+		if checked && checkSVG != nil {
+			ui.Icon(c, checkSVG).FontSize(13).TextColor(p.accent)
+		} else {
+			ui.Box(c).Size(13, 13).Shrink(0)
+		}
+		ui.Text(c, label).FontSize(12.5).FontWeight(weight).TextColor(fg).SingleLine()
 	})
 }
 

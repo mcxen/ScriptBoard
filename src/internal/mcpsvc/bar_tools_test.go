@@ -380,3 +380,108 @@ export function render() { return { title: "Demo", menubar: { title: "DM" } }; }
 		}
 	}
 }
+
+func TestBarTemplatesPreviewAndActionArgWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	outDir := filepath.Join(dir, "previews")
+	srv := Server{DataDir: dir, ReadOnly: func() bool { return true }}
+
+	// 1. bar_templates & bar_template_get work even in ReadOnly mode.
+	listOut, listErr := callMCPTool(t, srv, "bar_templates", nil)
+	if listErr {
+		t.Fatalf("bar_templates failed: %s", listOut)
+	}
+	var listRes struct {
+		Count     int `json:"count"`
+		Templates []struct {
+			ID string `json:"id"`
+		} `json:"templates"`
+	}
+	if err := json.Unmarshal([]byte(listOut), &listRes); err != nil || listRes.Count < 6 || listRes.Templates[0].ID != "native-glass" {
+		t.Fatalf("unexpected bar_templates output (%v): %s", err, listOut)
+	}
+
+	tplOut, tplErr := callMCPTool(t, srv, "bar_template_get", map[string]any{"id": "utility-switchboard"})
+	if tplErr || !strings.Contains(tplOut, `"designNotes"`) || !strings.Contains(tplOut, "<bar ") {
+		t.Fatalf("bar_template_get failed (err=%v): %s", tplErr, tplOut)
+	}
+	var tpl struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(tplOut), &tpl); err != nil || tpl.Source == "" {
+		t.Fatalf("decode bar_template_get: %v", err)
+	}
+
+	// 2. bar_run with actionArg triggers Segmented.onChange cleanly.
+	runOut, runErr := callMCPTool(t, srv, "bar_run", map[string]any{
+		"source": tpl.Source,
+	})
+	if runErr {
+		t.Fatalf("bar_run utility-switchboard failed: %s", runOut)
+	}
+	var runRes struct {
+		Actions []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(runOut), &runRes); err != nil {
+		t.Fatal(err)
+	}
+	var segID string
+	for _, a := range runRes.Actions {
+		if a.Type == "Segmented.onChange" {
+			segID = a.ID
+			break
+		}
+	}
+	if segID == "" {
+		t.Fatalf("expected Segmented.onChange action in %+v", runRes.Actions)
+	}
+
+	// 3. bar_preview with actionID + actionArg renders Light and Dark PNG files and passes audit.
+	prevOut, prevErr := callMCPTool(t, srv, "bar_preview", map[string]any{
+		"source":    tpl.Source,
+		"theme":     "both",
+		"scale":     1,
+		"outputDir": outDir,
+		"actionID":  segID,
+		"actionArg": "actions",
+	})
+	if prevErr {
+		t.Fatalf("bar_preview failed: %s", prevOut)
+	}
+	var prevRes struct {
+		ActionInvoked  bool     `json:"actionInvoked"`
+		DarkPath       string   `json:"darkPath"`
+		LightPath      string   `json:"lightPath"`
+		MeasuredHeight int      `json:"measuredHeight"`
+		PanelTexts     []string `json:"panelTexts"`
+		Audit          struct {
+			OK        bool     `json:"ok"`
+			NodeCount int      `json:"nodeCount"`
+			Warnings  []string `json:"warnings"`
+		} `json:"audit"`
+	}
+	if err := json.Unmarshal([]byte(prevOut), &prevRes); err != nil {
+		t.Fatalf("decode bar_preview JSON: %v\n%s", err, prevOut)
+	}
+	if !prevRes.ActionInvoked || !prevRes.Audit.OK || prevRes.MeasuredHeight <= 0 {
+		t.Fatalf("unexpected bar_preview result: %+v", prevRes)
+	}
+	if !strings.Contains(strings.Join(prevRes.PanelTexts, "|"), "Copy Diagnostic Env") {
+		t.Fatalf("expected Quick Actions tab content after actionArg='actions', got %v", prevRes.PanelTexts)
+	}
+	for _, p := range []string{prevRes.DarkPath, prevRes.LightPath} {
+		data, err := os.ReadFile(p)
+		if err != nil || len(data) < 512 || string(data[:8]) != "\x89PNG\r\n\x1a\n" {
+			t.Fatalf("invalid PNG at %q: err=%v len=%d", p, err, len(data))
+		}
+	}
+
+	// 4. app_info exposes barTemplates and upgraded VDOM/runtime capabilities.
+	infoOut, infoErr := callMCPTool(t, srv, "app_info", nil)
+	if infoErr || !strings.Contains(infoOut, `"Ring"`) || !strings.Contains(infoOut, `"barTemplates": 6`) {
+		t.Fatalf("unexpected app_info (err=%v): %s", infoErr, infoOut)
+	}
+}

@@ -759,8 +759,8 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			"readOnly":        s.readOnly(),
 			"platform":        map[string]string{"os": caps.OS(), "kind": caps.Platform()},
 			"widgetTypes":     engine.ChartTypes,
-			"barVDOMNodes":    []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Chart", "Progress", "Badge", "Spacer", "Divider"},
-			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies"},
+			"barVDOMNodes":    []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Badge", "Progress", "Ring", "Chart", "StatusDot", "Segmented", "Switch", "ListRow", "Image", "Input", "Spacer", "Divider"},
+			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "h", "$ui", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies"},
 			"cookieSupport":   true,
 			"storageSupport":  true,
 			"toolsCount":      len(AllTools()),
@@ -771,13 +771,14 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			"displays":        displays,
 			"shippedIcons":    len(iconcat.Names()),
 			"counts": map[string]int{
-				"scripts":     scripts,
-				"tables":      tables,
-				"bars":        bars,
-				"plugins":     len(plist),
-				"feeds":       feeds,
-				"trayPinned":  pinned,
-				"widgetTypes": len(engine.WidgetSpecs),
+				"scripts":      scripts,
+				"tables":       tables,
+				"bars":         bars,
+				"barTemplates": len(bar.Templates()),
+				"plugins":      len(plist),
+				"feeds":        feeds,
+				"trayPinned":   pinned,
+				"widgetTypes":  len(engine.WidgetSpecs),
 			},
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
@@ -947,17 +948,7 @@ func (s Server) renderScriptMCPShow(id, name, source string, set store.Settings,
 }
 
 func extractBarTexts(n *bar.Node) []string {
-	if n == nil {
-		return nil
-	}
-	var out []string
-	if strings.TrimSpace(n.Text) != "" {
-		out = append(out, strings.TrimSpace(n.Text))
-	}
-	for _, ch := range n.Children {
-		out = append(out, extractBarTexts(ch)...)
-	}
-	return out
+	return bar.CollectTexts(n)
 }
 
 func orStr(v, fallback string) string {

@@ -287,7 +287,9 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 	}
 
 	panelW, panelH := 300, 512
+	material := ""
 	if inst, ok := a.barInsts[id]; ok {
+		material = inst.Spec().Material
 		if p := inst.Snapshot().Panel; p != nil {
 			if w, ok := propFloat(p.Props, "preferredWidth"); ok && w > 0 {
 				panelW = int(w)
@@ -299,29 +301,32 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 	}
 
 	pl := a.barPlacement(id)
-	a.barFlyouts[id] = a.openTrayPanelWindow(id, t, pl.Display, panelW, panelH, func(c *ui.Context) {
+	a.barFlyouts[id] = a.openTrayPanelWindowWithMaterial(id, t, pl.Display, panelW, panelH, material, func(c *ui.Context) {
 		applySkin(c)
 		c.Root().Background(ui.Transparent)
 		sc, ok := a.store.Script(id)
 		if !ok {
 			return
 		}
-		inst, _, err := a.ensureBarInstance(sc)
+		inst, sp, err := a.ensureBarInstance(sc)
 		if err != nil {
 			return
 		}
-		snap := inst.Snapshot()
 		th := barThemeFor(c, barThemeAuto)
-		if c.Vibrancy() && snap.Panel != nil {
+		themeStr := "dark"
+		if !th.dark {
+			themeStr = "light"
+		}
+		inst.SetAppearance(themeStr, c.Vibrancy())
+		snap := inst.Snapshot()
+		onAct := func(aid string) { a.invokeBarAction(id, aid) }
+		onActArg := func(aid string, arg any) { a.invokeBarActionWithArg(id, aid, arg) }
+		if c.Vibrancy() && snap.Panel != nil && !strings.EqualFold(sp.Material, "solid") {
 			ui.Column(c).Fill().Children(func() {
-				renderBarNode(c, snap.Panel, th, func(aid string) {
-					a.invokeBarAction(id, aid)
-				})
+				renderBarNodeInteractive(c, snap.Panel, th, true, onAct, onActArg)
 			})
 			return
 		}
-		renderBarPanel(c, snap, th, float32(panelW), func(aid string) {
-			a.invokeBarAction(id, aid)
-		})
+		renderBarPanelInteractive(c, snap, th, float32(panelW), sp.Material, onAct, onActArg)
 	})
 }

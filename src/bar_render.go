@@ -1,17 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"math"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/chart"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/barui"
 )
 
 // barTheme carries resolved colors for rendering a .bar virtual DOM tree in
@@ -44,717 +40,87 @@ func barThemeFor(c *ui.Context, mode int) barTheme {
 	case barThemeDark:
 		dark = true
 	}
-	if dark {
-		return barTheme{
-			dark:           true,
-			surface:        ui.Hex("#1C1F26"),
-			surfaceHover:   ui.Hex("#2A2F3A"),
-			surfacePressed: ui.Hex("#343A47"),
-			text:           ui.Hex("#F1F4F9"),
-			textMuted:      ui.Hex("#9AA3B5"),
-			accent:         ui.Hex("#5B8CFF"),
-			warning:        ui.Hex("#FBBF24"),
-			danger:         ui.Hex("#F87171"),
-			success:        ui.Hex("#34D399"),
-			border:         ui.Hex("#2D323E"),
-		}
-	}
+	t := barui.ThemeFor(dark, false)
 	return barTheme{
-		dark:           false,
-		surface:        ui.Hex("#FFFFFF"),
-		surfaceHover:   ui.Hex("#ECEEF3"),
-		surfacePressed: ui.Hex("#DFE3EC"),
-		text:           ui.Hex("#151922"),
-		textMuted:      ui.Hex("#6B7280"),
-		accent:         ui.Hex("#2563EB"),
-		warning:        ui.Hex("#F59E0B"),
-		danger:         ui.Hex("#EF4444"),
-		success:        ui.Hex("#10B981"),
-		border:         ui.Hex("#E6E8EF"),
+		dark:           t.Dark,
+		surface:        t.Surface,
+		surfaceHover:   t.SurfaceHover,
+		surfacePressed: t.SurfacePressed,
+		text:           t.Text,
+		textMuted:      t.TextMuted,
+		accent:         t.Accent,
+		warning:        t.Warning,
+		danger:         t.Danger,
+		success:        t.Success,
+		border:         t.Border,
 	}
+}
+
+func (th barTheme) toBarUI(vibrancy bool) barui.Theme {
+	out := barui.ThemeFor(th.dark, vibrancy)
+	out.Surface = th.surface
+	if !vibrancy {
+		out.SurfaceHover = th.surfaceHover
+		out.SurfacePressed = th.surfacePressed
+		out.Border = th.border
+	}
+	out.Text = th.text
+	out.TextMuted = th.textMuted
+	out.Accent = th.accent
+	out.Warning = th.warning
+	out.Danger = th.danger
+	out.Success = th.success
+	return out
 }
 
 func (th barTheme) color(name string, fallback ui.Color) ui.Color {
-	switch strings.TrimSpace(name) {
-	case "":
-		return fallback
-	case "surface":
-		return th.surface
-	case "surfaceHover":
-		return th.surfaceHover
-	case "surfacePressed":
-		return th.surfacePressed
-	case "text", "foreground":
-		return th.text
-	case "textMuted", "muted", "secondary":
-		return th.textMuted
-	case "accent", "primary":
-		return th.accent
-	case "warning":
-		return th.warning
-	case "danger", "error":
-		return th.danger
-	case "success":
-		return th.success
-	case "border", "divider":
-		return th.border
-	case "transparent":
-		return ui.Color{}
-	}
-	if strings.HasPrefix(name, "#") {
-		return ui.Hex(name)
-	}
-	return fallback
-}
-
-var (
-	barSVGMu    sync.Mutex
-	barSVGCache = map[string]*ui.SVG{}
-)
-
-func parseBarSVG(raw string) *ui.SVG {
-	if raw == "" {
-		return nil
-	}
-	barSVGMu.Lock()
-	if s, ok := barSVGCache[raw]; ok {
-		barSVGMu.Unlock()
-		return s
-	}
-	barSVGMu.Unlock()
-
-	s, err := ui.ParseSVG([]byte(raw))
-	if err != nil {
-		return nil
-	}
-	barSVGMu.Lock()
-	if len(barSVGCache) > 256 {
-		barSVGCache = map[string]*ui.SVG{}
-	}
-	barSVGCache[raw] = s
-	barSVGMu.Unlock()
-	return s
+	return th.toBarUI(false).Color(name, fallback)
 }
 
 // renderBarPanel paints a .bar Snapshot panel inside a rounded card matching
 // the Metrix.Bar floating panel / preview appearance.
 func renderBarPanel(c *ui.Context, snap bar.Snapshot, th barTheme, width float32, onAction func(string)) ui.Element {
-	if width <= 0 {
-		width = 300
+	return renderBarPanelInteractive(c, snap, th, width, "", onAction, nil)
+}
+
+func renderBarPanelInteractive(c *ui.Context, snap bar.Snapshot, th barTheme, width float32, material string, onAction func(string), onActionArg func(string, any)) ui.Element {
+	reqW := float32(0)
+	if width != 300 && width > 0 {
+		reqW = width
 	}
-	var prefH float32
-	if snap.Panel != nil {
-		if pw, ok := propFloat(snap.Panel.Props, "preferredWidth"); ok && pw > 0 && width == 300 {
-			width = pw
-		}
-		if ph, ok := propFloat(snap.Panel.Props, "preferredHeight"); ok && ph > 0 {
-			prefH = ph
-		}
-	}
-	cardEl := ui.Column(c).
-		Width(width).
-		Background(th.surface).
-		Radius(14).
-		BorderWidth(1).
-		BorderColor(th.border).
-		Clip()
-	if prefH > 0 {
-		cardEl = cardEl.Height(prefH)
-	}
-	return cardEl.Children(func() {
-		if snap.Panel != nil {
-			renderBarNode(c, snap.Panel, th, onAction)
-		} else if snap.Error != "" {
-			ui.Column(c).Padding(16).Gap(8).Children(func() {
-				ui.Text(c, snap.Error).FontSize(12).TextColor(th.danger)
-			})
-		} else {
-			ui.Column(c).Padding(16).Gap(8).Children(func() {
-				ui.Text(c, tr("加载中…")).FontSize(12).TextColor(th.textMuted)
-			})
-		}
+	return barui.RenderPanel(c, snap, th.toBarUI(false), barui.RenderOptions{
+		Width:       reqW,
+		Material:    material,
+		LoadingText: tr("加载中…"),
+		IconLookup:  icon,
+		OnAction:    onAction,
+		OnActionArg: onActionArg,
 	})
 }
 
 func renderBarNode(c *ui.Context, n *bar.Node, th barTheme, onAction func(string)) {
-	if n == nil {
-		return
-	}
-	props := n.Props
-
-	switch n.Type {
-	case "Spacer":
-		ui.Spacer(c)
-		return
-	case "Divider":
-		ui.Box(c).FillWidth().Height(1).Background(th.border)
-		return
-	case "Text":
-		renderBarText(c, n, th)
-		return
-	case "Icon":
-		renderBarIcon(c, n, th)
-		return
-	case "Button":
-		renderBarButton(c, n, th, onAction)
-		return
-	case "Badge":
-		renderBarBadge(c, n, th)
-		return
-	case "Progress":
-		renderBarProgress(c, n, th)
-		return
-	case "Chart":
-		renderBarChart(c, n, th)
-		return
-	}
-
-	var el ui.Element
-	switch n.Type {
-	case "Row":
-		el = ui.Row(c)
-	case "Scroll":
-		el = ui.Scroll(c)
-	case "Box":
-		el = ui.Box(c)
-	default: // Column and unknown containers
-		el = ui.Column(c)
-	}
-
-	el = applyBarBoxProps(el, props, th, n.OnClickID != "")
-
-	// Register keyboard shortcuts declared on the node (e.g. "CmdOrCtrl+R").
-	for keySpec, aid := range n.Shortcuts {
-		if mod, key, ok := parseShortcutSpec(keySpec); ok && onAction != nil {
-			if el.OverlayShortcut(mod, key) {
-				onAction(aid)
-			}
-		}
-	}
-
-	if n.OnClickID != "" {
-		el = el.Cursor(ui.CursorPointer)
-	}
-	if el.Children(func() {
-		for _, ch := range n.Children {
-			renderBarNode(c, ch, th, onAction)
-		}
-	}).Clicked() && n.OnClickID != "" && onAction != nil {
-		onAction(n.OnClickID)
-	}
+	renderBarNodeInteractive(c, n, th, false, onAction, nil)
 }
 
-func renderBarText(c *ui.Context, n *bar.Node, th barTheme) {
-	props := n.Props
-	txt := n.Text
-	if txt == "" && len(n.Children) > 0 {
-		var parts []string
-		for _, ch := range n.Children {
-			if ch.Text != "" {
-				parts = append(parts, ch.Text)
-			}
-		}
-		txt = strings.Join(parts, "")
-	}
-	el := ui.Text(c, txt)
-	if fs, ok := propFloat(props, "fontSize"); ok && fs > 0 {
-		el = el.FontSize(fs)
-	} else {
-		el = el.FontSize(13)
-	}
-	if fw, ok := propFloat(props, "fontWeight"); ok && fw > 0 {
-		el = el.FontWeight(int(fw))
-	}
-	if ls, ok := propFloat(props, "letterSpacing"); ok {
-		el = el.LetterSpacing(ls)
-	}
-	col := th.text
-	if tc, ok := propString(props, "textColor"); ok {
-		col = th.color(tc, th.text)
-	}
-	el = el.TextColor(col)
-
-	if ta, ok := propString(props, "textAlign"); ok {
-		switch ta {
-		case "center":
-			el = el.TextAlign(ui.Center)
-		case "end", "right":
-			el = el.TextAlign(ui.End)
-		case "start", "left":
-			el = el.TextAlign(ui.Start)
-		}
-	}
-	if propBool(props, "singleLine", false) {
-		el = el.SingleLine().Ellipsis("…")
-	} else if w, ok := props["wrap"].(bool); ok && !w {
-		el = el.NoWrap()
-	}
-	applyBarSizeProps(el, props)
-}
-
-func renderBarIcon(c *ui.Context, n *bar.Node, th barTheme) {
-	props := n.Props
-	svgStr, _ := propString(props, "svg")
-	svg := parseBarSVG(svgStr)
-	if svg == nil {
-		if name, ok := propString(props, "name"); ok && name != "" {
-			svg = icon(strings.TrimPrefix(name, "lucide:"))
-		}
-	}
-	if svg == nil {
-		return
-	}
-	size := float32(16)
-	if fs, ok := propFloat(props, "fontSize"); ok && fs > 0 {
-		size = fs
-	} else if w, ok := propFloat(props, "width"); ok && w > 0 {
-		size = w
-	}
-	col := th.text
-	if tc, ok := propString(props, "textColor"); ok {
-		col = th.color(tc, th.text)
-	}
-	el := ui.Icon(c, svg).FontSize(size).TextColor(col)
-	applyBarSizeProps(el, props)
-
-	if kf, ok := props["keyframes"].(map[string]any); ok {
-		durMs := float32(900)
-		if d, ok := propFloat(kf, "duration"); ok && d > 0 {
-			durMs = d
-		}
-		rep := 1
-		if r, ok := propFloat(kf, "repeat"); ok {
-			if r < 0 {
-				rep = ui.RepeatForever
-			} else {
-				rep = int(r)
-			}
-		}
-		deg := el.Keyframes("spin", []ui.Keyframe{
-			{At: 0, Value: 0},
-			{At: time.Duration(durMs) * time.Millisecond, Value: 360},
-		}, ui.KeyframeOptions{Repeat: rep})
-		el.Rotate(deg)
-	}
-}
-
-func renderBarButton(c *ui.Context, n *bar.Node, th barTheme, onAction func(string)) {
-	props := n.Props
-	lbl := n.Text
-	if lbl == "" && len(n.Children) > 0 {
-		lbl = n.Children[0].Text
-	}
-	variant, _ := propString(props, "variant")
-	fg := th.accent
-	if tc, ok := propString(props, "textColor"); ok {
-		fg = th.color(tc, fg)
-	}
-	baseBG := th.accent.Alpha(0.14)
-	switch variant {
-	case "primary":
-		baseBG = th.accent
-		if _, ok := propString(props, "textColor"); !ok {
-			fg = ui.Hex("#FFFFFF")
-		}
-	case "danger":
-		baseBG = th.danger.Alpha(0.14)
-		if _, ok := propString(props, "textColor"); !ok {
-			fg = th.danger
-		}
-	case "ghost":
-		baseBG = ui.Color{}
-		if _, ok := propString(props, "textColor"); !ok {
-			fg = th.textMuted
-		}
-	}
-	if bs, ok := propString(props, "background"); ok {
-		baseBG = th.color(bs, baseBG)
-	}
-
-	b := ui.Row(c).
-		Padding(6, 12).
-		Radius(8).
-		AlignItems(ui.Center).
-		Justify(ui.Center).
-		Cursor(ui.CursorPointer)
-	bg := baseBG
-	if b.Pressed() {
-		if variant == "primary" {
-			bg = baseBG.Alpha(0.82)
-		} else {
-			bg = th.surfacePressed
-		}
-	} else if b.Hovered() {
-		if variant == "primary" {
-			bg = baseBG.Alpha(0.90)
-		} else {
-			bg = th.surfaceHover
-		}
-	}
-	b = b.Background(bg)
-	applyBarSizeProps(b, props)
-	if b.Children(func() {
-		ui.Text(c, lbl).FontSize(12).FontWeight(600).TextColor(fg).NoWrap()
-	}).Clicked() && n.OnClickID != "" && onAction != nil {
-		onAction(n.OnClickID)
-	}
-}
-
-func renderBarBadge(c *ui.Context, n *bar.Node, th barTheme) {
-	props := n.Props
-	txt := n.Text
-	if txt == "" && len(n.Children) > 0 {
-		txt = n.Children[0].Text
-	}
-	bg := th.accent.Alpha(0.14)
-	if bs, ok := propString(props, "background"); ok {
-		bg = th.color(bs, bg)
-	}
-	fg := th.accent
-	if tc, ok := propString(props, "textColor"); ok {
-		fg = th.color(tc, fg)
-	}
-	fs := float32(11)
-	if v, ok := propFloat(props, "fontSize"); ok && v > 0 {
-		fs = v
-	}
-	b := ui.Row(c).Padding(2, 7).Radius(999).Background(bg).AlignItems(ui.Center).Justify(ui.Center)
-	b = applyBarSizeProps(b, props)
-	b.Children(func() {
-		ui.Text(c, txt).FontSize(fs).FontWeight(600).TextColor(fg).NoWrap()
+func renderBarNodeInteractive(c *ui.Context, n *bar.Node, th barTheme, vibrancy bool, onAction func(string), onActionArg func(string, any)) {
+	barui.RenderNode(c, n, th.toBarUI(vibrancy), barui.RenderOptions{
+		LoadingText: tr("加载中…"),
+		IconLookup:  icon,
+		OnAction:    onAction,
+		OnActionArg: onActionArg,
 	})
 }
 
-func renderBarProgress(c *ui.Context, n *bar.Node, th barTheme) {
-	props := n.Props
-	val, _ := propFloat(props, "value")
-	maxVal, hasMax := propFloat(props, "max")
-	if !hasMax || maxVal <= 0 {
-		maxVal = 100
-	}
-	pct := (val / maxVal) * 100
-	if pct < 0 {
-		pct = 0
-	} else if pct > 100 {
-		pct = 100
-	}
-	h := float32(6)
-	if hv, ok := propFloat(props, "height"); ok && hv > 0 {
-		h = hv
-	}
-	rad := h / 2
-	if rv, ok := propFloat(props, "radius"); ok && rv >= 0 {
-		rad = rv
-	}
-	trackCol := th.surfaceHover
-	if tc, ok := propString(props, "trackColor"); ok {
-		trackCol = th.color(tc, trackCol)
-	} else if tc, ok := propString(props, "background"); ok {
-		trackCol = th.color(tc, trackCol)
-	}
-	fillCol := th.accent
-	if fc, ok := propString(props, "color"); ok {
-		fillCol = th.color(fc, fillCol)
-	}
-	track := ui.Box(c).Height(h).Radius(rad).Background(trackCol).Clip()
-	if propBool(props, "fillWidth", true) {
-		track = track.FillWidth()
-	}
-	track = applyBarSizeProps(track, props)
-	track.Children(func() {
-		if pct > 0 {
-			ui.Box(c).Absolute().Top(0).Bottom(0).Left(0).WidthPercent(pct).Radius(rad).Background(fillCol)
-		}
-	})
+func propFloat(m map[string]any, key string) (float32, bool) {
+	return barui.PropFloat(m, key)
 }
 
-func renderBarChart(c *ui.Context, n *bar.Node, th barTheme) {
-	props := n.Props
-	h := float32(40)
-	if v, ok := propFloat(props, "height"); ok && v > 0 {
-		h = v
-	}
-	type chartPt struct{ x, y float64 }
-	type chartSeries struct {
-		col      ui.Color
-		fillFrom float32
-		fillTo   float32
-		hasFill  bool
-		pts      []chartPt
-	}
-	var allSeries []chartSeries
-	if rawList, ok := props["series"].([]any); ok {
-		for _, item := range rawList {
-			sm, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			col := th.accent
-			if cs, ok := propString(sm, "color"); ok {
-				col = th.color(cs, th.accent)
-			}
-			cs := chartSeries{col: col}
-			if fm, ok := sm["fill"].(map[string]any); ok {
-				cs.hasFill = true
-				if f0, ok := propFloat(fm, "from"); ok {
-					cs.fillFrom = f0
-				} else {
-					cs.fillFrom = 0.16
-				}
-				if f1, ok := propFloat(fm, "to"); ok {
-					cs.fillTo = f1
-				}
-			} else if strings.EqualFold(asPropStr(props["type"]), "area") {
-				cs.hasFill = true
-				cs.fillFrom = 0.16
-				cs.fillTo = 0
-			}
-			if rawPts, ok := sm["points"].([]any); ok {
-				for _, rp := range rawPts {
-					pm, ok := rp.(map[string]any)
-					if !ok {
-						continue
-					}
-					x, okX := toFloat64(pm["x"])
-					y, okY := toFloat64(pm["y"])
-					if okX && okY && !math.IsNaN(x) && !math.IsNaN(y) {
-						cs.pts = append(cs.pts, chartPt{x, y})
-					}
-				}
-			}
-			if len(cs.pts) > 0 {
-				allSeries = append(allSeries, cs)
-			}
-		}
-	}
-
-	strokeW := float32(2)
-	if swv, ok := propFloat(props, "strokeWidth"); ok && swv > 0 {
-		strokeW = swv
-	}
-	curveKind := chart.CurveLinear
-	if cv, ok := propString(props, "curve"); ok && cv == "monotone" {
-		curveKind = chart.CurveMonotone
-	}
-
-	box := ui.Box(c).Height(h)
-	if propBool(props, "fillWidth", true) {
-		box = box.FillWidth()
-	}
-	applyBarSizeProps(box, props)
-
-	if len(allSeries) == 0 {
-		return
-	}
-
-	// Compute x/y domains.
-	xMin, xMax := math.Inf(1), math.Inf(-1)
-	yMin, yMax := math.Inf(1), math.Inf(-1)
-	for _, s := range allSeries {
-		for _, pt := range s.pts {
-			xMin = math.Min(xMin, pt.x)
-			xMax = math.Max(xMax, pt.x)
-			yMin = math.Min(yMin, pt.y)
-			yMax = math.Max(yMax, pt.y)
-		}
-	}
-	if xd, ok := props["xDomain"].([]any); ok && len(xd) >= 2 {
-		if a, ok1 := toFloat64(xd[0]); ok1 {
-			xMin = a
-		}
-		if b, ok2 := toFloat64(xd[1]); ok2 {
-			xMax = b
-		}
-	}
-	xSpan := xMax - xMin
-	if xSpan <= 0 {
-		xSpan = 1
-	}
-	ySpan := yMax - yMin
-	if ySpan <= 0 {
-		yMin -= 1
-		yMax += 1
-		ySpan = 2
-	} else {
-		pad := ySpan * 0.14
-		yMin -= pad
-		yMax += pad
-		ySpan = yMax - yMin
-	}
-
-	box.Draw(func(p *ui.Painter, r ui.Rect) {
-		if r.W <= 1 || r.H <= 1 {
-			return
-		}
-		for _, s := range allSeries {
-			if len(s.pts) < 2 {
-				continue
-			}
-			xs := make([]float32, len(s.pts))
-			ys := make([]float32, len(s.pts))
-			for i, pt := range s.pts {
-				xs[i] = float32((pt.x - xMin) / xSpan)
-				ys[i] = float32((pt.y - yMin) / ySpan)
-			}
-			if s.hasFill {
-				p.FillPathGradient(chart.Area(r, xs, nil, ys, curveKind), ui.LinearGradient{
-					From: s.col.Alpha(s.fillFrom), To: s.col.Alpha(s.fillTo), Angle: 180,
-				})
-			}
-			p.StrokePath(chart.Line(r, xs, ys, curveKind), strokeW, s.col)
-		}
-	})
+func propFloatSlice(m map[string]any, key string) ([]float32, bool) {
+	return barui.PropFloatSlice(m, key)
 }
 
-func applyBarBoxProps(el ui.Element, props map[string]any, th barTheme, clickable bool) ui.Element {
-	if props == nil {
-		return el
-	}
-	el = applyBarSizeProps(el, props)
-
-	if gap, ok := propFloat(props, "gap"); ok {
-		el = el.Gap(gap)
-	}
-	if pad, ok := propFloatSlice(props, "padding"); ok && len(pad) > 0 {
-		el = el.Padding(pad...)
-	}
-	if rad, ok := propFloatSlice(props, "radius"); ok && len(rad) > 0 {
-		el = el.Radius(rad...)
-	}
-	if ai, ok := propString(props, "alignItems"); ok {
-		if a, ok := parseAlign(ai); ok {
-			el = el.AlignItems(a)
-		}
-	}
-	if j, ok := propString(props, "justify"); ok {
-		if a, ok := parseAlign(j); ok {
-			el = el.Justify(a)
-		}
-	}
-	if propBool(props, "absolute", false) {
-		el = el.Absolute()
-	}
-	if v, ok := propFloat(props, "top"); ok {
-		el = el.Top(v)
-	}
-	if v, ok := propFloat(props, "right"); ok {
-		el = el.Right(v)
-	}
-	if v, ok := propFloat(props, "bottom"); ok {
-		el = el.Bottom(v)
-	}
-	if v, ok := propFloat(props, "left"); ok {
-		el = el.Left(v)
-	}
-	if v, ok := propFloat(props, "leftPercent"); ok {
-		el = el.LeftPercent(v)
-	}
-	if v, ok := propFloat(props, "widthPercent"); ok {
-		el = el.WidthPercent(v)
-	}
-	if v, ok := propFloat(props, "topPercent"); ok {
-		el = el.TopPercent(v)
-	}
-	if v, ok := propFloat(props, "heightPercent"); ok {
-		el = el.HeightPercent(v)
-	}
-	if bw, ok := propFloat(props, "borderWidth"); ok && bw > 0 {
-		el = el.BorderWidth(bw)
-	}
-	if bc, ok := propString(props, "borderColor"); ok {
-		el = el.BorderColor(th.color(bc, th.border))
-	}
-	if tip, ok := propString(props, "tooltip"); ok && tip != "" {
-		el = el.Tooltip(tip)
-	}
-
-	var bg ui.Color
-	hasBG := false
-	if bs, ok := propString(props, "background"); ok {
-		bg = th.color(bs, ui.Color{})
-		hasBG = true
-	}
-	if clickable || props["hover"] != nil || props["pressed"] != nil {
-		if el.Pressed() {
-			if pm, ok := props["pressed"].(map[string]any); ok {
-				if bs, ok := propString(pm, "background"); ok {
-					bg = th.color(bs, bg)
-					hasBG = true
-				}
-			}
-		} else if el.Hovered() {
-			if hm, ok := props["hover"].(map[string]any); ok {
-				if bs, ok := propString(hm, "background"); ok {
-					bg = th.color(bs, bg)
-					hasBG = true
-				}
-			}
-		}
-	}
-	if hasBG {
-		el = el.Background(bg)
-	}
-	return el
-}
-
-func applyBarSizeProps(el ui.Element, props map[string]any) ui.Element {
-	if props == nil {
-		return el
-	}
-	if propBool(props, "fill", false) {
-		el = el.Fill()
-	}
-	if propBool(props, "fillWidth", false) {
-		el = el.FillWidth()
-	}
-	if propBool(props, "fillHeight", false) {
-		el = el.FillHeight()
-	}
-	if w, ok := propFloat(props, "width"); ok {
-		el = el.Width(w)
-	}
-	if h, ok := propFloat(props, "height"); ok {
-		el = el.Height(h)
-	}
-	if v, ok := propFloat(props, "minWidth"); ok {
-		el = el.MinWidth(v)
-	}
-	if v, ok := propFloat(props, "minHeight"); ok {
-		el = el.MinHeight(v)
-	}
-	if v, ok := propFloat(props, "maxWidth"); ok {
-		el = el.MaxWidth(v)
-	}
-	if v, ok := propFloat(props, "maxHeight"); ok {
-		el = el.MaxHeight(v)
-	}
-	if v, ok := propFloat(props, "grow"); ok {
-		el = el.Grow(v)
-	}
-	if v, ok := propFloat(props, "shrink"); ok {
-		el = el.Shrink(v)
-	}
-	if v, ok := propFloat(props, "basis"); ok {
-		el = el.Basis(v)
-	}
-	return el
-}
-
-func parseAlign(s string) (ui.Align, bool) {
-	switch s {
-	case "start", "flex-start":
-		return ui.Start, true
-	case "center":
-		return ui.Center, true
-	case "end", "flex-end":
-		return ui.End, true
-	case "stretch":
-		return ui.Stretch, true
-	case "spaceBetween", "space-between":
-		return ui.SpaceBetween, true
-	default:
-		return 0, false
-	}
+func propString(m map[string]any, key string) (string, bool) {
+	return barui.PropString(m, key)
 }
 
 func parseShortcutSpec(s string) (ui.Modifiers, ui.Key, bool) {
@@ -780,88 +146,7 @@ func parseShortcutSpec(s string) (ui.Modifiers, ui.Key, bool) {
 	return 0, 0, false
 }
 
-func propString(m map[string]any, key string) (string, bool) {
-	if m == nil {
-		return "", false
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return "", false
-	}
-	switch x := v.(type) {
-	case string:
-		return x, true
-	case int64:
-		return strconv.FormatInt(x, 10), true
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64), true
-	default:
-		return fmt.Sprint(x), true
-	}
-}
-
-func asPropStr(v any) string {
-	s, _ := v.(string)
+func formatShortcutDisplay(s string) string {
+	_ = strconv.Itoa(0)
 	return s
-}
-
-func propBool(m map[string]any, key string, fallback bool) bool {
-	if m == nil {
-		return fallback
-	}
-	b, ok := m[key].(bool)
-	if !ok {
-		return fallback
-	}
-	return b
-}
-
-func propFloat(m map[string]any, key string) (float32, bool) {
-	if m == nil {
-		return 0, false
-	}
-	f, ok := toFloat64(m[key])
-	if !ok {
-		return 0, false
-	}
-	return float32(f), true
-}
-
-func propFloatSlice(m map[string]any, key string) ([]float32, bool) {
-	if m == nil {
-		return nil, false
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil, false
-	}
-	if f, ok := toFloat64(v); ok {
-		return []float32{float32(f)}, true
-	}
-	arr, ok := v.([]any)
-	if !ok {
-		return nil, false
-	}
-	out := make([]float32, 0, len(arr))
-	for _, it := range arr {
-		if f, ok := toFloat64(it); ok {
-			out = append(out, float32(f))
-		}
-	}
-	return out, len(out) > 0
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	default:
-		return 0, false
-	}
 }

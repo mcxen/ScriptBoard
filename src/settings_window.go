@@ -46,6 +46,7 @@ func (a *app) openSettings() {
 		Height:    settingsHeight,
 		MinWidth:  560,
 		MinHeight: 440,
+		Vibrancy:  mygo.VibrancySidebar,
 		// Opens where the user left it last time.
 		StateKey: "settings",
 		Content:  ui.View(a.settingsView),
@@ -79,7 +80,7 @@ func (a *app) settingsView(c *ui.Context) {
 			macMenuBarIn(c, a, w)
 		default:
 			titleBarIn(c, a, w, func() {
-				ui.Text(c, tr("设置")).FontSize(fsCaption).TextColor(pal(c).muted).Padding(0, 8)
+				ui.Text(c, tr("设置")).FontSize(fsSmall).FontWeight(550).TextColor(pal(c).muted).Padding(0, 8)
 			})
 		}
 		a.settingsBody(c, false, false)

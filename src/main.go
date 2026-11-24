@@ -54,6 +54,7 @@ func main() {
 			Height:    760,
 			MinWidth:  900,
 			MinHeight: 480,
+			Vibrancy:  mygo.VibrancySidebar,
 			// Opens where the user left it last time.
 			StateKey: "main",
 			// The window shows the interface MyGo draws, not a web page.

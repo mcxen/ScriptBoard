@@ -183,13 +183,18 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			selfHero := isClock(viewRes.Chart) || (isCountdown(viewRes.Chart) && len(viewRes.Chart.Countdown) == 1) || isBentoHero(viewRes.Chart)
 			showHeroHead := !selfHero && (res.Big != "" || res.Sub != "" || plot)
 			if showHeroHead {
-				ui.Row(c).AlignItems(ui.Center).Gap(14).Wrap().Children(func() {
-					iconBadge(c, firstNonEmpty(res.Icon, meta.Icon), accent, 44)
-					ui.Column(c).Gap(2).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(14).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 						if res.Big != "" || plot {
-							ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(viewRes, sel))).FontSize(36).Bold().NoWrap()
+							ui.Text(c, tickText(c, "hero:"+sc.ID, heroText(viewRes, sel))).
+								FontSize(46).
+								FontWeight(300).
+								LetterSpacing(-2).
+								FontFeatures("tnum").
+								ContentTransition(ui.ContentTransition{Numeric: true}).
+								NoWrap()
 						} else if res.Title != "" {
-							ui.Text(c, res.Title).FontSize(fsHeading).Bold().NoWrap()
+							ui.Text(c, res.Title).FontSize(fsHeading).FontWeight(650).NoWrap()
 						}
 						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 							if plot {
@@ -208,6 +213,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 							}
 						})
 					})
+					ui.Icon(c, icon(firstNonEmpty(res.Icon, meta.Icon))).FontSize(42).TextColor(accent)
 				})
 			}
 			if a.status != "" {
@@ -224,6 +230,9 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			showClockStylePicker := isClock(viewRes.Chart)
 			showMatrixStylePicker := !plot && !showBarStylePicker && !showClockStylePicker && hasMatrixStyleOption(viewRes.Chart)
 			if showPlotStylePicker || showBarStylePicker || showClockStylePicker || showMatrixStylePicker || len(swaps) > 1 || len(meta.Dims) > 0 || len(meta.Vars) > 0 {
+				if showHeroHead {
+					ui.Box(c).FillWidth().Height(1).Background(p.hairline)
+				}
 				ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
 					if len(swaps) > 1 {
 						a.componentSwapPicker(c, sc.ID, swaps, compSpec.Type, compact)

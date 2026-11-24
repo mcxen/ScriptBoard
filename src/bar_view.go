@@ -110,7 +110,7 @@ func (a *app) barView(c *ui.Context, compact bool) {
 			FillHeight().
 			Background(p.sidebar).
 			BorderWidth(0, 1, 0, 0).
-			BorderColor(p.border).
+			BorderColor(p.hairline).
 			Padding(14, 12).
 			Gap(10).
 			Children(func() {
@@ -181,6 +181,9 @@ func (a *app) barRail(c *ui.Context, p palette, filtered []store.Script, total i
 			switch {
 			case active:
 				row = row.Background(p.rowSel)
+				if !p.dark {
+					row = row.BorderWidth(1).BorderColor(p.hairline)
+				}
 			case row.Hovered():
 				row = row.Background(p.hover)
 			}
@@ -225,7 +228,44 @@ func (a *app) barImportBox(c *ui.Context, p palette) {
 				}
 			}
 		})
-		hint(c, tr("粘贴 .bar XML 内容，或选择本地 .bar 文件导入。"))
+		hint(c, tr("选择一个标杆样式一键创建，或粘贴/导入自定义 .bar XML。"))
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			ui.Text(c, tr("参考样式模板")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
+			ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() {
+				for _, tpl := range bar.Templates() {
+					tpl := tpl
+					box := ui.Column(c.Key("bar-tpl:"+tpl.ID)).
+						Grow(1).MinWidth(180).Padding(12).Gap(6).
+						Radius(10).Background(p.chip)
+					if box.Hovered() {
+						box = box.Background(p.hover)
+					}
+					box.Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+							ui.Icon(c, icon(barIconName(tpl.Icon))).FontSize(14).TextColor(p.accent)
+							ui.Text(c, tpl.Name).FontSize(fsSmall).FontWeight(600).SingleLine().Ellipsis("…").Grow(1).MinWidth(0)
+							ui.Text(c, tpl.Style).FontSize(fsTiny).TextColor(p.faint).SingleLine()
+						})
+						ui.Text(c, tpl.Description).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+							ui.Spacer(c)
+							if btn(c, tr("使用模板")).Clicked() {
+								sc, impErr := a.importBarSource(tpl.Source)
+								if impErr != nil {
+									a.barImportErr = impErr.Error()
+								} else {
+									a.barImportErr = ""
+									a.barImportText = ""
+									a.barImportOpen = false
+									a.router.Push("/bar/" + sc.ID)
+									a.syncBarMenuBar()
+								}
+							}
+						})
+					})
+				}
+			})
+		})
 		textArea(c, &a.barImportText, "<bar id=\"...\" title=\"...\">...</bar>", 6).Font("monospace").FontSize(fsSmall)
 		if a.barImportErr != "" {
 			ui.Text(c, a.barImportErr).FontSize(fsSmall).TextColor(p.up)
@@ -281,15 +321,15 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 	ui.Column(c).
 		FillWidth().
 		BorderWidth(0, 0, 1, 0).
-		BorderColor(p.border).
+		BorderColor(p.hairline).
 		Padding(14, 20).
 		Gap(8).
 		Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
-				iconBadge(c, barIconName(sp.Icon), p.accent, 34)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+				ui.Icon(c, icon(barIconName(sp.Icon))).FontSize(18).TextColor(p.accent)
 				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					ui.Text(c, title).FontSize(fsBodyLarge).FontWeight(650).SingleLine().Ellipsis("…")
-					ui.Text(c, subtitle).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
+					ui.Text(c, title).FontSize(15).FontWeight(650).SingleLine().Ellipsis("…")
+					ui.Text(c, subtitle).FontSize(fsTiny).FontFeatures("tnum").TextColor(p.muted).SingleLine().Ellipsis("…")
 				})
 
 				enabled := pl.Enabled
@@ -297,19 +337,10 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 					pl.Enabled = enabled
 					a.setBarPlacement(sc.ID, pl)
 				}
-				if action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
-					Size:  theme.Small,
-					Title: tr("刷新"),
-				}).Clicked() {
+				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
 					a.refreshBar(sc.ID)
 				}
-				moreBtn := ui.Row(c).Size(28, 28).Radius(7).Center().Cursor(ui.CursorPointer).Tooltip(tr("更多操作"))
-				if moreBtn.Hovered() || barMoreOpen {
-					moreBtn = moreBtn.Background(p.hover)
-				}
-				if moreBtn.Children(func() {
-					ui.Icon(c, barMoreSVG).FontSize(15).TextColor(p.muted)
-				}).Clicked() {
+				if ghostIconBtn(c, barMoreSVG, tr("更多操作"), barMoreOpen).Clicked() {
 					barMoreOpen = !barMoreOpen
 				}
 			})
@@ -353,16 +384,16 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 			a.barThemeSwitcher(c, p)
 		})
 
-		stageBG := ui.Hex("#0B1110")
+		stageBG := ui.Hex("#0E1117")
 		if !p.dark {
-			stageBG = ui.Hex("#EEF1F5")
+			stageBG = ui.Hex("#ECEFF5")
 		}
 		stage := ui.Column(c).
 			FillWidth().
 			Background(stageBG).
-			Radius(12).
+			Radius(16).
 			BorderWidth(1).
-			BorderColor(p.border).
+			BorderColor(p.hairline).
 			Padding(24).
 			Center()
 		if !compact {
@@ -370,8 +401,17 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 		}
 		stage.Children(func() {
 			th := barThemeFor(c, a.barPreviewTheme)
-			renderBarPanel(c, snap, th, 300, func(aid string) {
+			themeName := "dark"
+			if !th.dark {
+				themeName = "light"
+			}
+			if inst != nil {
+				inst.SetAppearance(themeName, false)
+			}
+			renderBarPanelInteractive(c, snap, th, 300, sp.Material, func(aid string) {
 				a.invokeBarAction(sc.ID, aid)
+			}, func(aid string, arg any) {
+				a.invokeBarActionWithArg(sc.ID, aid, arg)
 			})
 			if !pl.Enabled {
 				ui.Text(c, tr("组件已停用，开启右上角开关后在对应位置显示")).
@@ -452,8 +492,15 @@ func (a *app) barThemeSwitcher(c *ui.Context, p palette) {
 
 func (a *app) barPlacementSection(c *ui.Context, p palette, id string, pl store.BarPlacement) {
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, tr("显示位置")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-		card(c).FillWidth().Children(func() {
+		ui.Text(c, tr("显示位置")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+		box := ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
+		if isAndroid() {
+			box.Padding(12).Children(func() {
+				ui.Text(c, tr("移动端在应用内「菜单管理」与首页卡片中显示")).FontSize(fsSmall).TextColor(p.muted)
+			})
+			return
+		}
+		box.Children(func() {
 			// Menu bar row with mode selector
 			a.barPlacementRow(c, p, barMenuBarSVG, tr("菜单栏"), true, func() {
 				modeIdx := 0
@@ -573,8 +620,8 @@ func (a *app) barInputsSection(c *ui.Context, p palette, id string, sp bar.Spec)
 	drafts := a.barInputDrafts[id]
 
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, tr("输入参数")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-		card(c).FillWidth().Padding(12).Gap(12).Children(func() {
+		ui.Text(c, tr("输入参数")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+		ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(12).Children(func() {
 			for _, in := range sp.Inputs {
 				in := in
 				curVal := saved[in.Name]
@@ -657,8 +704,8 @@ func (a *app) barCookiesSection(c *ui.Context, p palette, id string, sp bar.Spec
 	}
 
 	ui.Column(c.Key("bar-cookies:"+id)).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, tr("Cookie 会话")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-		card(c).FillWidth().Padding(12).Gap(10).Children(func() {
+		ui.Text(c, tr("Cookie 会话")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+		ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Text(c, statusText).FontSize(fsSmall).FontWeight(500).Grow(1).MinWidth(0)
 				toggleLbl := tr("管理 Cookie")
@@ -710,8 +757,8 @@ func (a *app) barSourceSection(c *ui.Context, p palette, sc store.Script, sp bar
 	}
 
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, tr("来源")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-		card(c).FillWidth().Padding(12).Gap(8).Children(func() {
+		ui.Text(c, tr("来源")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+		ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Text(c, fmt.Sprintf("%s · v%s", origin, ver)).FontSize(fsSmall).FontWeight(500)
 				ui.Spacer(c)
@@ -733,20 +780,14 @@ func (a *app) barSourceSection(c *ui.Context, p palette, sc store.Script, sp bar
 				}
 				ui.Text(c, tr("联网权限：")+strings.Join(hosts, ", ")).FontSize(fsTiny).TextColor(p.faint)
 			}
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(2, 0, 0, 0).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Padding(2, 0, 0, 0).Children(func() {
 				ui.Spacer(c)
 				if safeURL(sp.Homepage) {
-					if action.ActionIcon(c, icon("globe"), action.ActionIconProps{
-						Size:  theme.Small,
-						Title: sp.Homepage,
-					}).Clicked() {
+					if ghostIconBtn(c, icon("globe"), sp.Homepage, false).Clicked() {
 						_ = mygo.Shell.OpenExternal(sp.Homepage)
 					}
 				}
-				if action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
-					Size:  theme.Small,
-					Title: tr("刷新"),
-				}).Clicked() {
+				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
 					a.refreshBar(sc.ID)
 				}
 			})
@@ -830,35 +871,26 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 	ui.Column(c).
 		FillWidth().
 		BorderWidth(0, 0, 1, 0).
-		BorderColor(p.border).
+		BorderColor(p.hairline).
 		Padding(14, 20).
 		Gap(8).
 		Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
-				iconBadge(c, meta.Icon, p.accent, 34)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+				ui.Icon(c, icon(meta.Icon)).FontSize(18).TextColor(p.accent)
 				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					ui.Text(c, title).FontSize(fsBodyLarge).FontWeight(650).SingleLine().Ellipsis("…")
-					ui.Text(c, subtitle).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
+					ui.Text(c, title).FontSize(15).FontWeight(650).SingleLine().Ellipsis("…")
+					ui.Text(c, subtitle).FontSize(fsTiny).FontFeatures("tnum").TextColor(p.muted).SingleLine().Ellipsis("…")
 				})
 				enabled := inBar
 				if sw(c, &enabled).Changed() {
 					a.toggleMenuBar(sc.ID)
 				}
-				if action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
-					Size:  theme.Small,
-					Title: tr("刷新"),
-				}).Clicked() {
+				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
 					a.forced[sc.ID] = true
 					a.invalidate(sc.ID)
 					a.syncMenuBar()
 				}
-				moreBtn := ui.Row(c).Size(28, 28).Radius(7).Center().Cursor(ui.CursorPointer).Tooltip(tr("更多操作"))
-				if moreBtn.Hovered() || barMoreOpen {
-					moreBtn = moreBtn.Background(p.hover)
-				}
-				if moreBtn.Children(func() {
-					ui.Icon(c, barMoreSVG).FontSize(15).TextColor(p.muted)
-				}).Clicked() {
+				if ghostIconBtn(c, barMoreSVG, tr("更多操作"), barMoreOpen).Clicked() {
 					barMoreOpen = !barMoreOpen
 				}
 			})
@@ -893,16 +925,16 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 			a.barThemeSwitcher(c, p)
 		})
 
-		stageBG := ui.Hex("#0B1110")
+		stageBG := ui.Hex("#0E1117")
 		if !p.dark {
-			stageBG = ui.Hex("#EEF1F5")
+			stageBG = ui.Hex("#ECEFF5")
 		}
 		stage := ui.Column(c).
 			FillWidth().
 			Background(stageBG).
-			Radius(12).
+			Radius(16).
 			BorderWidth(1).
-			BorderColor(p.border).
+			BorderColor(p.hairline).
 			Padding(24).
 			Center()
 		if !compact {
@@ -917,8 +949,15 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 	inspector := func() {
 		// Display locations
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, tr("显示位置")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-			card(c).FillWidth().Children(func() {
+			ui.Text(c, tr("显示位置")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+			box := ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
+			if isAndroid() {
+				box.Padding(12).Children(func() {
+					ui.Text(c, tr("移动端在应用内「菜单管理」与首页卡片中显示")).FontSize(fsSmall).TextColor(p.muted)
+				})
+				return
+			}
+			box.Children(func() {
 				modeStr, _ := a.scriptMenuBarKind(sc, st.res)
 				modeIdx := 0
 				switch modeStr {
@@ -986,8 +1025,8 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 		// Inputs: script vars and dimensions
 		if len(meta.Vars) > 0 || len(meta.Dims) > 0 {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
-				ui.Text(c, tr("输入参数")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-				card(c).FillWidth().Padding(12).Gap(10).Children(func() {
+				ui.Text(c, tr("输入参数")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+				ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(10).Children(func() {
 					if len(meta.Vars) > 0 {
 						a.varRow(c, sc, meta)
 					}
@@ -1000,8 +1039,8 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 
 		// Source info
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, tr("来源")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
-			card(c).FillWidth().Padding(12).Gap(8).Children(func() {
+			ui.Text(c, tr("来源")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+			ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 					ui.Text(c, fmt.Sprintf("%s · v%s", originLabel(a.originOf(sc)), ver)).FontSize(fsSmall).FontWeight(500)
 					ui.Spacer(c)
@@ -1015,10 +1054,7 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 						a.router.Push("/edit/" + sc.ID)
 					}
 					ui.Spacer(c)
-					if action.ActionIcon(c, icon("refresh-cw"), action.ActionIconProps{
-						Size:  theme.Small,
-						Title: tr("刷新"),
-					}).Clicked() {
+					if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
 						a.forced[sc.ID] = true
 						a.invalidate(sc.ID)
 						a.syncMenuBar()
@@ -1055,19 +1091,28 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 	}
 	cardEl := ui.Themed(c, brandDefault.Theme(th.dark)).
 		Width(300).
-		Padding(16).
-		Gap(12)
+		Padding(10, 16, 16, 16).
+		Gap(14)
 	if vibrant {
 		cardEl = cardEl.Background(ui.Transparent)
 	} else {
 		cardEl = cardEl.Background(th.surface).Radius(14).BorderWidth(1).BorderColor(th.border)
 	}
 	cardEl.Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			iconBadge(c, iconName, th.accent, 26)
+		ui.Row(c).FillWidth().Height(26).AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Icon(c, icon(iconName)).FontSize(13).TextColor(th.accent)
 			ui.Text(c, title).FontSize(13).FontWeight(600).TextColor(th.text).SingleLine().Ellipsis("…").Grow(1).MinWidth(0)
 			if st.res.MenuBar != nil && st.res.MenuBar.Title != "" {
 				chip(c, st.res.MenuBar.Title, th.accent, th.accent.Alpha(0.14))
+			}
+			refBtn := ui.ButtonBase(c.Key("sc-ref:"+sc.ID)).Size(26, 26).Radius(7).AlignItems(ui.Center).Justify(ui.Center).Cursor(ui.CursorPointer).Tooltip(tr("刷新"))
+			if refBtn.Hovered() {
+				refBtn = refBtn.Background(th.surfaceHover)
+			}
+			if refBtn.Children(func() {
+				ui.Icon(c, icon("refresh-cw")).FontSize(13).TextColor(th.textMuted)
+			}).Clicked() {
+				a.refreshScript(sc)
 			}
 		})
 		switch {
@@ -1077,13 +1122,28 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 			ui.Text(c, st.err.Error()).FontSize(12).TextColor(th.danger)
 		default:
 			if st.res.Big != "" {
-				ui.Text(c, st.res.Big).FontSize(34).FontWeight(650).TextColor(th.text).NoWrap()
-			}
-			if st.res.Sub != "" {
-				ui.Text(c, st.res.Sub).FontSize(12).TextColor(th.textMuted)
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+						ui.Text(c, st.res.Big).
+							FontSize(46).
+							FontWeight(300).
+							LetterSpacing(-2).
+							FontFeatures("tnum").
+							ContentTransition(ui.ContentTransition{Numeric: true}).
+							TextColor(th.text).
+							NoWrap()
+						if st.res.Sub != "" {
+							ui.Text(c, st.res.Sub).FontSize(12.5).TextColor(th.textMuted).SingleLine().Ellipsis("…")
+						}
+					})
+					ui.Icon(c, icon(iconName)).FontSize(40).TextColor(th.accent)
+				})
+			} else if st.res.Sub != "" {
+				ui.Text(c, st.res.Sub).FontSize(12.5).TextColor(th.textMuted)
 			}
 			comp, viewRes, subStyle := resolveComponent(st.res, a.styles[sc.ID])
 			if comp != nil {
+				ui.Box(c).FillWidth().Height(1).Background(th.border)
 				comp.RenderCard(c, ComponentRenderReq{
 					App: a, Script: sc, Result: viewRes, Style: subStyle,
 					Size: 1, Width: 268, Height: 140, Selected: a.selOf(sc.ID), Now: a.now(),
@@ -1091,7 +1151,7 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 			}
 			if len(st.res.Menu) > 0 {
 				ui.Box(c).FillWidth().Height(1).Background(th.border)
-				ui.Column(c).FillWidth().Gap(4).Children(func() {
+				ui.Column(c).FillWidth().Gap(2).Children(func() {
 					for i, m := range st.res.Menu {
 						if i >= 6 {
 							break
@@ -1100,7 +1160,13 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 							ui.Box(c).FillWidth().Height(1).Background(th.border)
 							continue
 						}
-						ui.Text(c, m.Label).FontSize(12).TextColor(th.textMuted).SingleLine().Ellipsis("…")
+						mr := ui.Row(c.Key(fmt.Sprintf("scm-%d-%s", i, m.Label))).FillWidth().Padding(5, 8).Radius(7).AlignItems(ui.Center)
+						if mr.Hovered() {
+							mr = mr.Background(th.surfaceHover)
+						}
+						mr.Children(func() {
+							ui.Text(c, m.Label).FontSize(12).TextColor(th.textMuted).SingleLine().Ellipsis("…")
+						})
 					}
 				})
 			} else if len(st.res.Lines) > 0 {
@@ -1146,22 +1212,18 @@ func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, on
 			ui.Icon(c, icon(iconName)).FontSize(13).TextColor(p.muted)
 			ui.Text(c, title).FontSize(fsTiny).FontWeight(600).TextColor(p.muted).SingleLine().Ellipsis("…")
 			ui.Spacer(c)
-			if action.ActionIcon(c, icon("maximize-2"), action.ActionIconProps{
-				Size:  theme.Small,
-				Title: tr("打开组件详情"),
-			}).Clicked() {
+			if ghostIconBtn(c, icon("maximize-2"), tr("打开组件详情"), false).Clicked() {
 				a.router.Push("/bar/" + sc.ID)
 			}
-			if action.ActionIcon(c, icon("x"), action.ActionIconProps{
-				Size:  theme.Small,
-				Title: tr("关闭"),
-			}).Clicked() {
+			if ghostIconBtn(c, icon("x"), tr("关闭"), false).Clicked() {
 				onClose()
 			}
 		})
 		if sc.IsBar() {
-			renderBarPanel(c, snap, barThemeFor(c, barThemeAuto), 300, func(aid string) {
+			renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
 				a.invokeBarAction(sc.ID, aid)
+			}, func(aid string, arg any) {
+				a.invokeBarActionWithArg(sc.ID, aid, arg)
 			})
 		} else {
 			meta, metaErr := a.metaOf(sc)
@@ -1198,11 +1260,11 @@ func (a *app) barShortcutOverlay(c *ui.Context, p palette) {
 	backdrop := ui.Column(c.Key("bar-shortcut-overlay")).
 		Absolute().
 		Top(0).Right(0).Bottom(0).Left(0).
-		Background(ui.Hex("#000000").Alpha(0.45)).
+		Background(ui.Hex("#000000").Alpha(0.38)).
 		Center()
 	backdrop.Children(func() {
 		box := ui.Column(c).Gap(8).AlignItems(ui.End).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(4, 6).Radius(10).Background(p.card.Alpha(0.92)).BorderWidth(1).BorderColor(p.border).Children(func() {
 				if btn(c, tr("打开组件详情")).Clicked() {
 					a.barOverlayID = ""
 					a.router.Push("/bar/" + sc.ID)
@@ -1219,8 +1281,10 @@ func (a *app) barShortcutOverlay(c *ui.Context, p palette) {
 				} else if err != nil {
 					snap.Error = err.Error()
 				}
-				renderBarPanel(c, snap, barThemeFor(c, barThemeAuto), 300, func(aid string) {
+				renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
 					a.invokeBarAction(sc.ID, aid)
+				}, func(aid string, arg any) {
+					a.invokeBarActionWithArg(sc.ID, aid, arg)
 				})
 			} else {
 				meta, metaErr := a.metaOf(sc)

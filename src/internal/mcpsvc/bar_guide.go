@@ -2,20 +2,41 @@ package mcpsvc
 
 import "strings"
 
-// BarGuide returns the complete reference for developing .bar XML menubar
-// components (floating panels, tray menus, persistent CookieJar, KV storage,
-// inputs, permissions, VDOM components, and the MCP test/debug workflow).
+// BarGuide returns the complete reference for developing visually polished .bar
+// XML menubar components (design tokens, typography, vibrancy materials, VDOM
+// widgets, $ui layout helpers, persistent CookieJar/KV storage, and the MCP
+// template + preview workflow).
 func BarGuide() string {
 	return strings.ReplaceAll(barGuideTemplate, "§", "`")
 }
 
 const barGuideTemplate = `# ScriptBoard .bar Menubar Component Guide
 
-A §.bar§ component is an XML bundle containing permissions, user-configurable inputs, and an ES module that runs in an isolated §moejs§ event loop with §fetch§, timers, a per-component persistent §CookieJar§, and persistent key-value storage. It can be pinned to the macOS/desktop menu bar (floating panel or dropdown menu), docked in the left/right/bottom sidebars, triggered by shortcut (§Alt+W§), or shown on the home page.
+A §.bar§ component is an XML bundle containing permissions, user-configurable inputs, and an ES module that runs in an isolated §moejs§ event loop with §fetch§, timers, a per-component persistent §CookieJar§, persistent KV storage, built-in §h§/§$ui§ design helpers, and native Light/Dark/Glass rendering.
 
 ---
 
-## 1. XML Structure
+## 1. Quick-Start Design Workflow (MCP Visual Loop)
+
+1. **Pick a reference style first**: call §bar_templates§ and §bar_template_get§ to inspect the 6 built-in benchmark styles (§native-glass§, §bento-glass§, §quota-ring§, §utility-switchboard§, §ops-feed§, §matrix-minimal§).
+2. **Validate structure & compilation**: call §bar_check§ before saving.
+3. **Test data, Cookies & interactions in sandbox**: call §bar_run§ (with §mockFetch§, §curl§/§cookieHeader§, §useSavedState§, §actionID§ + §actionArg§ for switches/tabs).
+4. **Render Light & Dark PNG previews + Visual Audit**: call §bar_preview§ to render real headless screenshots (§lightPath§ / §darkPath§) and receive automatic contrast/overflow/layout audit warnings.
+5. **Save & hot-reload live**: call §bar_save§; the running app automatically restarts updated components and reflects §material§ and placements immediately.
+
+---
+
+## 1.5. Design Standard (Apple Native / Weather Bar Style)
+
+ScriptBoard's flagship visual aesthetic follows the built-in Weather Bar (§BuiltinWeatherBar§): **frameless glass layering**, **light-weight oversized numerals**, and **restraint with borders**.
+- **Frameless Glass Layering**: Set §material="glass"§ and let the OS translucency do the work. Prefer root §Column({ preferredWidth: 300, padding: [10, 16, 16, 16], gap: 14, safeArea: true })§ separated into 3–4 calm bands by 1px §$ui.divider()§ lines instead of nesting multiple bordered §$ui.card§ containers.
+- **26px Minimal Top Bar**: Use §$ui.topBar({ icon, title, subtitle, loading, externalURL, onRefresh })§ for a whisper-quiet 26px header with hoverable 26×26 icon buttons and a spinning refresh icon while §loading: true§.
+- **Oversized Light Hero Typography**: Use §$ui.hero({ value, unit, label, secondary, icon, metrics })§ (§fontSize: 44–52§, §fontWeight: 300§, §letterSpacing: -1.5..-2§, §fontFeatures: "tnum"§, §contentTransition: { numeric: true }§) paired with a crisp right-side wireframe icon or gradient Ring and one horizontal line of 12px §tnum§ micro-metrics.
+- **Range Bars & Stale-While-Error**: Use §$ui.rangeRow(...)§ for low/high distributions (latency bounds, temperatures, P50–P99) and §$ui.staleError(lastError)§ to surface refresh failures without wiping cached data.
+
+---
+
+## 2. XML Structure & §material§
 
 §§§xml
 <bar protocol-version="0"
@@ -24,7 +45,7 @@ A §.bar§ component is an XML bundle containing permissions, user-configurable 
      title="My Service"
      category="developer"
      icon="activity"
-     description="Monitors account status using persistent session cookies."
+     description="Monitors account status with session cookies and glass Bento cards."
      homepage="https://example.com"
      refresh="5m"
      material="glass">
@@ -40,7 +61,7 @@ A §.bar§ component is an XML bundle containing permissions, user-configurable 
     </input>
     <input name="limit" type="number" label="Limit" default="10" />
     <input name="autoRefresh" type="boolean" label="Auto refresh" default="true" />
-    <input name="apiToken" type="password" label="API Token" help="Optional bearer token" />
+    <input name="apiToken" type="password" label="API Token" help="Optional bearer token (redacted by MCP)" />
   </inputs>
   <script><![CDATA[
     export default {
@@ -55,179 +76,91 @@ A §.bar§ component is an XML bundle containing permissions, user-configurable 
 - §id§ (required): unique lowercase identifier (no §/§, §\§, or §..§).
 - §title§, §version§, §category§ (§weather§, §finance§, §system§, §developer§, §productivity§), §icon§ (Lucide name from §icon_catalog§), §description§, §homepage§.
 - §refresh§: Go duration (§30s§, §5m§, §1h§) or integer seconds; minimum §10s§, default §15m§.
+- §material§: floating window vibrancy backdrop — §"glass"§ (macOS Liquid Glass / translucent), §"popover"§ (default macOS popover translucency), §"hud"§ (dark HUD obsidian material), or §"solid"§ (opaque panel surface).
 - §<permissions>§:
   - §<network origin="https://api.example.com" />§ — exact scheme + host + effective port.
   - Wildcard subdomains are supported: §<network origin="https://*.example.com" />§ matches §app.example.com§ and §v2.api.example.com§ (not the bare apex §example.com§).
-  - Unpermitted URLs are blocked in §fetch()§ and §$metrix.cookies.*§.
 - §<inputs>§: §type§ can be §string§, §select§ (with §<option value="..." label="..."/>§), §number§, §boolean§, or §password§ (masked in UI and redacted in MCP read outputs by default).
 
 ---
 
-## 2. Script Lifecycle & §env§
+## 3. Script Lifecycle & §env§
 
-The script exports a default object with:
-- §async scheduled(env)§ (optional): called on startup, on §refresh§ interval, when user clicks Refresh, or when inputs/cookies update. Fetch data here, then call §$metrix.invalidate()§ to trigger a UI re-render.
+Export default object:
+- §async scheduled(env)§ (optional): runs on startup, §refresh§ timer, user refresh, and input/cookie updates. Call §$metrix.invalidate()§ when state updates.
 - §render(env)§ (required): synchronous function returning §{ tray, panel }§.
-- §env§ contains:
-  - §env.inputs§: typed map of resolved §<inputs>§ (§number§ parsed to number, §boolean§ parsed to bool, others strings).
+- §env§ fields:
+  - §env.inputs§: typed map of resolved §<inputs>§ (§number§ parsed to number, §boolean§ to bool, others string).
   - §env.lang§: §"zh"§ or §"en"§.
+  - §env.theme§: §"dark"§ or §"light"§.
+  - §env.vibrancy§: boolean indicating whether desktop translucent material is active.
   - §env.platform§: §"darwin"§, §"windows"§, or §"linux"§.
 
 ---
 
-## 3. Host Runtime APIs (Cookies, Storage, Web APIs, §$metrix§)
+## 4. Built-in UI Helpers: §h§ & §$ui§
 
-### Web APIs
-- §fetch(url, init)§, §Headers§ (including §resp.headers.getSetCookie()§), §Request§, §Response§, §URL§, §URLSearchParams§, §ReadableStream§, §AbortController§
-- Timers: §setTimeout§, §clearTimeout§, §setInterval§, §clearInterval§
-- Console: §console.log/info/warn/error§ and global §log(...)§ (captured in §logs§)
-- §localStorage§ (persisted per component): §getItem(k)§, §setItem(k, v)§, §removeItem(k)§, §clear()§, §key(i)§, §length§
-
-### Automatic Persistent §CookieJar§
-Every §bar.Instance§ has a dedicated §http.CookieJar§ persisted to §<dataDir>/bars/<id>/cookies.json§ (file mode §0600§):
-- Any §Set-Cookie§ response header from §fetch()§ is automatically captured, persisted across restarts, and automatically sent on matching subsequent requests (including redirects).
-- Users can also import browser cookies (§curl§ or §Cookie:§ string) via the Desktop UI ("Manage cookies") or via MCP (§bar_cookies_set§).
-- Note: standard §fetch§ redirect logic drops §Authorization§ / §Cookie§ headers on cross-origin redirects; §CookieJar§ supplies cookies belonging to the redirect target origin if permitted.
-
-### §$metrix§ Global Object
-- §$metrix.invalidate()§: re-runs §render(env)§ and updates the tray & open floating panel.
-- §$metrix.openURL(url)§: opens an §http://§ or §https://§ URL in the system browser.
-- §$metrix.copy(text)§: copies text to the system clipboard.
-- §$metrix.log(...args)§: appends to component logs.
-- §$metrix.storage§ (persisted to §<dataDir>/bars/<id>/storage.json§, limit 256 keys / 1 MiB):
-  - §get(key)§ -> string or §null§
-  - §set(key, val)§
-  - §delete(key)§
-  - §clear()§
-  - §keys()§ -> §string[]§
-- §$metrix.cookies§ (enforces §<permissions><network .../></permissions>§):
-  - §get(url)§ -> §{ [name]: value }§ matching §url§
-  - §header(url)§ -> §"name=value; ..."§
-  - §set(url, name, value, opts?)§ — §opts§ optional: §{ path, domain, secure, httpOnly, maxAge }§
-  - §delete(url, name)§
-  - §clear(url?)§ — omits §url§ to clear all cookies for this component, or passes §url§ to clear cookies matching that host
+§globalThis.h§ and §globalThis.$ui§ are pre-installed (you no longer need to define §h§ boilerplate; local §const h = ...§ still works cleanly if defined):
+- §h(type, props, ...children)§ — automatically flattens nested arrays and skips §null§/§undefined§/§false§.
+- §$ui.header({ icon, iconColor, iconBg, title, subtitle, badge, badgeTone, loading, onRefresh, actions })§ — standard header with tinted icon pill, status badge, and hoverable (optionally spinning) refresh button.
+- §$ui.topBar({ icon, iconColor, title, subtitle, badge, badgeTone, externalURL, loading, onRefresh, actions })§ — Weather-bar 26px borderless top bar with muted icon, title/subtitle, optional external link, and spinning refresh button.
+- §$ui.hero({ value, unit, label, secondary, icon, iconColor, iconSize, right, metrics, fontSize, fontWeight, letterSpacing, down })§ — Weather-bar light-weight 48px §tnum§ Hero with §contentTransition: { numeric: true }§, right icon/widget slot, and compact 12px §metrics§ strip.
+- §$ui.rangeBar({ min, max, low, high, color, toColor, height, trackColor })§ & §$ui.rangeRow({ label, icon, tag, low, high, lowLabel, highLabel, min, max, color, toColor, active })§ — 4px min–max distribution bars.
+- §$ui.staleError(message)§ — compact non-destructive top error bar preserving cached content.
+- §$ui.iconButton({ icon, svg, tooltip, onClick, spin, color })§ — 26×26 hover/pressed icon button with optional spin animation.
+- §$ui.card(props, ...children)§ — container defaulting to §background: "surfaceCard"§, 1px hairline §"border"§, §radius: 12§, §padding: 12§, §gap: 8§ (use sparingly on glass).
+- §$ui.section(title, ...children)§ — muted 11px tracked section header + content column.
+- §$ui.metric({ label, value, unit, delta, deltaTone, tone, mono, fontSize, fontWeight, down, sub })§ — tabular-numerals (§tnum§) KPI display with §contentTransition: { numeric: true }§ (auto-light 300 weight at §fontSize >= 36§).
+- §$ui.statGrid(items, cols = 2, { bordered })§ — frameless §surfaceSubtle§ multi-column Bento grid (pass §{ bordered: true }§ to restore card borders); each item supports §{ label, value, unit, sub, tone, dot, pulse, icon, mono }§.
+- §$ui.kv(label, value, { valueColor, badge, badgeTone, mono })§ — aligned key-value row with §tnum§ right value.
+- §$ui.badge(text, tone, props)§ & §$ui.dot(color, pulse, size)§
+- §$ui.empty({ icon, title, subtitle, actionLabel, onAction })§ & §$ui.skeleton(linesOrPreset)§ (supports §"hero"§ silhouette or numeric line count)
+- §$ui.footer(leftText, ...actions)§, §$ui.divider()§, §$ui.spacer()§
 
 ---
 
-## 4. Return Shape: §{ tray, panel }§
+## 5. Styling Tokens & Aesthetic Conventions
 
-### §tray§
-§§§js
-tray: {
-  title: "98%",                 // macOS menubar text (<= 12 chars)
-  icon: "lucide:activity",      // optional icon name
-  iconTemplate: true,           // monochrome template mode (default true)
-  tooltip: "Service Status",
-  error: lastError || "",
-  menu: [
-    { label: "Refresh", onClick: () => { void load(); } },
-    { separator: true },
-    { label: "Copy Token", onClick: () => $metrix.copy(token), disabled: !token }
-  ]
-}
-§§§
+### Semantic Theme Tokens (Adapt Automatically to Light / Dark / Glass)
+Always prefer semantic tokens over hardcoded §#000000§ / §#FFFFFF§:
+- **Surfaces**: §surface§, §surfaceCard§ (soft card on top of surface/glass), §surfaceElevated§ (raised active pill/card), §surfaceSubtle§, §surfaceHover§, §surfacePressed§
+- **Text**: §text§, §textMuted§, §textFaint§
+- **Semantic Accents & Soft Surfaces**: §accent§ / §accentSurface§, §success§ / §successSurface§, §warning§ / §warningSurface§, §danger§ / §dangerSurface§, §purple§ / §purpleSurface§, §cyan§ / §cyanSurface§, §neutral§ / §neutralSurface§
+- **Borders**: §border§, §borderStrong§, §transparent§
+- Custom CSS colors also supported: §#RGB§, §#RGBA§, §#RRGGBB§, §#RRGGBBAA§, §rgb(r,g,b)§, §rgba(r,g,b,a)§.
 
-### §panel§ VDOM Nodes (§{ type, props, children }§)
-Helper: §const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat().filter(c => c !== null && c !== undefined && c !== false) });§
-
-Supported §type§ values:
-- Layout containers: §Column§, §Row§, §Box§, §Scroll§
-  - Common props: §preferredWidth§ (root, e.g. 300), §preferredHeight§ (root), §width§, §height§, §minWidth§, §minHeight§, §maxWidth§, §maxHeight§, §fill§, §fillWidth§, §fillHeight§, §grow§, §shrink§, §basis§, §gap§, §padding§ (§n§ or §[v,h]§ or §[t,r,b,l]§), §radius§, §alignItems§ (§start§|§center§|§end§|§stretch§|§spaceBetween§), §justify§, §background§, §borderWidth§, §borderColor§, §absolute§, §top§, §right§, §bottom§, §left§, §leftPercent§, §widthPercent§, §topPercent§, §heightPercent§, §tooltip§, §onClick§, §hover: { background }§, §pressed: { background }§, §shortcuts: { "CmdOrCtrl+R": fn }§.
-- §Text§: §fontSize§, §fontWeight§, §letterSpacing§, §textColor§, §textAlign§ (§start§|§center§|§end§), §singleLine§, §wrap§.
-- §Icon§: §name§ (Lucide icon name) or §svg§ (inline SVG), §fontSize§ / §width§, §textColor§, §keyframes§.
-- §Button§: §onClick§, §variant§ (§"primary"§, §"danger"§, §"ghost"§), §background§, §textColor§, plus size props.
-- §Badge§: pill badge (§background§, §textColor§, §fontSize§).
-- §Progress§: progress bar (§value§, §max§ default 100, §height§, §radius§, §color§, §trackColor§, §fillWidth§).
-- §Chart§: §type§ (§"line"§ or §"area"§), §height§, §curve§ (§"monotone"§), §strokeWidth§, §xDomain§, §series: [{ name, color, fill: { from, to }, points: [{ x, y }] }]§.
-- §Spacer§, §Divider§.
-
-Theme color tokens: §surface§, §surfaceHover§, §surfacePressed§, §text§, §textMuted§, §accent§, §warning§, §danger§, §success§, §border§, §transparent§, or §"#RRGGBB"§.
+### Rich Styling Props
+- **Typography (§Text§)**: §fontSize§, §fontWeight§, §letterSpacing§, §font: "mono" | "sans"§, §fontFeatures: "tnum"§ (use §tnum§ for all numbers/timers/percentages!), §contentTransition: { numeric: true, down?: bool, morph?: bool }§, §textColor§, §textAlign§, §textShadow: { x, y, blur, color }§, §padding§, §singleLine§, §wrap§, §opacity§.
+- **Containers (§Column§, §Row§, §Box§, §Scroll§)**: §preferredWidth§ (typically 300), §preferredHeight§ (set if using §Scroll§ with §grow: 1, minHeight: 0§), §padding§ (§n§, §[v,h]§, §[t,r,b,l]§), §safeArea: true§ (adds OS notch/bar insets), §gap§, §radius§, §wrap§, §clip§, §opacity§, §borderWidth§ (scalar or §[t,r,b,l]§), §borderColor§, §borderStyle: "solid" | "dashed"§, §shadow: "sm" | "md" | { x, y, blur, spread, color }§, §gradient: { from, to, angle, stops, oklab }§, §hover§, §pressed§, §shortcuts: { "CmdOrCtrl+R": fn }§.
 
 ---
 
-## 5. MCP Development & Debugging Workflow
+## 6. Supported VDOM Components
 
-1. **Inspect existing components**: §bar_list§, §bar_get§, §icon_catalog§.
-2. **Validate before saving**: §bar_check§ validates XML, permissions, inputs, compiles ES module, and tests initial §render(env)§.
-3. **Sandbox test & simulate Cookies / clicks**: §bar_run§ executes §scheduled(env)§ + §render(env)§ in an isolated in-memory sandbox:
-   - Pass §mockFetch§ (including §setCookie§ headers) to test login/session/Set-Cookie flows without hitting real servers.
-   - Or pass §curl§ / §cookieHeader§ + §cookieURL§ / §cookies§ / §useSavedState: true§ and §allowNetwork: true§ to test real authenticated endpoints safely.
-   - Pass §actionID§ (discovered from the §actions§ output) to test clicking buttons or tray menu actions.
-4. **Save & hot-reload**: §bar_save§ saves the XML and configures §mode§ (§panel§|§menu§), §display§ (§cursor§|§internal§|§external§), docks, and §inputs§. The running app automatically restarts the component instance when its source changes.
-5. **Manage persisted cookies & storage**: §bar_cookies_set§ (accepts browser §curl§ command, §cookieHeader§ + §url§, or structured cookies), §bar_cookies_get§, §bar_cookies_clear§, §bar_storage_get§, §bar_storage_set§, §bar_storage_clear§.
-6. **Verify live output**: §tray_list§, §tray_set§, §menubar_show§.
+- **Layout**: §Column§, §Row§, §Box§, §Scroll§, §Spacer§, §Divider§.
+- **Text & Media**:
+  - §Text§, §Icon§ (§name§ from §icon_catalog§ or inline §svg§, optional spin §keyframes§), §Image§ (§src: "data:image/png;base64,..."§, §width§, §height§, §radius§, §fit: "contain" | "cover"§).
+- **Status & Visualization**:
+  - §Badge§: §tone§ (§"accent"§|§"success"§|§"warning"§|§"danger"§|§"purple"§|§"cyan"§|§"neutral"§) auto-selects matched soft background + high-contrast text, §dot: true§, optional §background§/§textColor§.
+  - §StatusDot§: §color§, §size§, §pulse: true§ (halo status indicator).
+  - §Progress§: §value§, §max§ (100), §height§, §style§ (§"solid"§ | §"gradient"§ | §"segmented"§ | §"matrix"§), §color§, §toColor§, §segments§, §animate§ (matrix shimmer).
+  - §Ring§: circular progress ring — §value§, §max§, §size§ (default 74), §thickness§, §style§ (§"solid"§ | §"gradient"§ | §"matrix"§), §color§, §toColor§, §label§, §sublabel§.
+  - §Chart§: §type§ (§"line"§ | §"area"§ | §"bar"§ | §"sparkline"§), §height§, §curve: "monotone"§, §strokeWidth§, §xDomain§, §referenceLine§ (§number§ or §{ value, color }§), §series: [{ name, color, fill: { from, to }, points: [{ x, y }] }]§.
+- **Interactive Controls** (testable via MCP §bar_run§ / §bar_preview§ with §actionID§ + §actionArg§):
+  - §Button§: §variant§ (§"primary"§ | §"danger"§ | §"soft"§ | §"ghost"§), §icon§, §disabled§, §onClick: () => ...§.
+  - §Segmented§: §value§, §options: [{ value, label }]§, §onChange: val => ...§.
+  - §Switch§: §checked§, §color§, §disabled§, §onChange: nextBool => ...§.
+  - §ListRow§: native clickable menu row — §icon§, §iconPlain: true§ (omit tinted box), §iconColor§, §iconBg§, §dot§, §pulse§, §title§, §subtitle§, §value§, §valueColor§, §badge§, §badgeTone§, §shortcut§, §chevron§, §active§, §disabled§, §onClick: () => ...§.
+  - §Input§: inline single-line filter/input — §value§, §placeholder§, §onChange: txt => ...§, §onSubmit: txt => ...§.
 
 ---
 
-## 6. Complete Cookie-Authenticated Example
+## 7. Host APIs: Cookies, Storage & §$metrix§
 
-§§§xml
-<bar id="cookie-session-demo" title="Account Quota" version="1.0.0" category="developer" icon="key" refresh="5m">
-  <permissions>
-    <network origin="https://api.example.com" />
-  </permissions>
-  <inputs>
-    <input name="baseUrl" type="string" label="Base URL" default="https://api.example.com" />
-  </inputs>
-  <script><![CDATA[
-    const h = (type, props, ...children) => ({
-      type, props: props || {}, children: children.flat().filter(c => c !== null && c !== undefined && c !== false)
-    });
-    let data = null;
-    let errMsg = "";
-
-    async function load(env) {
-      const base = (env && env.inputs && env.inputs.baseUrl) || "https://api.example.com";
-      const cookies = $metrix.cookies.get(base);
-      if (Object.keys(cookies).length === 0) {
-        errMsg = "No session cookie. Import via Manage Cookies or bar_cookies_set.";
-        $metrix.invalidate();
-        return;
-      }
-      try {
-        // CookieJar automatically sends persisted cookies and stores any Set-Cookie updates.
-        const resp = await fetch(base + "/v1/quota");
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
-        data = await resp.json();
-        errMsg = "";
-        $metrix.storage.set("lastQuota", JSON.stringify(data));
-      } catch (e) {
-        errMsg = String(e && e.message || e);
-        const cached = $metrix.storage.get("lastQuota");
-        if (cached && !data) {
-          try { data = JSON.parse(cached); } catch (_) {}
-        }
-      }
-      $metrix.invalidate();
-    }
-
-    export default {
-      async scheduled(env) { await load(env); },
-      render(env) {
-        const pct = data ? Math.round((data.used / Math.max(data.limit, 1)) * 100) : 0;
-        return {
-          tray: {
-            title: data ? pct + "%" : "--",
-            tooltip: data ? "Quota " + pct + "%" : (errMsg || "Loading"),
-            menu: [{ label: "Refresh", onClick: () => { void load(env); } }]
-          },
-          panel: h("Column", { preferredWidth: 300, padding: 14, gap: 10 },
-            h("Row", { alignItems: "center", gap: 8 },
-              h("Text", { fontSize: 14, fontWeight: 600 }, "Account Quota"),
-              h("Spacer"),
-              h("Badge", { background: errMsg ? "danger" : "accent" }, errMsg ? "Check Cookie" : "Live")
-            ),
-            errMsg ? h("Text", { fontSize: 12, textColor: "danger", wrap: true }, errMsg) : null,
-            h("Progress", { value: pct, max: 100, height: 8 }),
-            h("Row", { gap: 8 },
-              h("Button", { variant: "primary", onClick: () => { void load(env); } }, "Refresh"),
-              data ? h("Button", { onClick: () => $metrix.copy(String(pct) + "%") }, "Copy") : null
-            )
-          )
-        };
-      }
-    };
-  ]]></script>
-</bar>
-§§§
+- **Web APIs**: §fetch§, §Headers§ (§getSetCookie()§), §Request§, §Response§, §URL§, §URLSearchParams§, §ReadableStream§, §AbortController§, timers, §console§, persisted §localStorage§.
+- **Automatic Persistent §CookieJar§** (§<dataDir>/bars/<id>/cookies.json§, §0600§): captures §Set-Cookie§ headers automatically and attaches cookies on subsequent requests; manageable via UI ("Manage cookies") or MCP (§bar_cookies_set/get/clear§).
+- **§$metrix§**:
+  - §$metrix.invalidate()§, §$metrix.openURL(url)§, §$metrix.copy(text)§, §$metrix.log(...args)§
+  - §$metrix.storage§: §get(k)§, §set(k, v)§, §delete(k)§, §clear()§, §keys()§
+  - §$metrix.cookies§ (permission-checked): §get(url)§, §header(url)§, §set(url, name, value, opts?)§, §delete(url, name)§, §clear(url?)§
 `

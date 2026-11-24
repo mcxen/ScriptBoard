@@ -234,10 +234,15 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 		return nil, bar.Spec{}, err
 	}
 	id := sc.ID
+	themeName := "dark"
+	if curThemeMode() == themeLight {
+		themeName = "light"
+	}
 	inst, err := bar.NewInstance(sp, bar.Options{
 		Client:     a.client,
 		Inputs:     a.barInputs(id, sp),
 		Lang:       curLang(),
+		Theme:      themeName,
 		Offline:    a.set.Offline,
 		DataDir:    bar.ComponentDataDir(a.dataDir, id),
 		OnCopyText: func(s string) { a.post(func() { copyText(s) }) },
@@ -273,11 +278,15 @@ func (a *app) refreshBar(id string) {
 }
 
 func (a *app) invokeBarAction(id, actionID string) {
+	a.invokeBarActionWithArg(id, actionID, nil)
+}
+
+func (a *app) invokeBarActionWithArg(id, actionID string, arg any) {
 	if actionID == "" {
 		return
 	}
 	if inst, ok := a.barInsts[id]; ok {
-		inst.InvokeAction(actionID)
+		inst.InvokeActionWithArg(actionID, arg)
 	}
 }
 

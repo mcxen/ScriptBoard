@@ -238,12 +238,30 @@ func (a *app) markFlyoutClosed(id string) {
 	a.barFlyoutClosedAt[id] = time.Now()
 }
 
+func barMaterialVibrancy(material string) mygo.Vibrancy {
+	switch strings.ToLower(strings.TrimSpace(material)) {
+	case "glass":
+		return mygo.VibrancyGlass
+	case "hud":
+		return mygo.VibrancyHUD
+	case "solid":
+		return mygo.VibrancyNone
+	default:
+		return mygo.VibrancyPopover
+	}
+}
+
 func (a *app) openTrayPanelWindow(id string, t *mygo.Tray, pref string, panelW, panelH int, build func(c *ui.Context)) *mygo.Window {
+	return a.openTrayPanelWindowWithMaterial(id, t, pref, panelW, panelH, "popover", build)
+}
+
+func (a *app) openTrayPanelWindowWithMaterial(id string, t *mygo.Tray, pref string, panelW, panelH int, material string, build func(c *ui.Context)) *mygo.Window {
 	displays := connectedDisplays()
 	cursor := mygo.Screen.CursorScreenPoint()
 	trayBounds := t.Bounds()
 	_, useNativePopover, pos := resolveTargetDisplay(displays, pref, cursor, trayBounds, panelW, panelH)
 
+	vib := barMaterialVibrancy(material)
 	if useNativePopover {
 		f := mygo.NewFlyout(mygo.FlyoutOptions{
 			Tray:         t,
@@ -253,6 +271,7 @@ func (a *app) openTrayPanelWindow(id string, t *mygo.Tray, pref string, panelW, 
 			Height:       panelH,
 			Focusable:    true,
 			Popover:      true,
+			Vibrancy:     vib,
 			Shadow:       true,
 			CornerRadius: 14,
 			Content:      ui.View(build),
@@ -267,8 +286,8 @@ func (a *app) openTrayPanelWindow(id string, t *mygo.Tray, pref string, panelW, 
 	win = mygo.NewWindow(mygo.WindowOptions{
 		Panel:             true,
 		Frameless:         true,
-		Transparent:       true,
-		Vibrancy:          mygo.VibrancyPopover,
+		Transparent:       vib != mygo.VibrancyNone,
+		Vibrancy:          vib,
 		CornerRadius:      14,
 		Width:             panelW,
 		Height:            panelH,

@@ -140,7 +140,7 @@ func (a *app) tileRow(c *ui.Context, cols int, tiles []tileData) {
 		for _, t := range tiles {
 			card(c).Width(w).Padding(14).Gap(3).Children(func() {
 				ui.Text(c, t.name).FontSize(fsTiny).TextColor(p.muted)
-				ui.Text(c, t.value).FontSize(fsCount).FontWeight(650).TextColor(t.color).NoWrap()
+				ui.Text(c, t.value).FontSize(fsCount).FontWeight(500).LetterSpacing(-0.5).FontFeatures("tnum").TextColor(t.color).NoWrap()
 				ui.Text(c, t.sub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
 			})
 		}
@@ -159,7 +159,7 @@ func statStrip(c *ui.Context, stats []engine.Stat) {
 		for _, st := range stats {
 			ui.Column(c).Gap(1).Children(func() {
 				ui.Text(c, st.Label).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-				ui.Text(c, st.Value).FontSize(fsBody).FontWeight(650).NoWrap()
+				ui.Text(c, st.Value).FontSize(fsBody).FontWeight(600).FontFeatures("tnum").NoWrap()
 				if st.Sub != "" {
 					ui.Text(c, st.Sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
 				}

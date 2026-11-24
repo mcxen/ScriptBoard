@@ -194,11 +194,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			iconName = st.res.Icon
 		}
 	}
-	bigSize := clampF(30*s, 22, 44)
+	bigSize := clampF(34*s, 24, 46)
 	// What is left of the header for the title: the card less its padding, the
-	// badge, the two buttons, a tag when there is one, and the gaps.
+	// icon, the two buttons, a tag when there is one, and the gaps.
 	hasTag := ready && (size > 0 || (st.res.Chart != nil && st.res.Chart.Type == "gauge"))
-	titleW := w - 32*s - clampF(30*s, 24, 44) - 2*24 - 10*3 + 12
+	titleW := w - 32*s - 14 - 2*24 - 10*2
 	if hasTag {
 		titleW -= 56 + 10
 	}
@@ -315,16 +315,22 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				a.calendarHomeCard(c, size, s, b.Height)
 			} else {
 				ui.Spacer(c)
-				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
+				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).
+					FontSize(clampF(44*s, 28, 60)).
+					FontWeight(300).
+					LetterSpacing(-1.8).
+					FontFeatures("tnum").
+					ContentTransition(ui.ContentTransition{Numeric: true}).
+					NoWrap()
 			}
 		} else {
 			if showTitle {
-				ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-					iconBadge(c, iconName, accent, clampF(30*s, 24, 44))
+				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
+					ui.Icon(c, icon(iconName)).FontSize(14).TextColor(accent)
 					// The title gives way, with an ellipsis, so the tag and the buttons
 					// stay whole on a small card.
 					ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-						ui.Text(c, title).FontSize(fsCaption).TextColor(p.muted).NoWrap()
+						ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(p.muted).NoWrap()
 					})
 					chip()
 					a.refreshButton(c, sc, showActions)
@@ -349,7 +355,13 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					(!isCountdown(viewRes.Chart) || len(viewRes.Chart.Countdown) == 1) && !isBento(viewRes.Chart)) ||
 					isBentoHero(viewRes.Chart))
 				if st.res.Big != "" && !selfHero {
-					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).FontSize(bigSize).Bold().NoWrap()
+					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).
+						FontSize(bigSize).
+						FontWeight(300).
+						LetterSpacing(-1.5).
+						FontFeatures("tnum").
+						ContentTransition(ui.ContentTransition{Numeric: true}).
+						NoWrap()
 				}
 				hasSub := lay.Summary != "hide" && st.res.Sub != "" && !isBentoHero(viewRes.Chart)
 				switch {
@@ -492,7 +504,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		}
 	}
 	if el.Hovered() {
-		el.Border(1, accent.Alpha(0.55))
+		el.Border(1, accent.Alpha(0.42))
 	}
 	if el.Clicked() && !a.editing {
 		a.router.Push("/full/" + sc.ID)
@@ -502,41 +514,60 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 func (a *app) cardContextMenu(c *ui.Context, sc store.Script, meta engine.Meta, st *runState, viewRes engine.Result, compSpec engine.WidgetSpec, el ui.Element) {
 	p := pal(c)
 	open := a.cardMenuOpen(sc.ID)
+	curSize := classOf(a.boxOf(sc.ID))
+	item := func(label string, checked bool) bool {
+		if isMac() {
+			return btn(c, label).Clicked()
+		}
+		return popoverMenuRow(c, label, checked, false).Clicked()
+	}
+	divider := func() {
+		ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
+	}
 	ui.ContextMenuBase(c, el, open).Popup(func(panel ui.Element) {
-		panel.Padding(6).Gap(2).Background(p.card).Radius(10).BorderWidth(1).BorderColor(p.border).Children(func() {
+		pop := panel.MinWidth(172).Padding(6).Gap(2).Background(p.card).Radius(12).BorderWidth(1).BorderColor(p.border)
+		if !isMac() {
+			pop = pop.Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.24))
+		}
+		pop.Children(func() {
 			for i, name := range sizeNames() {
 				i := i
-				if btn(c, name).Clicked() {
+				if item(name, i == curSize) {
 					a.setSize(sc.ID, i)
 					*open = false
 				}
 			}
+			hasLegend := compSpec.Capabilities.Plot && viewRes.Chart != nil && len(viewRes.Chart.Series) > 1
+			hasBar := menuBarOffered(meta)
+			if hasLegend || hasBar {
+				divider()
+			}
 			// The legend of this card: only offered when the chart actually has multiple series.
-			if compSpec.Capabilities.Plot && viewRes.Chart != nil && len(viewRes.Chart.Series) > 1 {
+			if hasLegend {
 				legend := tr("隐藏图例")
 				if a.set.LegendHidden[sc.ID] {
 					legend = tr("显示图例")
 				}
-				if btn(c, legend).Clicked() {
+				if item(legend, false) {
 					a.toggleLegend(sc.ID)
 					*open = false
 				}
 			}
 			// The menu bar: offered when the script asks for it, and the user
 			// chooses whether the card is there.
-			if menuBarOffered(meta) {
-				bar := tr("在菜单栏显示")
+			if hasBar {
+				barLbl := tr("在菜单栏显示")
 				if a.menuBarOn(sc.ID) {
-					bar = tr("从菜单栏移除")
+					barLbl = tr("从菜单栏移除")
 				}
-				if btn(c, bar).Clicked() {
+				if item(barLbl, a.menuBarOn(sc.ID)) {
 					a.toggleMenuBar(sc.ID)
 					*open = false
 				}
 			}
 			// Runtime component swapping directly from the card's context menu.
 			if swaps := visualSwapOptions(st.res); len(swaps) > 1 {
-				ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
+				divider()
 				baseType := engine.ResultWidgetType(st.res)
 				for _, target := range swaps {
 					target := target
@@ -544,7 +575,7 @@ func (a *app) cardContextMenu(c *ui.Context, sc store.Script, meta engine.Meta, 
 						continue
 					}
 					label := tr("切换为 ") + widgetDisplayName(target)
-					if btn(c, label).Clicked() {
+					if item(label, false) {
 						if target == baseType {
 							a.setCardStyle(sc.ID, "")
 						} else {
@@ -640,8 +671,14 @@ func (a *app) removeFromHome(sc store.Script) {
 func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s float32) {
 	p := pal(c)
 	inst, _, err := a.ensureBarInstance(sc)
+	th := barThemeFor(c, barThemeAuto)
+	themeStr := "dark"
+	if !th.dark {
+		themeStr = "light"
+	}
 	var snap bar.Snapshot
 	if err == nil && inst != nil {
+		inst.SetAppearance(themeStr, false)
 		snap = inst.Snapshot()
 	} else if err != nil {
 		snap.Error = err.Error()
@@ -652,11 +689,12 @@ func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s 
 		if a.editing {
 			a.removeRow(c, sc)
 		}
-		th := barThemeFor(c, barThemeAuto)
 		ui.Scroll(c).Fill().Children(func() {
 			if snap.Panel != nil {
-				renderBarNode(c, snap.Panel, th, func(aid string) {
+				renderBarNodeInteractive(c, snap.Panel, th, false, func(aid string) {
 					a.invokeBarAction(sc.ID, aid)
+				}, func(aid string, arg any) {
+					a.invokeBarActionWithArg(sc.ID, aid, arg)
 				})
 			} else if snap.Error != "" {
 				ui.Column(c).Padding(16).Children(func() {

@@ -839,5 +839,10 @@ var enText = map[string]string{
 	"curl 命令中没有找到 Cookie（请确认包含 -b 或 -H 'Cookie: ...'）": "No cookies found in curl command (include -b or -H 'Cookie: ...')",
 	"curl 命令中的 URL 无效":                     "Invalid URL in curl command",
 	"你可以通过「盯盯板」（ScriptBoard）的 MCP 服务器，帮我开发本地插件、菜单栏 .bar 组件、数据源和图标。\n\n": "You can use ScriptBoard's MCP server to develop local plugins, menu bar .bar widgets, data sources, and icons.\n\n",
-	"\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide。写好后用 script_check / bar_check / bar_run 验证，再保存并配置显示位置。\n": "\nCall plugin_guide first for script cards, or bar_guide for .bar menu bar panels with Cookie sessions and persistent storage. Validate with script_check / bar_check / bar_run before saving and configuring display placement.\n",
+	"\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide。写好后用 script_check / bar_check / bar_run 验证，再保存并配置显示位置。\n": "\nCall plugin_guide first for script cards, or bar_guide and bar_templates for .bar menu bar panels with Cookie sessions and persistent storage. Validate with bar_check, bar_run, and bar_preview (for light/dark screenshots and visual audit) before saving and configuring display placement.\n",
+	"\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide 与 bar_templates。写好后用 bar_check、bar_run、bar_preview（查看明暗双主题效果图与视觉体检）验证，再保存并配置显示位置。\n": "\nCall plugin_guide first for script cards, or bar_guide and bar_templates for .bar menu bar panels with Cookie sessions and persistent storage. Validate with bar_check, bar_run, and bar_preview (for light/dark screenshots and visual audit) before saving and configuring display placement.\n",
+	"选择一个标杆样式一键创建，或粘贴/导入自定义 .bar XML。": "Pick a starter template or paste/import custom .bar XML.",
+	"参考样式模板": "Reference templates",
+	"使用模板":   "Use template",
+	"移动端在应用内「菜单管理」与首页卡片中显示": "On mobile, components appear in Menu bar and Home cards",
 }

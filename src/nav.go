@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/store"
@@ -183,8 +182,8 @@ func (a *app) renderBarDockSide(c *ui.Context, p palette, list []store.Script, r
 		Width(324).
 		FillHeight().
 		Background(p.sidebar).
-		BorderColor(p.border).
-		Padding(12)
+		BorderColor(p.hairline).
+		Padding(14, 12)
 	if right {
 		col = col.BorderWidth(0, 0, 0, 1)
 	} else {
@@ -216,8 +215,8 @@ func (a *app) renderBarDockBottom(c *ui.Context, p palette, list []store.Script)
 		Height(250).
 		Background(p.sidebar).
 		BorderWidth(1, 0, 0, 0).
-		BorderColor(p.border).
-		Padding(10, 16).
+		BorderColor(p.hairline).
+		Padding(12, 16).
 		Children(func() {
 			ui.Scroll(c).Fill().Children(func() {
 				ui.Row(c).Wrap().Gap(16).Children(func() {
@@ -242,11 +241,15 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 		a.sidebarRail(c, p, path)
 		return
 	}
-	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).Padding(18, 12).Gap(2).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(2, 8, 18, 8).Children(func() {
-			iconBadge(c, "chart-line", p.accent, 30)
+	borderCol := p.hairline
+	if isMac() {
+		borderCol = macBlack
+	}
+	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(12, 10, 14, 10).Gap(2).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(2, 8, 14, 8).Children(func() {
+			iconBadge(c, "chart-line", p.accent, 26)
 			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-				ui.Text(c, appName()).FontSize(fsBodyLarge).FontWeight(650)
+				ui.Text(c, appName()).FontSize(fsBodyLarge).FontWeight(650).LetterSpacing(-0.2)
 				ui.Text(c, tr("脚本小组件")).FontSize(fsTiny).TextColor(p.faint)
 			})
 			if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
@@ -255,32 +258,27 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 		})
 		if isMac() {
 			for _, n := range mainNavItems {
-				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-24) {
+				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-20) {
 					a.goTo(n.path)
 				}
 			}
 			ui.Spacer(c)
 			ui.Column(c).BorderWidth(1, 0, 0, 0).BorderColor(p.border).Padding(8, 0, 0, 0).Gap(2).Children(func() {
-				if macSidebarItem(c, tr(settingsNavItem.label), settingsNavItem.icon, settingsNavItem.active(path) || a.settingsWin != nil, sidebarWidth-24) {
+				if macSidebarItem(c, tr(settingsNavItem.label), settingsNavItem.icon, settingsNavItem.active(path) || a.settingsWin != nil, sidebarWidth-20) {
 					a.goTo(settingsNavItem.path)
 				}
 				a.sidebarStatus(c, p)
 			})
 			return
 		}
-		items := make([]display.ListItem, len(mainNavItems))
-		active := ""
-		for i, n := range mainNavItems {
-			items[i] = display.ListItem{Key: n.path, Label: tr(n.label), Icon: icon(n.icon)}
-			if n.active(path) {
-				active = n.path
+		for _, n := range mainNavItems {
+			n := n
+			if navRow(c, "nav:"+n.path, n.icon, tr(n.label), n.active(path), sidebarWidth-20, nil) {
+				a.goTo(n.path)
 			}
 		}
-		if key := display.List(c, display.ListProps{Items: items, Active: active}); key != "" {
-			a.goTo(key)
-		}
 		ui.Spacer(c)
-		ui.Column(c).BorderWidth(1, 0, 0, 0).BorderColor(p.border).Padding(8, 0, 0, 0).Gap(2).Children(func() {
+		ui.Column(c).BorderWidth(1, 0, 0, 0).BorderColor(p.hairline).Padding(8, 0, 0, 0).Gap(2).Children(func() {
 			a.sidebarSettingsButton(c, p, settingsNavItem.active(path))
 			a.sidebarStatus(c, p)
 		})
@@ -297,31 +295,11 @@ func (a *app) sidebarSettingsButton(c *ui.Context, p palette, active bool) {
 		shortcut = "Ctrl+,"
 	}
 	lit := active || a.settingsWin != nil
-	fg := p.muted
-	if lit {
-		fg = p.text
-	}
-	b := ui.ButtonBase(c).
-		Width(sidebarWidth-24).
-		Height(34).
-		Padding(0, 10).
-		Radius(8).
-		Gap(8).
-		AlignItems(ui.Center).
-		Tooltip(label + " (" + shortcut + ")")
-	if lit {
-		b = b.Background(p.rowSel)
-	} else if b.Hovered() {
-		b = b.Background(p.hover)
-	}
-	if b.Children(func() {
-		ui.Icon(c, icon(settingsNavItem.icon)).FontSize(16).TextColor(fg)
-		ui.Text(c, label).FontSize(fsBody).TextColor(fg)
-		ui.Spacer(c)
+	if navRow(c, "nav:settings", settingsNavItem.icon, label, lit, sidebarWidth-20, func() {
 		if !isAndroid() {
 			ui.Text(c, shortcut).FontSize(fsTiny).TextColor(p.faint)
 		}
-	}).Clicked() {
+	}) {
 		a.goTo(settingsNavItem.path)
 	}
 }
@@ -329,7 +307,11 @@ func (a *app) sidebarSettingsButton(c *ui.Context, p palette, active bool) {
 // sidebarRail is the sidebar folded: the toggle, one icon for each place, and
 // the network state as a dot, each with its name as a tooltip.
 func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
-	ui.Column(c).Width(railWidth).Background(p.sidebar).Padding(10, 6, 14, 6).Gap(6).AlignItems(ui.Center).Children(func() {
+	borderCol := p.hairline
+	if isMac() {
+		borderCol = macBlack
+	}
+	ui.Column(c).Width(railWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(10, 6, 14, 6).Gap(6).AlignItems(ui.Center).Children(func() {
 		if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
 			a.toggleSidebar()
 		}
@@ -339,7 +321,7 @@ func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
 			}
 		}
 		ui.Spacer(c)
-		ui.Box(c).Width(24).Height(1).Background(p.border)
+		ui.Box(c).Width(24).Height(1).Background(p.hairline)
 		if macOrRailItem(c, settingsNavItem, settingsNavItem.active(path) || a.settingsWin != nil, p) {
 			a.goTo(settingsNavItem.path)
 		}
@@ -347,7 +329,7 @@ func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
 		if a.set.Offline {
 			color = p.warn
 		}
-		ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
+		ui.Row(c).Size(6, 6).Radius(3).Background(color)
 	})
 }
 
@@ -360,8 +342,13 @@ func (a *app) toggleSidebar() {
 // sidebarToggle is the button that folds the sidebar: a square with the
 // panel's icon.
 func sidebarToggle(c *ui.Context, iconName, title string) ui.Element {
-	return ui.ButtonBase(c).Size(28, 28).Radius(6).AlignItems(ui.Center).Justify(ui.Center).Label(title).Tooltip(title).Children(func() {
-		ui.Icon(c, icon(iconName)).FontSize(16).TextColor(pal(c).muted)
+	p := pal(c)
+	b := ui.ButtonBase(c).Size(26, 26).Radius(7).AlignItems(ui.Center).Justify(ui.Center).Cursor(ui.CursorPointer).Label(title).Tooltip(title)
+	if b.Hovered() {
+		b = b.Background(p.hover)
+	}
+	return b.Children(func() {
+		ui.Icon(c, icon(iconName)).FontSize(15).TextColor(p.muted)
 	})
 }
 
@@ -369,13 +356,22 @@ func sidebarToggle(c *ui.Context, iconName, title string) ui.Element {
 func macOrRailItem(c *ui.Context, n navItem, chosen bool, p palette) bool {
 	label := tr(n.label)
 	el := ui.ButtonBase(c).Size(34, 34).Radius(8).AlignItems(ui.Center).Justify(ui.Center).Label(label).Tooltip(label)
+	fg := p.muted
+	if isMac() {
+		fg = p.text
+	} else if chosen {
+		fg = p.accent
+	}
 	if chosen {
 		el = el.Background(p.rowSel)
+		if !isMac() && !p.dark {
+			el = el.BorderWidth(1).BorderColor(p.hairline)
+		}
 	} else if el.Hovered() {
 		el = el.Background(p.hover)
 	}
 	return el.Children(func() {
-		ui.Icon(c, icon(n.icon)).FontSize(18).TextColor(p.text)
+		ui.Icon(c, icon(n.icon)).FontSize(17).TextColor(fg)
 	}).Clicked()
 }
 
@@ -385,16 +381,16 @@ func (a *app) sidebarStatus(c *ui.Context, p palette) {
 	if a.set.Offline {
 		status, color = tr("离线模式"), p.warn
 	}
-	ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 10).Children(func() {
-		ui.Row(c).Size(7, 7).Radius(3.5).Background(color)
-		ui.Text(c, status).FontSize(fsSmall).TextColor(p.muted)
+	ui.Row(c).AlignItems(ui.Center).Gap(7).Padding(6, 10).Children(func() {
+		ui.Row(c).Size(6, 6).Radius(3).Background(color)
+		ui.Text(c, status).FontSize(fsTiny).TextColor(p.muted)
 	})
 }
 
 // tabBar is the phone layout's navigation: an icon over a label for each
 // place.
 func (a *app) tabBar(c *ui.Context, p palette, path string) {
-	ui.Row(c).Background(p.card).Padding(8, 6, 10, 6).BorderWidth(1, 0, 0, 0).BorderColor(p.border).Children(func() {
+	ui.Row(c).Background(p.card).Padding(7, 6, 9, 6).BorderWidth(1, 0, 0, 0).BorderColor(p.hairline).Children(func() {
 		for _, n := range navItems {
 			n := n
 			active := n.active(path)
@@ -402,8 +398,12 @@ func (a *app) tabBar(c *ui.Context, p palette, path string) {
 			if active {
 				fg = p.accent
 			}
-			el := ui.Column(c).Grow(1).AlignItems(ui.Center).Gap(3).Padding(4, 0).Radius(radControl).Children(func() {
-				ui.Icon(c, icon(n.icon)).FontSize(21).TextColor(fg)
+			el := ui.Column(c).Grow(1).AlignItems(ui.Center).Gap(3).Padding(4, 0).Radius(radControl)
+			if active {
+				el = el.Background(p.accentSoft)
+			}
+			el.Children(func() {
+				ui.Icon(c, icon(n.icon)).FontSize(20).TextColor(fg)
 				t := ui.Text(c, tr(n.label)).FontSize(fsTiny).TextColor(fg)
 				if active {
 					t.Bold()

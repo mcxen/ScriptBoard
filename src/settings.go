@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/plugins"
@@ -15,7 +14,7 @@ import (
 const appVersion = "dev"
 
 // settingsNavWidth is the width of the left tab list in the settings UI.
-const settingsNavWidth = 176
+const settingsNavWidth = 184
 
 var unitNames = []string{"kg", "斤"}
 
@@ -118,12 +117,11 @@ func (a *app) settingsNav(c *ui.Context, p palette, activeKey string) {
 				}
 				return
 			}
-			items := make([]display.ListItem, len(settingsTabs))
-			for i, t := range settingsTabs {
-				items[i] = display.ListItem{Key: t.key, Label: tr(t.label), Icon: icon(t.icon)}
-			}
-			if key := display.List(c, display.ListProps{Items: items, Active: activeKey}); key != "" {
-				a.settingsTab = key
+			for _, t := range settingsTabs {
+				t := t
+				if navRow(c, "stab:"+t.key, t.icon, tr(t.label), t.key == activeKey, settingsNavWidth-20, nil) {
+					a.settingsTab = t.key
+				}
 			}
 		})
 }
@@ -140,23 +138,26 @@ func (a *app) settingsTabStrip(c *ui.Context, p palette, activeKey string) {
 				for _, t := range settingsTabs {
 					t := t
 					chosen := t.key == activeKey
-					fg := p.muted
+					fg, icFg := p.muted, p.muted
 					if chosen {
-						fg = p.text
+						fg, icFg = p.text, p.accent
 					}
 					el := ui.ButtonBase(c.Key("stab:"+t.key)).
-						Padding(6, 10).
+						Padding(6, 11).
 						Radius(radControl).
 						Gap(6).
 						AlignItems(ui.Center).
 						Shrink(0)
 					if chosen {
 						el = el.Background(p.rowSel)
+						if !p.dark {
+							el = el.BorderWidth(1).BorderColor(p.hairline)
+						}
 					} else if el.Hovered() {
 						el = el.Background(p.hover)
 					}
 					if el.Children(func() {
-						ui.Icon(c, icon(t.icon)).FontSize(14).TextColor(fg)
+						ui.Icon(c, icon(t.icon)).FontSize(14).TextColor(icFg)
 						txt := ui.Text(c, tr(t.label)).FontSize(fsSmall).TextColor(fg).NoWrap()
 						if chosen {
 							txt.FontWeight(600)
@@ -185,7 +186,7 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 	// Mac OS 9 keeps its classic category bar on every group.
 	groupTitled := isMac()
 	if !isMac() {
-		ui.Text(c, tr(tab.label)).FontSize(fsHeading).FontWeight(650).Padding(0, 4)
+		ui.Text(c, tr(tab.label)).FontSize(18).FontWeight(650).LetterSpacing(-0.3).Padding(0, 4)
 	}
 	singleTitle := func(name string) string {
 		if groupTitled {

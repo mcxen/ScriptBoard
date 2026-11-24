@@ -25,6 +25,8 @@ type Options struct {
 	Client     *http.Client
 	Inputs     map[string]string
 	Lang       string
+	Theme      string
+	Vibrancy   bool
 	Offline    bool
 	DataDir    string
 	Cookies    *CookieJar
@@ -52,6 +54,8 @@ type Instance struct {
 	mu           sync.RWMutex
 	inputs       map[string]string
 	lang         string
+	theme        string
+	vibrancy     bool
 	offline      bool
 	snap         Snapshot
 	asyncErr     string
@@ -64,6 +68,17 @@ type Instance struct {
 	// Loop-goroutine-only references kept rooted via AddLiveRoots.
 	defObj  moejs.Value
 	actions map[string]*moejs.Object
+}
+
+func normalizeBarTheme(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "light":
+		return "light"
+	case "dark":
+		return "dark"
+	default:
+		return "dark"
+	}
 }
 
 // NewInstance compiles spec.Script, boots its event loop + webapi + persistent
@@ -117,6 +132,8 @@ func NewInstance(spec Spec, opts Options) (*Instance, error) {
 		onCopyText: opts.OnCopyText,
 		inputs:     MergeInputs(spec, opts.Inputs),
 		lang:       opts.Lang,
+		theme:      normalizeBarTheme(opts.Theme),
+		vibrancy:   opts.Vibrancy,
 		offline:    opts.Offline,
 		actions:    map[string]*moejs.Object{},
 	}
@@ -595,7 +612,10 @@ func installBarGlobals(
 	if err := rt.SetGlobal("console", console); err != nil {
 		return err
 	}
-	return rt.SetGlobal("log", rt.Function("log", 0, logFn))
+	if err := rt.SetGlobal("log", rt.Function("log", 0, logFn)); err != nil {
+		return err
+	}
+	return installBarUIKit(rt)
 }
 
 func (inst *Instance) isOffline() bool {
@@ -677,9 +697,37 @@ func (inst *Instance) SetOffline(offline bool) {
 	inst.mu.Unlock()
 }
 
+// SetAppearance updates the effective host theme ("dark"|"light") and vibrancy
+// flag and re-renders the component if either changed.
+func (inst *Instance) SetAppearance(theme string, vibrancy bool) {
+	if inst == nil || inst.loop == nil {
+		return
+	}
+	theme = normalizeBarTheme(theme)
+	inst.mu.Lock()
+	if inst.closed || (inst.theme == theme && inst.vibrancy == vibrancy) {
+		inst.mu.Unlock()
+		return
+	}
+	inst.theme = theme
+	inst.vibrancy = vibrancy
+	inst.mu.Unlock()
+
+	inst.loop.RunOnLoop(func(r *moejs.Runtime) {
+		inst.renderNow(r)
+		inst.notifyUpdate()
+	})
+}
+
 // InvokeAction executes a callback captured from the latest render(env)
 // (such as button onClick, shortcut, or tray menu item).
 func (inst *Instance) InvokeAction(actionID string) {
+	inst.InvokeActionWithArg(actionID, nil)
+}
+
+// InvokeActionWithArg executes an action callback (onClick, onChange, onSubmit)
+// passing arg when non-nil.
+func (inst *Instance) InvokeActionWithArg(actionID string, arg any) {
 	if actionID == "" {
 		return
 	}
@@ -696,7 +744,13 @@ func (inst *Instance) InvokeAction(actionID string) {
 		if fn == nil {
 			return
 		}
-		if _, err := r.CallFunction(engine.ObjectValue(fn), moejs.Undefined()); err != nil {
+		var callArgs []moejs.Value
+		if arg != nil {
+			if jsArg, err := r.FromGo(arg); err == nil {
+				callArgs = []moejs.Value{jsArg}
+			}
+		}
+		if _, err := r.CallFunction(engine.ObjectValue(fn), moejs.Undefined(), callArgs...); err != nil {
 			inst.recordError(err.Error())
 		} else {
 			inst.renderNow(r)
@@ -708,6 +762,12 @@ func (inst *Instance) InvokeAction(actionID string) {
 // InvokeActionSync runs actionID on the loop, waits for a returned Promise (if
 // any) up to timeout, re-renders, and returns the updated Snapshot.
 func (inst *Instance) InvokeActionSync(actionID string, timeout time.Duration) (Snapshot, bool) {
+	return inst.InvokeActionSyncWithArg(actionID, nil, timeout)
+}
+
+// InvokeActionSyncWithArg runs actionID with an optional argument on the loop,
+// waits for any returned Promise up to timeout, re-renders, and returns Snapshot.
+func (inst *Instance) InvokeActionSyncWithArg(actionID string, arg any, timeout time.Duration) (Snapshot, bool) {
 	if actionID == "" {
 		return Snapshot{}, false
 	}
@@ -739,7 +799,13 @@ func (inst *Instance) InvokeActionSync(actionID string, timeout time.Duration) (
 			finish(Snapshot{}, false)
 			return
 		}
-		ret, err := r.CallFunction(engine.ObjectValue(fn), moejs.Undefined())
+		var callArgs []moejs.Value
+		if arg != nil {
+			if jsArg, err := r.FromGo(arg); err == nil {
+				callArgs = []moejs.Value{jsArg}
+			}
+		}
+		ret, err := r.CallFunction(engine.ObjectValue(fn), moejs.Undefined(), callArgs...)
 		if err != nil {
 			inst.recordError(err.Error())
 			finish(inst.Snapshot(), true)
@@ -884,6 +950,10 @@ func (inst *Instance) finishScheduled() {
 }
 
 func envJSONValue(r *moejs.Runtime, spec Spec, inputs map[string]string, lang string) (moejs.Value, error) {
+	return envJSONValueWithAppearance(r, spec, inputs, lang, "dark", false)
+}
+
+func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]string, lang, theme string, vibrancy bool) (moejs.Value, error) {
 	if lang == "" {
 		lang = "en"
 	}
@@ -910,6 +980,8 @@ func envJSONValue(r *moejs.Runtime, spec Spec, inputs map[string]string, lang st
 	b, err := json.Marshal(map[string]any{
 		"inputs":   typedInputs,
 		"lang":     lang,
+		"theme":    normalizeBarTheme(theme),
+		"vibrancy": vibrancy,
 		"platform": runtime.GOOS,
 	})
 	if err != nil {
@@ -925,8 +997,10 @@ func (inst *Instance) envValue(r *moejs.Runtime) (moejs.Value, error) {
 		rawInputs[k] = v
 	}
 	lang := inst.lang
+	theme := inst.theme
+	vibrancy := inst.vibrancy
 	inst.mu.RUnlock()
-	return envJSONValue(r, inst.spec, rawInputs, lang)
+	return envJSONValueWithAppearance(r, inst.spec, rawInputs, lang, theme, vibrancy)
 }
 
 func (inst *Instance) renderNow(r *moejs.Runtime) {

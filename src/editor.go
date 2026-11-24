@@ -376,8 +376,10 @@ func (a *app) editor(c *ui.Context, compact bool) {
 			} else if err != nil {
 				snap.Error = err.Error()
 			}
-			renderBarPanel(c, snap, barThemeFor(c, barThemeAuto), 300, func(aid string) {
+			renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
 				a.invokeBarAction(a.draft.ID, aid)
+			}, func(aid string, arg any) {
+				a.invokeBarActionWithArg(a.draft.ID, aid, arg)
 			})
 			return
 		}
@@ -412,7 +414,7 @@ func (a *app) editor(c *ui.Context, compact bool) {
 				if !selfHero && (st.res.Big != "" || (!hasPB && isPlotChart(st.res.Chart))) {
 					ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 						if st.res.Big != "" {
-							ui.Text(c, st.res.Big).FontSize(30).Bold()
+							ui.Text(c, st.res.Big).FontSize(36).FontWeight(300).LetterSpacing(-1.5).FontFeatures("tnum").NoWrap()
 						}
 						if !hasPB && isPlotChart(st.res.Chart) {
 							if cs := summarize(st.res.Chart); cs.ok {
@@ -468,31 +470,60 @@ func (a *app) editor(c *ui.Context, compact bool) {
 		a.phoneEditor(c, preview)
 		return
 	}
-	if !wide {
-		ui.Column(c).Grow(1).Padding(16).Gap(16).Children(func() {
-			card(c).Padding(14).Gap(10).Children(scripts)
-			ui.Row(c).Grow(1).AlignItems(ui.Stretch).Gap(16).Children(func() {
-				ui.Scroll(c).Grow(1).Children(func() {
-					card(c).Padding(20).Gap(gapItem).Children(form)
-				})
-				ui.Scroll(c).Width(330).Children(func() {
-					ui.Column(c).Gap(16).Children(func() {
-						card(c).Padding(18).Gap(10).Children(preview)
+	previewCard := func() {
+		if a.draft.IsBar() {
+			preview()
+			return
+		}
+		card(c).FillWidth().Padding(16).Gap(10).Children(preview)
+	}
+	if isMac() {
+		if !wide {
+			ui.Column(c).Grow(1).Padding(16).Gap(16).Children(func() {
+				card(c).Padding(14).Gap(10).Children(scripts)
+				ui.Row(c).Grow(1).AlignItems(ui.Stretch).Gap(16).Children(func() {
+					ui.Scroll(c).Grow(1).Children(func() {
+						card(c).Padding(20).Gap(gapItem).Children(form)
 					})
+					ui.Scroll(c).Width(330).Children(func() {
+						ui.Column(c).Gap(16).Children(previewCard)
+					})
+				})
+			})
+			return
+		}
+		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(16).Gap(16).Children(func() {
+			card(c).Width(248).Padding(14).Gap(10).Children(scripts)
+			ui.Scroll(c).Grow(1).Children(func() {
+				card(c).Padding(20).Gap(gapItem).Children(form)
+			})
+			ui.Scroll(c).Width(372).Children(func() {
+				ui.Column(c).Gap(16).Children(previewCard)
+			})
+		})
+		return
+	}
+	if !wide {
+		ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).FillWidth().Background(p.sidebar).BorderWidth(0, 0, 1, 0).BorderColor(p.hairline).Padding(12, 16).Gap(8).Children(scripts)
+			ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+				ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+					ui.Column(c).FillWidth().Padding(18, 20).Gap(gapItem).Children(form)
+				})
+				ui.Scroll(c).Width(340).FillHeight().Background(p.sidebar).BorderWidth(0, 0, 0, 1).BorderColor(p.hairline).Children(func() {
+					ui.Column(c).FillWidth().Padding(16).Gap(12).Children(previewCard)
 				})
 			})
 		})
 		return
 	}
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(16).Gap(16).Children(func() {
-		card(c).Width(248).Padding(14).Gap(10).Children(scripts)
-		ui.Scroll(c).Grow(1).Children(func() {
-			card(c).Padding(20).Gap(gapItem).Children(form)
+	ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(244).FillHeight().Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(p.hairline).Padding(14, 12).Gap(10).Children(scripts)
+		ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+			ui.Column(c).FillWidth().Padding(20, 24).Gap(gapItem).Children(form)
 		})
-		ui.Scroll(c).Width(372).Children(func() {
-			ui.Column(c).Gap(16).Children(func() {
-				card(c).Padding(18).Gap(10).Children(preview)
-			})
+		ui.Scroll(c).Width(368).FillHeight().Background(p.sidebar).BorderWidth(0, 0, 0, 1).BorderColor(p.hairline).Children(func() {
+			ui.Column(c).FillWidth().Padding(18, 16).Gap(12).Children(previewCard)
 		})
 	})
 }

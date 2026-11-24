@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/store"
 )
 
@@ -216,17 +217,46 @@ func TestComponentManagerFiltering(t *testing.T) {
 	click(t, tt, "全部")
 }
 
-func countRGBInBounds(img image.Image, box image.Rectangle, want ui.Color) int {
+func blendOverColor(bg, fg ui.Color) ui.Color {
+	a := float64(fg.A) / 255.0
+	return ui.RGB(
+		uint8(float64(bg.R)*(1-a)+float64(fg.R)*a+0.5),
+		uint8(float64(bg.G)*(1-a)+float64(fg.G)*a+0.5),
+		uint8(float64(bg.B)*(1-a)+float64(fg.B)*a+0.5),
+	)
+}
+
+func colorNear(c color.NRGBA, want ui.Color, tol int) bool {
+	dr := int(c.R) - int(want.R)
+	dg := int(c.G) - int(want.G)
+	db := int(c.B) - int(want.B)
+	if dr < 0 {
+		dr = -dr
+	}
+	if dg < 0 {
+		dg = -dg
+	}
+	if db < 0 {
+		db = -db
+	}
+	return dr <= tol && dg <= tol && db <= tol
+}
+
+func countRGBNearInBounds(img image.Image, box image.Rectangle, want ui.Color, tol int) int {
 	n := 0
 	for y := box.Min.Y; y < box.Max.Y; y++ {
 		for x := box.Min.X; x < box.Max.X; x++ {
 			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if c.R == want.R && c.G == want.G && c.B == want.B {
+			if colorNear(c, want, tol) {
 				n++
 			}
 		}
 	}
 	return n
+}
+
+func countRGBInBounds(img image.Image, box image.Rectangle, want ui.Color) int {
+	return countRGBNearInBounds(img, box, want, 0)
 }
 
 func boundingBoxOfRGB(img image.Image, search image.Rectangle, want ui.Color) (image.Rectangle, bool) {
@@ -333,18 +363,43 @@ export function render() {
 	requireText(t, tt, "复制美元汇率")
 	requireText(t, tt, "打开设置")
 
+	lightTk := brandDefault.Tokens(false)
+	darkTk := brandDefault.Tokens(true)
+	lightCard := lightTk.BgContainer
+	darkCard := darkTk.BgContainer
+	lightHdr := blendOverColor(lightCard, lightTk.FillTertiary)
+	darkHdr := blendOverColor(darkCard, darkTk.FillTertiary)
+
 	imgLight := tt.Image()
 	b := imgLight.Bounds()
+	sy := float32(b.Dy()) / 860
+	tableHdrBand := func(box image.Rectangle) image.Rectangle {
+		info, ok := tt.Access("币种")
+		if !ok {
+			t.Fatalf("missing table header text 币种")
+		}
+		band := image.Rect(
+			box.Min.X+12,
+			int(info.Bounds.Y*sy)-4,
+			box.Max.X-12,
+			int((info.Bounds.Y+info.Bounds.H)*sy)+4,
+		).Intersect(box)
+		if band.Empty() {
+			t.Fatalf("empty table header band inside cardBox=%v (info=%v)", box, info.Bounds)
+		}
+		return band
+	}
 	// Search inside preview stage area (right of left sidebar & component list).
 	stageArea := image.Rect(b.Min.X+b.Dx()/3, b.Min.Y, b.Max.X, b.Max.Y)
-	cardBox, ok := boundingBoxOfRGB(imgLight, stageArea, ui.Hex("#FFFFFF"))
+	cardBox, ok := boundingBoxOfRGB(imgLight, stageArea, lightCard)
 	if !ok {
-		t.Fatalf("could not locate white preview card (#FFFFFF) in dark window")
+		t.Fatalf("could not locate white preview card (%v) in dark window", lightCard)
 	}
-	lightHdrN := countRGBInBounds(imgLight, cardBox, ui.Hex("#EDEFF4"))
-	darkHdrN := countRGBInBounds(imgLight, cardBox, ui.Hex("#232731"))
+	lightHdrBand := tableHdrBand(cardBox)
+	lightHdrN := countRGBNearInBounds(imgLight, lightHdrBand, lightHdr, 4)
+	darkHdrN := countRGBNearInBounds(imgLight, lightHdrBand, darkHdr, 4)
 	if lightHdrN < 100 || darkHdrN != 0 {
-		t.Fatalf("light preview inside dark window used wrong table header theme: lightHdrPixels=%d darkHdrPixels=%d (cardBox=%v)", lightHdrN, darkHdrN, cardBox)
+		t.Fatalf("light preview inside dark window used wrong table header theme: lightHdrPixels=%d darkHdrPixels=%d (band=%v)", lightHdrN, darkHdrN, lightHdrBand)
 	}
 
 	// Case B: Light app window + Dark menu card preview override.
@@ -354,14 +409,15 @@ export function render() {
 	settle(tt)
 
 	imgDark := tt.Image()
-	darkCardBox, ok := boundingBoxOfRGB(imgDark, stageArea, ui.Hex("#1C1F26"))
+	darkCardBox, ok := boundingBoxOfRGB(imgDark, stageArea, darkCard)
 	if !ok {
-		t.Fatalf("could not locate dark preview card (#1C1F26) in light window")
+		t.Fatalf("could not locate dark preview card (%v) in light window", darkCard)
 	}
-	darkCardDarkHdrN := countRGBInBounds(imgDark, darkCardBox, ui.Hex("#232731"))
-	darkCardLightHdrN := countRGBInBounds(imgDark, darkCardBox, ui.Hex("#EDEFF4"))
+	darkHdrBand := tableHdrBand(darkCardBox)
+	darkCardDarkHdrN := countRGBNearInBounds(imgDark, darkHdrBand, darkHdr, 4)
+	darkCardLightHdrN := countRGBNearInBounds(imgDark, darkHdrBand, lightHdr, 4)
 	if darkCardDarkHdrN < 100 || darkCardLightHdrN != 0 {
-		t.Fatalf("dark preview inside light window used wrong table header theme: darkHdrPixels=%d lightHdrPixels=%d (darkCardBox=%v)", darkCardDarkHdrN, darkCardLightHdrN, darkCardBox)
+		t.Fatalf("dark preview inside light window used wrong table header theme: darkHdrPixels=%d lightHdrPixels=%d (band=%v)", darkCardDarkHdrN, darkCardLightHdrN, darkHdrBand)
 	}
 }
 
@@ -468,4 +524,61 @@ func TestBarCookiesUIImportClearAndBadgeProgressEnglish(t *testing.T) {
 	requireText(t, tt, "No cookies saved")
 	requireText(t, tt, "Empty")
 	onlyEnglish(t, tt, "bar cookies cleared")
+}
+
+func TestBarTemplatesGalleryAndInteractivePreview(t *testing.T) {
+	a := newTestApp(t)
+	tt := ui.NewTester(a.view, 1280, 1400)
+	a.router.Push("/bar")
+	a.barImportOpen = true
+	settle(tt)
+
+	requireText(t, tt, "参考样式模板")
+	requireText(t, tt, "Apple Native Glass")
+	requireText(t, tt, "Bento Glass Dashboard")
+	requireText(t, tt, "Matrix LED Minimal")
+
+	setLang("en")
+	settle(tt)
+	requireText(t, tt, "Reference templates")
+	requireText(t, tt, "Use template")
+	onlyEnglish(t, tt, "bar template gallery")
+	setLang("zh")
+	settle(tt)
+
+	// Clicking first "使用模板" creates Apple Native Glass (id: native-glass) and opens its studio view.
+	click(t, tt, "使用模板")
+	if inst, ok := a.barInsts["native-glass"]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "Tokyo-01")
+	requireText(t, tt, "Global Edge")
+	requireText(t, tt, "24")
+
+	// Also open Bento Glass Dashboard and verify clicking "24H" updates P95 metric live.
+	bentoTpl, ok := bar.TemplateByID("bento-glass")
+	if !ok {
+		t.Fatal("missing bento-glass template")
+	}
+	sc, err := a.importBarSource(bentoTpl.Source)
+	if err != nil {
+		t.Fatalf("import bento-glass: %v", err)
+	}
+	a.router.Push("/bar/" + sc.ID)
+	settle(tt)
+	if inst, ok := a.barInsts["bento-glass"]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "Tokyo-Edge")
+	requireText(t, tt, "24")
+
+	// Clicking "24H" on the Segmented control updates P95 metric live inside the preview!
+	click(t, tt, "24H")
+	if inst, ok := a.barInsts["bento-glass"]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "31")
 }

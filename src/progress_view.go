@@ -122,7 +122,7 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
 						if !pb.HideLabel {
-							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).NoWrap()
+							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap()
 							if isNeon && p.dark {
 								lbl.TextColor(from)
 							}

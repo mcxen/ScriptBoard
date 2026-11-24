@@ -39,12 +39,14 @@ type MenuItemSpec struct {
 
 // Node is one virtual DOM node produced by h(type, props, ...children).
 type Node struct {
-	Type      string            `json:"type"`
-	Props     map[string]any    `json:"props,omitempty"`
-	Text      string            `json:"text,omitempty"`
-	Children  []*Node           `json:"children,omitempty"`
-	OnClickID string            `json:"onClickID,omitempty"`
-	Shortcuts map[string]string `json:"shortcuts,omitempty"`
+	Type       string            `json:"type"`
+	Props      map[string]any    `json:"props,omitempty"`
+	Text       string            `json:"text,omitempty"`
+	Children   []*Node           `json:"children,omitempty"`
+	OnClickID  string            `json:"onClickID,omitempty"`
+	OnChangeID string            `json:"onChangeID,omitempty"`
+	OnSubmitID string            `json:"onSubmitID,omitempty"`
+	Shortcuts  map[string]string `json:"shortcuts,omitempty"`
 }
 
 type actionCollector struct {
@@ -157,6 +159,14 @@ func parseNode(raw any, ac *actionCollector) *Node {
 				case "onClick":
 					if aid, ok := ac.register(pv); ok {
 						n.OnClickID = aid
+					}
+				case "onChange":
+					if aid, ok := ac.register(pv); ok {
+						n.OnChangeID = aid
+					}
+				case "onSubmit":
+					if aid, ok := ac.register(pv); ok {
+						n.OnSubmitID = aid
 					}
 				case "shortcuts":
 					if sm, ok := pv.(map[string]any); ok {
@@ -314,12 +324,37 @@ func CollectActions(snap Snapshot) []ActionInfo {
 		if n == nil {
 			return
 		}
+		tip, _ := n.Props["tooltip"].(string)
+		label := n.Text
+		if label == "" {
+			for _, k := range []string{"title", "label", "placeholder"} {
+				if s, ok := n.Props[k].(string); ok && s != "" {
+					label = s
+					break
+				}
+			}
+		}
 		if n.OnClickID != "" {
-			tip, _ := n.Props["tooltip"].(string)
 			out = append(out, ActionInfo{
 				ID:      n.OnClickID,
 				Type:    n.Type,
-				Text:    n.Text,
+				Text:    label,
+				Tooltip: tip,
+			})
+		}
+		if n.OnChangeID != "" {
+			out = append(out, ActionInfo{
+				ID:      n.OnChangeID,
+				Type:    n.Type + ".onChange",
+				Text:    label,
+				Tooltip: tip,
+			})
+		}
+		if n.OnSubmitID != "" {
+			out = append(out, ActionInfo{
+				ID:      n.OnSubmitID,
+				Type:    n.Type + ".onSubmit",
+				Text:    label,
 				Tooltip: tip,
 			})
 		}
@@ -328,5 +363,55 @@ func CollectActions(snap Snapshot) []ActionInfo {
 		}
 	}
 	walk(snap.Panel)
+	return out
+}
+
+// CollectTexts walks a VDOM subtree and returns visible text strings from text
+// nodes and interactive widgets (ListRow, Ring, Segmented) for diagnostics and
+// MCP summaries.
+func CollectTexts(n *Node) []string {
+	if n == nil {
+		return nil
+	}
+	var out []string
+	if t := strings.TrimSpace(n.Text); t != "" {
+		out = append(out, t)
+	}
+	switch n.Type {
+	case "ListRow":
+		for _, k := range []string{"title", "subtitle", "badge", "value"} {
+			if s := strings.TrimSpace(asString(n.Props[k])); s != "" {
+				out = append(out, s)
+			}
+		}
+	case "Ring":
+		for _, k := range []string{"label", "sublabel"} {
+			if s := strings.TrimSpace(asString(n.Props[k])); s != "" {
+				out = append(out, s)
+			}
+		}
+	case "Segmented":
+		if opts, ok := n.Props["options"].([]any); ok {
+			for _, item := range opts {
+				switch o := item.(type) {
+				case string:
+					if s := strings.TrimSpace(o); s != "" {
+						out = append(out, s)
+					}
+				case map[string]any:
+					lbl := strings.TrimSpace(asString(o["label"]))
+					if lbl == "" {
+						lbl = strings.TrimSpace(asString(o["value"]))
+					}
+					if lbl != "" {
+						out = append(out, lbl)
+					}
+				}
+			}
+		}
+	}
+	for _, ch := range n.Children {
+		out = append(out, CollectTexts(ch)...)
+	}
 	return out
 }

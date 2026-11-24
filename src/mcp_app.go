@@ -158,7 +158,7 @@ func mcpPrompt(m store.MCPSettings) string {
 	for _, t := range mcpsvc.AllTools() {
 		fmt.Fprintf(&b, "- %s：%s\n", t.Name, t.Description)
 	}
-	b.WriteString(tr("\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide。写好后用 script_check / bar_check / bar_run 验证，再保存并配置显示位置。\n"))
+	b.WriteString(tr("\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide 与 bar_templates。写好后用 bar_check、bar_run、bar_preview（查看明暗双主题效果图与视觉体检）验证，再保存并配置显示位置。\n"))
 	if m.ReadOnly {
 		b.WriteString(tr("\n这个服务器是只读的：只有读取类的工具可用。\n"))
 	}
@@ -475,15 +475,5 @@ func (a *app) reloadFromMCP() {
 }
 
 func collectBarNodeTexts(n *bar.Node) []string {
-	if n == nil {
-		return nil
-	}
-	var out []string
-	if t := strings.TrimSpace(n.Text); t != "" {
-		out = append(out, t)
-	}
-	for _, ch := range n.Children {
-		out = append(out, collectBarNodeTexts(ch)...)
-	}
-	return out
+	return bar.CollectTexts(n)
 }

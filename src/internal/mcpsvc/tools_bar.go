@@ -7,12 +7,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/barui"
 	"scriptboard/src/internal/store"
 )
 
@@ -62,12 +64,13 @@ func barTools() []Tool {
 		{
 			Name: "bar_run",
 			Description: "Execute a .bar component (by source or saved id) in an isolated sandbox with optional " +
-				"mockFetch (supporting Set-Cookie), seed cookies/curl, storage, inputs, allowNetwork, and actionID click testing. " +
+				"mockFetch (supporting Set-Cookie), seed cookies/curl, storage, inputs, allowNetwork, theme, actionID and actionArg testing. " +
 				"Never mutates on-disk cookies or storage.",
 			InputSchema: obj(map[string]any{
 				"source":        str(".bar XML source (optional if id is provided)"),
 				"id":            str("saved .bar component id (optional if source is provided)"),
 				"lang":          str("zh or en (default zh)"),
+				"theme":         str("dark (default) or light"),
 				"inputs":        map[string]any{"type": "object", "description": "optional input values map"},
 				"cookies":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}, "description": "optional seed cookies [{name, value, domain, path, secure, httpOnly, expires}]"},
 				"cookieHeader":  str("optional Cookie header string (requires cookieURL)"),
@@ -79,7 +82,48 @@ func barTools() []Tool {
 				"allowNetwork":  boolProp("allow real network calls for unmocked URLs (default false)"),
 				"waitScheduled": boolProp("wait for async scheduled(env) to settle (default true)"),
 				"timeoutMs":     intProp("execution timeout in ms (500..15000, default 5000)"),
-				"actionID":      str("optional panel/menu action ID to click after initial render"),
+				"actionID":      str("optional panel/menu action ID (onClick/onChange/onSubmit) to invoke after initial render"),
+				"actionArg":     map[string]any{"description": "optional JSON value passed as argument to onChange/onSubmit actionID (string, boolean, or number)"},
+			}),
+		},
+		{
+			Name:        "bar_templates",
+			Description: "List curated reference style templates for .bar menubar components (native-glass, bento-glass, quota-ring, utility-switchboard, ops-feed, matrix-minimal) with design notes.",
+			InputSchema: obj(map[string]any{}),
+		},
+		{
+			Name:        "bar_template_get",
+			Description: "Read full XML source and design notes for one reference .bar style template by id.",
+			InputSchema: obj(map[string]any{
+				"id": str("template id from bar_templates"),
+			}, "id"),
+		},
+		{
+			Name: "bar_preview",
+			Description: "Render a .bar component (by source or saved id) in an isolated headless sandbox to Light and/or Dark PNG screenshots " +
+				"plus an automatic visual/contrast/layout audit report.",
+			InputSchema: obj(map[string]any{
+				"source":        str(".bar XML source (optional if id is provided)"),
+				"id":            str("saved .bar component id (optional if source is provided)"),
+				"lang":          str("zh or en (default zh)"),
+				"theme":         str("both (default), light, or dark"),
+				"scale":         intProp("render scale factor 1..3 (default 2)"),
+				"width":         intProp("optional width override in DIP (220..640)"),
+				"height":        intProp("optional height override in DIP (120..960)"),
+				"outputDir":     str("optional directory where PNG files are written (defaults to temp dir)"),
+				"inputs":        map[string]any{"type": "object", "description": "optional input values map"},
+				"cookies":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}, "description": "optional seed cookies"},
+				"cookieHeader":  str("optional Cookie header string (requires cookieURL)"),
+				"cookieURL":     str("target URL for cookieHeader"),
+				"curl":          str("optional curl command to extract seed cookies from"),
+				"useSavedState": boolProp("clone saved cookies and storage of id into sandbox memory"),
+				"storage":       map[string]any{"type": "object", "description": "optional initial KV storage values"},
+				"mockFetch":     map[string]any{"type": "object", "description": "optional mockFetch map"},
+				"allowNetwork":  boolProp("allow real network calls (default false)"),
+				"waitScheduled": boolProp("wait for async scheduled(env) (default true)"),
+				"timeoutMs":     intProp("execution timeout in ms (500..15000, default 5000)"),
+				"actionID":      str("optional action ID to invoke before taking preview screenshot"),
+				"actionArg":     map[string]any{"description": "optional argument for actionID (e.g. tab value or switch boolean)"},
 			}),
 		},
 		{
@@ -328,6 +372,60 @@ func (s Server) callBar(name string, a map[string]any) (string, bool, error) {
 
 	case "bar_run":
 		return s.callBarRun(a)
+
+	case "bar_templates":
+		tpls := bar.Templates()
+		type tplSummary struct {
+			ID               string   `json:"id"`
+			Name             string   `json:"name"`
+			Style            string   `json:"style"`
+			Category         string   `json:"category"`
+			Icon             string   `json:"icon"`
+			Description      string   `json:"description"`
+			RecommendedWidth int      `json:"recommendedWidth"`
+			Tags             []string `json:"tags"`
+			Features         []string `json:"features"`
+			DesignNotes      string   `json:"designNotes"`
+		}
+		out := make([]tplSummary, 0, len(tpls))
+		for _, t := range tpls {
+			out = append(out, tplSummary{
+				ID:               t.ID,
+				Name:             t.Name,
+				Style:            t.Style,
+				Category:         t.Category,
+				Icon:             t.Icon,
+				Description:      t.Description,
+				RecommendedWidth: t.RecommendedWidth,
+				Tags:             t.Tags,
+				Features:         t.Features,
+				DesignNotes:      t.DesignNotes,
+			})
+		}
+		b, _ := json.MarshalIndent(map[string]any{
+			"count":     len(out),
+			"templates": out,
+		}, "", "  ")
+		return string(b), true, nil
+
+	case "bar_template_get":
+		id := strings.TrimSpace(str("id"))
+		if id == "" {
+			return "", true, fmt.Errorf("id 不能为空")
+		}
+		tpl, ok := bar.TemplateByID(id)
+		if !ok {
+			return "", true, fmt.Errorf("没有模板 %q（可用：%s）", id, strings.Join(bar.TemplateIDs(), ", "))
+		}
+		var sb strings.Builder
+		enc := json.NewEncoder(&sb)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(tpl)
+		return strings.TrimSpace(sb.String()), true, nil
+
+	case "bar_preview":
+		return s.callBarPreview(a)
 
 	case "bar_cookies_get":
 		id := strings.TrimSpace(str("id"))
@@ -745,7 +843,21 @@ func parseMockFetch(raw map[string]any) map[string]mockFetchSpec {
 	return out
 }
 
-func (s Server) callBarRun(a map[string]any) (string, bool, error) {
+type barSandboxResult struct {
+	Spec          bar.Spec
+	Warnings      []string
+	Instance      *bar.Instance
+	Jar           *bar.CookieJar
+	KV            *bar.KVStore
+	Transport     *barSandboxTransport
+	Timeout       time.Duration
+	Settled       bool
+	ActionInvoked bool
+	OpenedURLs    func() []string
+	CopiedTexts   func() []string
+}
+
+func (s Server) startBarSandbox(a map[string]any, initialTheme string) (*barSandboxResult, error) {
 	str := func(key string) string {
 		v, _ := a[key].(string)
 		return v
@@ -756,11 +868,11 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 	if source == "" && id != "" {
 		st, err := store.Open(s.DataDir)
 		if err != nil {
-			return "", true, err
+			return nil, err
 		}
 		sc, ok := st.Script(id)
 		if !ok || !sc.IsBar() {
-			return "", true, fmt.Errorf("没有 .bar 组件 %q", id)
+			return nil, fmt.Errorf("没有 .bar 组件 %q", id)
 		}
 		source = sc.Source
 		set := st.Settings()
@@ -769,7 +881,7 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		}
 	}
 	if strings.TrimSpace(source) == "" {
-		return "", true, fmt.Errorf("请提供 source 或 id")
+		return nil, fmt.Errorf("请提供 source 或 id")
 	}
 
 	lang := str("lang")
@@ -778,7 +890,7 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 	}
 	sp, _, warnings, err := bar.CheckRender(source, lang)
 	if err != nil {
-		return "", true, err
+		return nil, err
 	}
 	if id == "" {
 		id = sp.ID
@@ -814,23 +926,23 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 
 	if rawList, ok := a["cookies"].([]any); ok && len(rawList) > 0 {
 		if _, err := applyCookieObjects(jar, rawList); err != nil {
-			return "", true, err
+			return nil, err
 		}
 	}
 	if hdr := strings.TrimSpace(str("cookieHeader")); hdr != "" {
 		if _, err := jar.SetHeader(str("cookieURL"), hdr); err != nil {
-			return "", true, err
+			return nil, err
 		}
 	}
 	if curlCmd := strings.TrimSpace(str("curl")); curlCmd != "" {
 		if _, _, err := jar.ImportCurl(curlCmd); err != nil {
-			return "", true, err
+			return nil, err
 		}
 	}
 	if rawStorage, ok := a["storage"].(map[string]any); ok {
 		for k, v := range rawStorage {
 			if err := kv.Set(k, fmt.Sprint(v)); err != nil {
-				return "", true, err
+				return nil, err
 			}
 		}
 	}
@@ -857,6 +969,11 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		timeout = time.Duration(ms) * time.Millisecond
 	}
 
+	themeName := strings.ToLower(strings.TrimSpace(initialTheme))
+	if themeName != "light" {
+		themeName = "dark"
+	}
+
 	tr := &barSandboxTransport{mocks: mocks, allowNetwork: allowNetwork}
 	var mu sync.Mutex
 	var openedURLs []string
@@ -866,6 +983,7 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		Client:  &http.Client{Timeout: timeout, Transport: tr},
 		Inputs:  inputs,
 		Lang:    lang,
+		Theme:   themeName,
 		Offline: offline,
 		Cookies: jar,
 		Storage: kv,
@@ -881,9 +999,8 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		},
 	})
 	if err != nil {
-		return "", true, err
+		return nil, err
 	}
-	defer inst.Close()
 
 	settled := true
 	if waitScheduled {
@@ -893,7 +1010,8 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 	actionID := strings.TrimSpace(str("actionID"))
 	actionInvoked := false
 	if actionID != "" {
-		if _, ok := inst.InvokeActionSync(actionID, timeout); ok {
+		actionArg := a["actionArg"]
+		if _, ok := inst.InvokeActionSyncWithArg(actionID, actionArg, timeout); ok {
 			actionInvoked = true
 			if waitScheduled {
 				inst.WaitIdle(timeout)
@@ -901,11 +1019,42 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		}
 	}
 
-	snap := inst.Snapshot()
+	return &barSandboxResult{
+		Spec:          sp,
+		Warnings:      warnings,
+		Instance:      inst,
+		Jar:           jar,
+		KV:            kv,
+		Transport:     tr,
+		Timeout:       timeout,
+		Settled:       settled,
+		ActionInvoked: actionInvoked,
+		OpenedURLs: func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]string(nil), openedURLs...)
+		},
+		CopiedTexts: func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]string(nil), copiedTexts...)
+		},
+	}, nil
+}
+
+func (s Server) callBarRun(a map[string]any) (string, bool, error) {
+	themeArg, _ := a["theme"].(string)
+	sb, err := s.startBarSandbox(a, themeArg)
+	if err != nil {
+		return "", true, err
+	}
+	defer sb.Instance.Close()
+
+	snap := sb.Instance.Snapshot()
 	actions := bar.CollectActions(snap)
 
 	cookieSummary := make([]map[string]any, 0)
-	for _, c := range jar.List() {
+	for _, c := range sb.Jar.List() {
 		cookieSummary = append(cookieSummary, map[string]any{
 			"name":        c.Name,
 			"domain":      c.Domain,
@@ -919,15 +1068,10 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		return fmt.Sprint(cookieSummary[i]["name"]) < fmt.Sprint(cookieSummary[j]["name"])
 	})
 
-	mu.Lock()
-	urlsCopy := append([]string(nil), openedURLs...)
-	copiedCopy := append([]string(nil), copiedTexts...)
-	mu.Unlock()
-
 	payload := map[string]any{
-		"id":            sp.ID,
-		"settled":       settled,
-		"actionInvoked": actionInvoked,
+		"id":            sb.Spec.ID,
+		"settled":       sb.Settled,
+		"actionInvoked": sb.ActionInvoked,
 		"tray":          snap.Tray,
 		"panel":         snap.Panel,
 		"panelTexts":    extractBarTexts(snap.Panel),
@@ -935,11 +1079,143 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		"logs":          snap.Logs,
 		"error":         snap.Error,
 		"cookies":       cookieSummary,
-		"storage":       kv.All(),
-		"requests":      tr.snapshot(),
-		"openedURLs":    urlsCopy,
-		"copiedTexts":   copiedCopy,
-		"warnings":      warnings,
+		"storage":       sb.KV.All(),
+		"requests":      sb.Transport.snapshot(),
+		"openedURLs":    sb.OpenedURLs(),
+		"copiedTexts":   sb.CopiedTexts(),
+		"warnings":      sb.Warnings,
+	}
+	b, _ := json.MarshalIndent(payload, "", "  ")
+	return string(b), true, nil
+}
+
+func (s Server) callBarPreview(a map[string]any) (string, bool, error) {
+	themeMode := strings.ToLower(strings.TrimSpace(fmt.Sprint(orVal(a["theme"], "both"))))
+	wantLight := themeMode == "both" || themeMode == "light" || themeMode == ""
+	wantDark := themeMode == "both" || themeMode == "dark" || themeMode == ""
+	if !wantLight && !wantDark {
+		return "", true, fmt.Errorf("未知 theme %q（可选 both / light / dark）", themeMode)
+	}
+	initTheme := "dark"
+	if !wantDark && wantLight {
+		initTheme = "light"
+	}
+
+	sb, err := s.startBarSandbox(a, initTheme)
+	if err != nil {
+		return "", true, err
+	}
+	defer sb.Instance.Close()
+
+	scale := float32(2)
+	if sc, ok := a["scale"].(float64); ok && sc >= 1 && sc <= 3 {
+		scale = float32(sc)
+	}
+	width := 0
+	if w, ok := a["width"].(float64); ok && w > 0 {
+		width = int(w)
+	}
+	height := 0
+	if h, ok := a["height"].(float64); ok && h > 0 {
+		height = int(h)
+	}
+
+	outDir, _ := a["outputDir"].(string)
+	outDir = strings.TrimSpace(outDir)
+	if outDir == "" {
+		outDir = filepath.Join(os.TempDir(), "scriptboard-bar-preview")
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return "", true, err
+	}
+
+	safeID := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, sb.Spec.ID)
+	if safeID == "" {
+		safeID = "bar-preview"
+	}
+
+	var darkPath, lightPath string
+	var primaryRes barui.PreviewResult
+	var primarySnap bar.Snapshot
+
+	if wantDark {
+		sb.Instance.SetAppearance("dark", false)
+		sb.Instance.WaitIdle(sb.Timeout)
+		snap := sb.Instance.Snapshot()
+		res, err := barui.RenderPreview(snap, barui.PreviewOptions{
+			Dark:     true,
+			Width:    width,
+			Height:   height,
+			Scale:    scale,
+			Material: sb.Spec.Material,
+		})
+		if err != nil {
+			return "", true, err
+		}
+		p := filepath.Join(outDir, safeID+"-dark.png")
+		if err := os.WriteFile(p, res.PNG, 0o644); err != nil {
+			return "", true, err
+		}
+		darkPath = p
+		primaryRes = res
+		primarySnap = snap
+	}
+
+	if wantLight {
+		sb.Instance.SetAppearance("light", false)
+		sb.Instance.WaitIdle(sb.Timeout)
+		snap := sb.Instance.Snapshot()
+		res, err := barui.RenderPreview(snap, barui.PreviewOptions{
+			Dark:     false,
+			Width:    width,
+			Height:   height,
+			Scale:    scale,
+			Material: sb.Spec.Material,
+		})
+		if err != nil {
+			return "", true, err
+		}
+		p := filepath.Join(outDir, safeID+"-light.png")
+		if err := os.WriteFile(p, res.PNG, 0o644); err != nil {
+			return "", true, err
+		}
+		lightPath = p
+		if primarySnap.Panel == nil {
+			primaryRes = res
+			primarySnap = snap
+		}
+	}
+
+	audit := barui.AuditSnapshot(primarySnap, sb.Spec)
+	if height > 0 && primaryRes.MeasuredHeight > height {
+		audit.Warnings = append(audit.Warnings, fmt.Sprintf("panel content height %dpx exceeds fixed height %dpx", primaryRes.MeasuredHeight, height))
+		audit.OK = false
+	}
+
+	payload := map[string]any{
+		"id":             sb.Spec.ID,
+		"settled":        sb.Settled,
+		"actionInvoked":  sb.ActionInvoked,
+		"darkPath":       darkPath,
+		"lightPath":      lightPath,
+		"width":          primaryRes.Width,
+		"height":         primaryRes.Height,
+		"measuredHeight": primaryRes.MeasuredHeight,
+		"pixelWidth":     primaryRes.PixelWidth,
+		"pixelHeight":    primaryRes.PixelHeight,
+		"scale":          primaryRes.Scale,
+		"audit":          audit,
+		"tray":           primarySnap.Tray,
+		"panelTexts":     extractBarTexts(primarySnap.Panel),
+		"actions":        bar.CollectActions(primarySnap),
+		"logs":           primarySnap.Logs,
+		"error":          primarySnap.Error,
+		"warnings":       sb.Warnings,
 	}
 	b, _ := json.MarshalIndent(payload, "", "  ")
 	return string(b), true, nil

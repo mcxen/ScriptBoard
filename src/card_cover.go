@@ -93,7 +93,7 @@ func (a *app) sizeButton(c *ui.Context, sc store.Script, size int, show bool) {
 // there for assistive technology.
 func (a *app) hoverBar(c *ui.Context, sc store.Script, title string, size int, show bool, w float32) {
 	p := pal(c)
-	bar := ui.Row(c).Absolute().Top(8).Right(8).AlignItems(ui.Center).Gap(4).Padding(2, 6).Radius(radControl).Background(p.card.Alpha(0.92))
+	bar := ui.Row(c).Absolute().Top(8).Right(8).AlignItems(ui.Center).Gap(4).Padding(3, 7).Radius(9).Background(p.card.Alpha(0.92)).BorderWidth(1).BorderColor(p.border)
 	if !show {
 		bar = bar.Opacity(0).IgnoreInput(true)
 	}

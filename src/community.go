@@ -192,17 +192,18 @@ func (a *app) community(c *ui.Context, compact bool) {
 		// The account.
 		card(c).Padding(18).Gap(gapItem).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-				iconBadge(c, "user-round", p.accent, 36)
+				iconBadge(c, "user-round", p.accent, 28)
 				ui.Column(c).Gap(1).Children(func() {
 					if a.set.Token == "" {
-						ui.Text(c, tr("未登录")).Bold()
+						ui.Text(c, tr("未登录")).FontWeight(600)
 						hint(c, tr("登录后可以上传脚本（下载不需要登录）"))
 					} else {
-						ui.Text(c, tr("已登录：")+a.set.Username).Bold()
+						ui.Text(c, tr("已登录：")+a.set.Username).FontWeight(600)
 						hint(c, tr("上传后需要管理员审核，通过后才会出现在列表里"))
 					}
 				})
 			})
+			ui.Box(c).FillWidth().Height(1).Background(p.hairline)
 			if a.set.Token == "" {
 				// Fields of a form are one width, as wide as the form allows.
 				ui.Column(c).Gap(gapItem).MaxWidth(formMaxW).Children(func() {

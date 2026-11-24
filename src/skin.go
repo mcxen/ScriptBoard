@@ -45,20 +45,22 @@ func setSkin(name string) {
 // canvas, card, hairline; text, secondary, tertiary.
 var brandDefault = func() *theme.Config {
 	light, dark := *theme.Light(), *theme.Dark()
-	// The whole primary family is set together, as Lobe's docs advise.
+	// Cool-neutral Apple-native palette harmonized with Weather .bar tokens.
 	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#2563EB"), ui.Hex("#1D4FD8"), ui.Hex("#1E40AF")
 	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#5B8CFF"), ui.Hex("#7BA3FF"), ui.Hex("#4A78E8")
 	light.PrimaryForeground, dark.PrimaryForeground = light.TextLightSolid, dark.TextLightSolid
 
-	light.BgLayout, light.BgContainer = ui.Hex("#F4F5F8"), ui.Hex("#FFFFFF")
-	light.BorderSecondary, light.Border = ui.Hex("#E7E9EF"), ui.Hex("#D9DCE4")
-	light.Text, light.TextSecondary, light.TextTertiary = ui.Hex("#151922"), ui.Hex("#596071"), ui.Hex("#8B92A1")
-	light.FillTertiary, light.FillQuaternary = ui.Hex("#EDEFF4"), ui.Hex("#F3F4F8")
+	light.BgLayout, light.BgContainer, light.BgElevated = ui.Hex("#F5F6F9"), ui.Hex("#FFFFFF"), ui.Hex("#FFFFFF")
+	light.BorderSecondary, light.Border = ui.RGBA(15, 23, 42, 0.075), ui.RGBA(15, 23, 42, 0.12)
+	light.Text, light.TextSecondary, light.TextTertiary = ui.Hex("#141821"), ui.Hex("#646C7E"), ui.Hex("#7E869A")
+	light.FillTertiary, light.FillQuaternary = ui.RGBA(15, 23, 42, 0.065), ui.RGBA(15, 23, 42, 0.045)
+	light.Success, light.Warning, light.Error = ui.Hex("#10B981"), ui.Hex("#D97706"), ui.Hex("#EF4444")
 
-	dark.BgLayout, dark.BgContainer = ui.Hex("#0D0F14"), ui.Hex("#161920")
-	dark.BorderSecondary, dark.Border = ui.Hex("#252932"), ui.Hex("#333845")
-	dark.Text, dark.TextSecondary, dark.TextTertiary = ui.Hex("#ECEEF4"), ui.Hex("#A3AAB8"), ui.Hex("#6E7586")
-	dark.FillTertiary, dark.FillQuaternary = ui.Hex("#232731"), ui.Hex("#1B1E26")
+	dark.BgLayout, dark.BgContainer, dark.BgElevated = ui.Hex("#111318"), ui.Hex("#1A1D24"), ui.Hex("#222631")
+	dark.BorderSecondary, dark.Border = ui.RGBA(255, 255, 255, 0.08), ui.RGBA(255, 255, 255, 0.12)
+	dark.Text, dark.TextSecondary, dark.TextTertiary = ui.Hex("#F2F4F8"), ui.Hex("#9BA3B4"), ui.Hex("#687082")
+	dark.FillTertiary, dark.FillQuaternary = ui.RGBA(255, 255, 255, 0.085), ui.RGBA(255, 255, 255, 0.055)
+	dark.Success, dark.Warning, dark.Error = ui.Hex("#34D399"), ui.Hex("#FBBF24"), ui.Hex("#F87171")
 	return theme.NewConfig(light, dark)
 }()
 
@@ -159,16 +161,25 @@ func skinBackground(c *ui.Context, el ui.Element) ui.Element {
 	if isMac() {
 		return macDesktop(c, el)
 	}
-	return el.Background(pal(c).canvas)
+	if c.Vibrancy() {
+		return el
+	}
+	return el.Background(pal(c).sidebar)
 }
 
-// skinCard is a card of the skin: a soft block by default, a square window
-// panel with a dark 1 px edge in Mac OS 9.
+// skinCard is a card of the skin: a quiet Apple widget surface by default, a
+// square window panel with a dark 1 px edge in Mac OS 9.
 func skinCard(c *ui.Context) ui.Element {
 	if isMac() {
 		return macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel), false)
 	}
-	return layout.Block(c, layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true})
+	p := pal(c)
+	sh := ui.RGBA(15, 23, 42, 0.05)
+	if p.dark {
+		sh = ui.RGBA(0, 0, 0, 0.24)
+	}
+	return ui.Column(c).Radius(radCard).Background(p.card).
+		BorderWidth(1).BorderColor(p.border).Shadow(0, 1, 3, 0, sh)
 }
 
 // setTypeScale sets the type sizes of the skin. The default has the app's
@@ -180,10 +191,8 @@ func setTypeScale(mac bool) {
 		fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 12, 12, 12, 24
 		return
 	}
-	// One scale: 11 / 12 / 14 / 16 / 20 / 24. Names that mean the same size
-	// share the value, so that the same kind of text is the same everywhere.
-	fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 24, 16, 14, 12, 11
-	fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 20, 16, 14, 20
+	fsTitle, fsHeading, fsBody, fsSmall, fsTiny = 22, 15, 13.5, 12, 11
+	fsCaption, fsLabel, fsSubtitle, fsEmphasis, fsBodyLarge, fsCount = 12, 12, 18, 15, 14, 20
 }
 
 func init() { setTypeScale(false) }
