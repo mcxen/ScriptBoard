@@ -181,7 +181,7 @@ func parseNode(raw any, ac *actionCollector) *Node {
 		}
 		var textParts []string
 		collectChildren(v["children"], ac, n, &textParts)
-		if len(textParts) > 0 && (n.Type == "Text" || n.Type == "Button") {
+		if len(textParts) > 0 && (n.Type == "Text" || n.Type == "Button" || n.Type == "Badge") {
 			n.Text = strings.Join(textParts, "")
 		} else if len(textParts) > 0 {
 			for _, tp := range textParts {
@@ -203,21 +203,21 @@ func collectChildren(raw any, ac *actionCollector, parent *Node, textParts *[]st
 			collectChildren(item, ac, parent, textParts)
 		}
 	case string:
-		if parent.Type == "Text" || parent.Type == "Button" {
+		if parent.Type == "Text" || parent.Type == "Button" || parent.Type == "Badge" {
 			*textParts = append(*textParts, c)
 		} else {
 			parent.Children = append(parent.Children, &Node{Type: "Text", Text: c})
 		}
 	case int64:
 		s := strconv.FormatInt(c, 10)
-		if parent.Type == "Text" || parent.Type == "Button" {
+		if parent.Type == "Text" || parent.Type == "Button" || parent.Type == "Badge" {
 			*textParts = append(*textParts, s)
 		} else {
 			parent.Children = append(parent.Children, &Node{Type: "Text", Text: s})
 		}
 	case float64:
 		s := formatNum(c)
-		if parent.Type == "Text" || parent.Type == "Button" {
+		if parent.Type == "Text" || parent.Type == "Button" || parent.Type == "Badge" {
 			*textParts = append(*textParts, s)
 		} else {
 			parent.Children = append(parent.Children, &Node{Type: "Text", Text: s})
@@ -283,4 +283,50 @@ func asBool(v any, fallback bool) bool {
 
 func formatNum(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// ActionInfo describes a clickable panel node or tray menu item collected from
+// a rendered Snapshot.
+type ActionInfo struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Text    string `json:"text,omitempty"`
+	Tooltip string `json:"tooltip,omitempty"`
+}
+
+// CollectActions returns all clickable actions present in snap's tray menu and
+// panel VDOM tree.
+func CollectActions(snap Snapshot) []ActionInfo {
+	var out []ActionInfo
+	if snap.Tray != nil {
+		for _, m := range snap.Tray.Menu {
+			if m.ActionID != "" {
+				out = append(out, ActionInfo{
+					ID:   m.ActionID,
+					Type: "MenuItem",
+					Text: m.Label,
+				})
+			}
+		}
+	}
+	var walk func(n *Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if n.OnClickID != "" {
+			tip, _ := n.Props["tooltip"].(string)
+			out = append(out, ActionInfo{
+				ID:      n.OnClickID,
+				Type:    n.Type,
+				Text:    n.Text,
+				Tooltip: tip,
+			})
+		}
+		for _, ch := range n.Children {
+			walk(ch)
+		}
+	}
+	walk(snap.Panel)
+	return out
 }

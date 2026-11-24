@@ -193,3 +193,76 @@ func TestCnwxShowsTheChosenCity(t *testing.T) {
 		t.Errorf("after switching: title %q %v", res.Title, err)
 	}
 }
+
+func TestFreeTextAndPasswordVarsExpandHeadersAndSeparateCache(t *testing.T) {
+	var sawCookies []string
+	var sawPaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawCookies = append(sawCookies, r.Header.Get("Cookie"))
+		sawPaths = append(sawPaths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"path":%q,"cookie":%q}`, r.URL.Path, r.Header.Get("Cookie"))
+	}))
+	defer srv.Close()
+
+	a := newTestApp(t)
+	a.set.Offline = false
+	if err := a.store.SetSettings(a.set); err != nil {
+		t.Fatal(err)
+	}
+	sc := store.Script{
+		ID: "free-text-cookie",
+		Source: fmt.Sprintf(`export function meta() {
+  return {
+    name: "Cookie Test",
+    vars: [
+      { key: "path", label: "Path", type: "string", default: "v1" },
+      { key: "cookie", label: "Cookie", type: "password", default: "sid=init-secret" }
+    ],
+    sources: {
+      s: { url: %q + "/{path}", headers: { Cookie: "{cookie}" } }
+    }
+  };
+}
+export function render(ctx) {
+  const s = ctx.sources && ctx.sources.s;
+  const info = ctx.sourceInfo && ctx.sourceInfo.s;
+  if (info && info.error) {
+    throw new Error("source error: " + info.error);
+  }
+  const out = (s && s.path) + "|" + (s && s.cookie);
+  return { title: out, big: out };
+}`, srv.URL),
+	}
+	if err := a.store.SaveScript(sc); err != nil {
+		t.Fatal(err)
+	}
+
+	res1, err := a.execute(sc, nil)
+	if err != nil {
+		t.Fatalf("first execute: %v", err)
+	}
+	if res1.Big != "/v1|sid=init-secret" {
+		t.Fatalf("got %q, want /v1|sid=init-secret", res1.Big)
+	}
+
+	a.setVar(sc, "path", "v2")
+	a.setVar(sc, "cookie", "sid=updated-secret")
+	res2, err := a.execute(sc, nil)
+	if err != nil {
+		t.Fatalf("second execute: %v", err)
+	}
+	if res2.Big != "/v2|sid=updated-secret" {
+		t.Fatalf("got %q, want /v2|sid=updated-secret", res2.Big)
+	}
+
+	if err := a.resetData(sc); err != nil {
+		t.Fatalf("resetData: %v", err)
+	}
+	if _, err := a.execute(sc, nil); err != nil {
+		t.Fatalf("after reset execute: %v", err)
+	}
+	if len(sawCookies) != 3 || sawPaths[0] != "/v1" || sawPaths[1] != "/v2" || sawPaths[2] != "/v2" {
+		t.Fatalf("unexpected server calls cookies=%v paths=%v", sawCookies, sawPaths)
+	}
+}

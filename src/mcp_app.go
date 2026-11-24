@@ -150,15 +150,15 @@ func lanAddress() string {
 // key and the tools. It is copied from the settings page.
 func mcpPrompt(m store.MCPSettings) string {
 	var b strings.Builder
-	b.WriteString(tr("你可以通过「盯盯板」（ScriptBoard）的 MCP 服务器，帮我开发本地插件和图标。\n\n"))
+	b.WriteString(tr("你可以通过「盯盯板」（ScriptBoard）的 MCP 服务器，帮我开发本地插件、菜单栏 .bar 组件、数据源和图标。\n\n"))
 	fmt.Fprintf(&b, tr("服务器地址：%s\n"), connectURL(m))
 	b.WriteString(tr("传输方式：HTTP，每次请求 POST 一条 JSON-RPC 消息\n"))
 	fmt.Fprintf(&b, tr("认证：每次请求都带上这个请求头：\n  Authorization: Bearer %s\n\n"), m.Key)
 	b.WriteString(tr("工具：\n"))
-	for _, t := range mcpsvc.Tools() {
+	for _, t := range mcpsvc.AllTools() {
 		fmt.Fprintf(&b, "- %s：%s\n", t.Name, t.Description)
 	}
-	b.WriteString(tr("\n插件脚本是 ES 模块，导出 meta() 和 render(ctx)。meta() 里要声明 version（如 \"1.0.0\"）、platforms（\"desktop\" 电脑、\"mobile\" 手机）和 needs（\"network\" 联网、\"files\" 读本机文件、\"exec\" 运行本机程序、\"key\" 需要密钥）；读本机文件的脚本只能在电脑上用。写好后用 script_check 检查（它会指出声明和实际用到的不一致），再用 plugin_save 保存，应用约一秒后显示。\n"))
+	b.WriteString(tr("\n开发普通脚本卡片请先调 plugin_guide；开发菜单栏悬浮面板 / 带 Cookie 会话与持久化存储的 .bar 组件请先调 bar_guide。写好后用 script_check / bar_check / bar_run 验证，再保存并配置显示位置。\n"))
 	if m.ReadOnly {
 		b.WriteString(tr("\n这个服务器是只读的：只有读取类的工具可用。\n"))
 	}
@@ -340,8 +340,16 @@ func (a *app) mcpMenuBarSnapshot(id string) (map[string]any, bool) {
 			pl := a.barPlacement(id)
 			inst, sp, err := a.ensureBarInstance(sc)
 			var snap bar.Snapshot
+			cookieCount := 0
+			var storageKeys []string
 			if err == nil && inst != nil {
 				snap = inst.Snapshot()
+				if inst.Cookies() != nil {
+					cookieCount = inst.Cookies().Count()
+				}
+				if inst.Storage() != nil {
+					storageKeys = inst.Storage().Keys()
+				}
 			} else if err != nil {
 				snap.Error = err.Error()
 			}
@@ -363,10 +371,14 @@ func (a *app) mcpMenuBarSnapshot(id string) (map[string]any, bool) {
 					"pinned":      pl.Enabled && pl.MenuBar,
 					"mode":        pl.MenuBarMode,
 					"display":     disp,
-					"inputs":      a.barInputs(sc.ID, sp),
+					"inputs":      bar.MaskInputs(sp, a.barInputs(sc.ID, sp)),
 					"permissions": sp.Permissions,
 					"tray":        snap.Tray,
+					"panel":       snap.Panel,
 					"panelTexts":  collectBarNodeTexts(snap.Panel),
+					"logs":        snap.Logs,
+					"cookieCount": cookieCount,
+					"storageKeys": storageKeys,
 					"updatedAt":   snap.UpdatedAt,
 					"error":       snap.Error,
 				},
@@ -416,12 +428,46 @@ func (a *app) reloadFromMCP() {
 	}
 	a.set = a.store.Settings()
 	a.syncPlugins()
+
+	present := map[string]store.Script{}
 	for _, sc := range a.barScripts() {
-		if sp, err := a.barSpecOf(sc); err == nil {
-			if inst, ok := a.barInsts[sc.ID]; ok {
-				inst.SetOffline(a.set.Offline)
-				inst.UpdateInputs(a.barInputs(sc.ID, sp), curLang())
+		present[sc.ID] = sc
+	}
+	for id, inst := range a.barInsts {
+		sc, exists := present[id]
+		if !exists {
+			inst.Close()
+			delete(a.barInsts, id)
+			delete(a.barSpecs, id)
+			delete(a.barSourceSig, id)
+			if f, ok := a.barFlyouts[id]; ok {
+				f.Close()
+				delete(a.barFlyouts, id)
 			}
+			if t, ok := a.barTrays[id]; ok {
+				t.Destroy()
+				delete(a.barTrays, id)
+				delete(a.barTraySig, id)
+			}
+			if a.barOverlayID == id {
+				a.barOverlayID = ""
+			}
+			if a.barSelectedID == id {
+				a.barSelectedID = ""
+			}
+			continue
+		}
+		if a.barSourceSig == nil || a.barSourceSig[id] != sc.Source {
+			inst.Close()
+			delete(a.barInsts, id)
+			delete(a.barSpecs, id)
+			delete(a.barSourceSig, id)
+			continue
+		}
+		if sp, err := a.barSpecOf(sc); err == nil {
+			inst.SetOffline(a.set.Offline)
+			_ = inst.ReloadState()
+			inst.UpdateInputs(a.barInputs(id, sp), curLang())
 		}
 	}
 	a.invalidateAll()

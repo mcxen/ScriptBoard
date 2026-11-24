@@ -9,7 +9,7 @@ import (
 )
 
 // pluginPrefix marks the IDs of scripts that come from the plugin folder.
-const pluginPrefix = "plugin-"
+const pluginPrefix = plugins.ScriptPrefix
 
 func isPluginScript(id string) bool { return strings.HasPrefix(id, pluginPrefix) }
 

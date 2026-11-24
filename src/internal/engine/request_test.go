@@ -191,3 +191,28 @@ export function render(ctx) {
 		t.Errorf("render got big=%q sub=%q err=%v", res.Big, res.Sub, err)
 	}
 }
+
+func TestRequestCacheKeyIncludesHeadersAndKeepsPlainGET(t *testing.T) {
+	plain := Request{Method: "GET", URL: "https://api.example.com/me"}
+	if got := plain.CacheKey(); got != "https://api.example.com/me" {
+		t.Fatalf("plain GET CacheKey = %q, want %q", got, plain.URL)
+	}
+
+	r1 := Request{
+		Method:  "GET",
+		URL:     "https://api.example.com/me",
+		Headers: map[string]string{"Cookie": "sid=secret-user-one", "X-Env": "prod"},
+	}
+	r2 := Request{
+		Method:  "GET",
+		URL:     "https://api.example.com/me",
+		Headers: map[string]string{"Cookie": "sid=secret-user-two", "X-Env": "prod"},
+	}
+	k1, k2 := r1.CacheKey(), r2.CacheKey()
+	if k1 == plain.CacheKey() || k2 == plain.CacheKey() || k1 == k2 {
+		t.Fatalf("expected distinct header-aware cache keys: plain=%q k1=%q k2=%q", plain.CacheKey(), k1, k2)
+	}
+	if strings.Contains(k1, "secret-user-one") || strings.Contains(k2, "secret-user-two") {
+		t.Fatalf("CacheKey must hash header secrets rather than embed raw values: k1=%q k2=%q", k1, k2)
+	}
+}

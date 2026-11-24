@@ -184,7 +184,7 @@ func (s Server) handle(req request) (any, *rpcError) {
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": append(Tools(), extraTools()...)}, nil
+		return map[string]any{"tools": AllTools()}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -208,6 +208,12 @@ func (s Server) handle(req request) (any, *rpcError) {
 		return nil, nil
 	}
 	return nil, &rpcError{-32601, fmt.Sprintf("method %q is not supported", req.Method)}
+}
+
+// AllTools lists every MCP tool offered by the server (core plugin tools plus
+// extended widget, .bar, tray, table, and feed tools).
+func AllTools() []Tool {
+	return append(Tools(), extraTools()...)
 }
 
 // Tools lists the tools the server offers.
@@ -296,7 +302,9 @@ func Tools() []Tool {
 func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	dataDir := s.DataDir
 	switch name {
-	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set", "bar_save":
+	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set",
+		"bar_save", "bar_delete", "bar_cookies_set", "bar_cookies_clear",
+		"bar_storage_set", "bar_storage_clear", "feed_save", "feed_delete":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}

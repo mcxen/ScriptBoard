@@ -198,6 +198,12 @@ func renderBarNode(c *ui.Context, n *bar.Node, th barTheme, onAction func(string
 	case "Button":
 		renderBarButton(c, n, th, onAction)
 		return
+	case "Badge":
+		renderBarBadge(c, n, th)
+		return
+	case "Progress":
+		renderBarProgress(c, n, th)
+		return
 	case "Chart":
 		renderBarChart(c, n, th)
 		return
@@ -338,27 +344,128 @@ func renderBarButton(c *ui.Context, n *bar.Node, th barTheme, onAction func(stri
 	if lbl == "" && len(n.Children) > 0 {
 		lbl = n.Children[0].Text
 	}
-	bg := th.surfaceHover
+	variant, _ := propString(props, "variant")
+	fg := th.accent
+	if tc, ok := propString(props, "textColor"); ok {
+		fg = th.color(tc, fg)
+	}
+	baseBG := th.accent.Alpha(0.14)
+	switch variant {
+	case "primary":
+		baseBG = th.accent
+		if _, ok := propString(props, "textColor"); !ok {
+			fg = ui.Hex("#FFFFFF")
+		}
+	case "danger":
+		baseBG = th.danger.Alpha(0.14)
+		if _, ok := propString(props, "textColor"); !ok {
+			fg = th.danger
+		}
+	case "ghost":
+		baseBG = ui.Color{}
+		if _, ok := propString(props, "textColor"); !ok {
+			fg = th.textMuted
+		}
+	}
+	if bs, ok := propString(props, "background"); ok {
+		baseBG = th.color(bs, baseBG)
+	}
+
 	b := ui.Row(c).
 		Padding(6, 12).
 		Radius(8).
 		AlignItems(ui.Center).
 		Justify(ui.Center).
 		Cursor(ui.CursorPointer)
+	bg := baseBG
 	if b.Pressed() {
-		bg = th.surfacePressed
+		if variant == "primary" {
+			bg = baseBG.Alpha(0.82)
+		} else {
+			bg = th.surfacePressed
+		}
 	} else if b.Hovered() {
-		bg = th.surfaceHover
-	} else {
-		bg = th.accent.Alpha(0.14)
+		if variant == "primary" {
+			bg = baseBG.Alpha(0.90)
+		} else {
+			bg = th.surfaceHover
+		}
 	}
 	b = b.Background(bg)
 	applyBarSizeProps(b, props)
 	if b.Children(func() {
-		ui.Text(c, lbl).FontSize(12).FontWeight(600).TextColor(th.accent).NoWrap()
+		ui.Text(c, lbl).FontSize(12).FontWeight(600).TextColor(fg).NoWrap()
 	}).Clicked() && n.OnClickID != "" && onAction != nil {
 		onAction(n.OnClickID)
 	}
+}
+
+func renderBarBadge(c *ui.Context, n *bar.Node, th barTheme) {
+	props := n.Props
+	txt := n.Text
+	if txt == "" && len(n.Children) > 0 {
+		txt = n.Children[0].Text
+	}
+	bg := th.accent.Alpha(0.14)
+	if bs, ok := propString(props, "background"); ok {
+		bg = th.color(bs, bg)
+	}
+	fg := th.accent
+	if tc, ok := propString(props, "textColor"); ok {
+		fg = th.color(tc, fg)
+	}
+	fs := float32(11)
+	if v, ok := propFloat(props, "fontSize"); ok && v > 0 {
+		fs = v
+	}
+	b := ui.Row(c).Padding(2, 7).Radius(999).Background(bg).AlignItems(ui.Center).Justify(ui.Center)
+	b = applyBarSizeProps(b, props)
+	b.Children(func() {
+		ui.Text(c, txt).FontSize(fs).FontWeight(600).TextColor(fg).NoWrap()
+	})
+}
+
+func renderBarProgress(c *ui.Context, n *bar.Node, th barTheme) {
+	props := n.Props
+	val, _ := propFloat(props, "value")
+	maxVal, hasMax := propFloat(props, "max")
+	if !hasMax || maxVal <= 0 {
+		maxVal = 100
+	}
+	pct := (val / maxVal) * 100
+	if pct < 0 {
+		pct = 0
+	} else if pct > 100 {
+		pct = 100
+	}
+	h := float32(6)
+	if hv, ok := propFloat(props, "height"); ok && hv > 0 {
+		h = hv
+	}
+	rad := h / 2
+	if rv, ok := propFloat(props, "radius"); ok && rv >= 0 {
+		rad = rv
+	}
+	trackCol := th.surfaceHover
+	if tc, ok := propString(props, "trackColor"); ok {
+		trackCol = th.color(tc, trackCol)
+	} else if tc, ok := propString(props, "background"); ok {
+		trackCol = th.color(tc, trackCol)
+	}
+	fillCol := th.accent
+	if fc, ok := propString(props, "color"); ok {
+		fillCol = th.color(fc, fillCol)
+	}
+	track := ui.Box(c).Height(h).Radius(rad).Background(trackCol).Clip()
+	if propBool(props, "fillWidth", true) {
+		track = track.FillWidth()
+	}
+	track = applyBarSizeProps(track, props)
+	track.Children(func() {
+		if pct > 0 {
+			ui.Box(c).Absolute().Top(0).Bottom(0).Left(0).WidthPercent(pct).Radius(rad).Background(fillCol)
+		}
+	})
 }
 
 func renderBarChart(c *ui.Context, n *bar.Node, th barTheme) {

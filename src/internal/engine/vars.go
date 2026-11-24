@@ -16,12 +16,15 @@ import (
 //
 // render reads the chosen values as ctx.vars.city.
 
-// Var is a variable the user switches.
+// Var is a variable the user switches or fills in.
 type Var struct {
-	Key     string      `json:"key"`
-	Label   string      `json:"label"`
-	Default string      `json:"default"`
-	Options []VarOption `json:"options"`
+	Key         string      `json:"key"`
+	Label       string      `json:"label"`
+	Type        string      `json:"type,omitempty"`        // "", "select", "string", "password"
+	Default     string      `json:"default"`
+	Placeholder string      `json:"placeholder,omitempty"`
+	Help        string      `json:"help,omitempty"`
+	Options     []VarOption `json:"options"`
 }
 
 // VarOption is one value of a variable: what fills the URL, and what the user
@@ -35,12 +38,22 @@ type VarOption struct {
 // long list of options cannot make a reset walk thousands of URLs.
 const maxCombos = 256
 
-// ResolveVars is the value of each variable: the one chosen when it is one of
-// the variable's options, else its default, else its first option.
+// ResolveVars is the value of each variable: for option variables, the chosen
+// value when it is one of the options, else default, else first option; for
+// free-text/password variables (no options), the chosen value or default.
 func ResolveVars(vars []Var, chosen map[string]string) map[string]string {
 	out := make(map[string]string, len(vars))
 	for _, v := range vars {
 		val := ""
+		if len(v.Options) == 0 {
+			if c, ok := chosen[v.Key]; ok {
+				val = c
+			} else {
+				val = v.Default
+			}
+			out[v.Key] = val
+			continue
+		}
 		if c, ok := chosen[v.Key]; ok && hasOption(v, c) {
 			val = c
 		} else if hasOption(v, v.Default) {

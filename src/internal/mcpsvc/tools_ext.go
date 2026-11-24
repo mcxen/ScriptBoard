@@ -24,7 +24,7 @@ func extraTools() []Tool {
 	obj := func(props map[string]any, required ...string) map[string]any {
 		return map[string]any{"type": "object", "properties": props, "required": required}
 	}
-	return []Tool{
+	base := []Tool{
 		{
 			Name: "widget_catalog",
 			Description: "List all built-in ScriptBoard widget/component types with capabilities, " +
@@ -81,7 +81,7 @@ func extraTools() []Tool {
 		},
 		{
 			Name: "tray_list",
-			Description: "List all menubar-capable widgets (.bar components, scripts, and plugins) with their " +
+			Description: "List all menubar-capable widgets (.bar components, scripts, and local plugins) with their " +
 				"menu bar pinned state, click mode (panel/menu/open), target display (cursor/internal/external), " +
 				"docked placements, inputs, and connected displays.",
 			InputSchema: obj(map[string]any{}),
@@ -92,7 +92,7 @@ func extraTools() []Tool {
 				"set click mode (panel/menu/open), target display (cursor/internal/external), dock locations " +
 				"(leftSidebar/rightSidebar/bottomBar/shortcut), and .bar inputs.",
 			InputSchema: obj(map[string]any{
-				"id":           str("widget, script, or plugin id (use plugin:<id> for local plugins)"),
+				"id":           str("widget, script, or plugin id (use plugin-<id> for local plugins)"),
 				"enabled":      boolProp("true to show in menu bar, false to remove"),
 				"mode":         str("menu bar click mode: panel (floating popover), menu (dropdown menu), or open (open detail)"),
 				"display":      str("target monitor for dropdown panel: cursor (follow click), internal (built-in), or external (external monitor)"),
@@ -106,31 +106,45 @@ func extraTools() []Tool {
 		{
 			Name: "menubar_show",
 			Description: "Render and return the current Menu Bar display payload (title, tooltip, icon, " +
-				"mode, target display, menu entries, and panel content) for one widget or all active menubar items.",
+				"mode, target display, menu entries, panel VDOM/texts, logs, cookieCount, storageKeys) for one widget or all active menubar items.",
 			InputSchema: obj(map[string]any{
-				"id":   str("optional widget/script id; omit to inspect all active menubar items"),
+				"id":   str("optional widget/script/plugin id; omit to inspect all active menubar items"),
 				"lang": str("zh or en (default zh)"),
 			}),
 		},
 		{
 			Name:        "bar_save",
-			Description: "Create or update a .bar XML component bundle and optionally configure its menu bar display.",
+			Description: "Validate, compile-check, and save a .bar XML component bundle, and optionally configure its menu bar display and dock locations.",
 			InputSchema: obj(map[string]any{
-				"id":      str("optional widget id (defaults to <bar id=\"...\">)"),
-				"source":  str("the .bar XML document"),
-				"home":    boolProp("show as a card on the home page"),
-				"enabled": boolProp("pin in menu bar (default true)"),
-				"mode":    str("panel (default) or menu"),
-				"display": str("cursor (default), internal, or external"),
-				"inputs":  map[string]any{"type": "object", "description": "optional input values map"},
+				"id":           str("optional widget id (defaults to <bar id=\"...\">)"),
+				"source":       str("the .bar XML document"),
+				"home":         boolProp("show as a card on the home page"),
+				"enabled":      boolProp("pin in menu bar (default true)"),
+				"mode":         str("panel (default) or menu"),
+				"display":      str("cursor (default), internal, or external"),
+				"leftSidebar":  boolProp("dock in window left sidebar"),
+				"rightSidebar": boolProp("dock in window right sidebar"),
+				"bottomBar":    boolProp("dock in window bottom bar"),
+				"shortcut":     boolProp("enable Alt+W quick overlay shortcut"),
+				"inputs":       map[string]any{"type": "object", "description": "optional input values map"},
 			}, "source"),
 		},
 		{
 			Name:        "app_info",
-			Description: "Return a machine-readable summary of ScriptBoard host capabilities, supported widgets, tray actions, displays, icons, and store counts.",
+			Description: "Return a machine-readable summary of ScriptBoard host capabilities, supported widgets, .bar runtime APIs, cookie/storage support, tray actions, displays, icons, and store counts.",
 			InputSchema: obj(map[string]any{}),
 		},
 	}
+	base = append(base, barTools()...)
+	base = append(base, feedTools()...)
+	return base
+}
+
+func normalizePluginID(id string) string {
+	if strings.HasPrefix(id, "plugin:") {
+		return plugins.ScriptPrefix + strings.TrimPrefix(id, "plugin:")
+	}
+	return id
 }
 
 func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
@@ -389,10 +403,12 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		var eligible []candidate
 		var allPinned []string
 		allPinned = append(allPinned, pinned...)
+		seen := map[string]bool{}
 		for _, sc := range st.Scripts() {
 			if sc.IsTable() {
 				continue
 			}
+			seen[sc.ID] = true
 			if sc.IsBar() {
 				pl := mcpPlacementFor(sc.ID, true, set)
 				sp, _ := bar.Parse(sc.Source)
@@ -414,7 +430,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 					if set.ScriptVars != nil {
 						saved = set.ScriptVars[sc.ID]
 					}
-					inputs = bar.MergeInputs(sp, saved)
+					inputs = bar.MaskInputs(sp, bar.MergeInputs(sp, saved))
 				}
 				eligible = append(eligible, candidate{
 					ID:      sc.ID,
@@ -440,10 +456,14 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 				if disp == "" {
 					disp = "cursor"
 				}
+				kind := "script"
+				if strings.HasPrefix(sc.ID, plugins.ScriptPrefix) {
+					kind = "plugin"
+				}
 				eligible = append(eligible, candidate{
 					ID:      sc.ID,
 					Name:    sc.Name,
-					Kind:    "script",
+					Kind:    kind,
 					Enabled: pl.Enabled,
 					Pinned:  slices.Contains(pinned, sc.ID),
 					Mode:    pl.MenuBarMode,
@@ -459,7 +479,10 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		}
 		if plist, err := plugins.List(s.DataDir); err == nil {
 			for _, p := range plist {
-				pid := "plugin:" + p.Manifest.ID
+				pid := plugins.ScriptPrefix + p.Manifest.ID
+				if seen[pid] {
+					continue
+				}
 				if meta, err := plugins.CheckSource(p.Manifest.ID+".js", p.Source); err == nil && meta.Menubar {
 					pl := mcpPlacementFor(pid, false, set)
 					disp := pl.Display
@@ -502,7 +525,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		return string(b), true, nil
 
 	case "tray_set":
-		id := strings.TrimSpace(str("id"))
+		id := normalizePluginID(strings.TrimSpace(str("id")))
 		if id == "" {
 			return "", true, fmt.Errorf("id 为必填项")
 		}
@@ -575,7 +598,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		return fmt.Sprintf("已更新 %s 的菜单栏配置（pinned=%v, mode=%s, display=%s）", id, pl.MenuBar, pl.MenuBarMode, disp), true, nil
 
 	case "menubar_show":
-		idFilter := strings.TrimSpace(str("id"))
+		idFilter := normalizePluginID(strings.TrimSpace(str("id")))
 		lang := strings.TrimSpace(str("lang"))
 		if lang == "" {
 			lang = "zh"
@@ -586,11 +609,13 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		}
 		set := st.Settings()
 		var items []map[string]any
+		seen := map[string]bool{}
 		for _, sc := range st.Scripts() {
-			if idFilter != "" && sc.ID != idFilter {
+			if sc.IsTable() {
 				continue
 			}
-			if sc.IsTable() {
+			seen[sc.ID] = true
+			if idFilter != "" && sc.ID != idFilter {
 				continue
 			}
 			if sc.IsBar() {
@@ -611,7 +636,10 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		}
 		if plist, err := plugins.List(s.DataDir); err == nil {
 			for _, p := range plist {
-				pid := "plugin:" + p.Manifest.ID
+				pid := plugins.ScriptPrefix + p.Manifest.ID
+				if seen[pid] {
+					continue
+				}
 				if idFilter != "" && pid != idFilter && p.Manifest.ID != idFilter {
 					continue
 				}
@@ -638,13 +666,16 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 
 	case "bar_save":
 		source := str("source")
-		sp, err := bar.Parse(source)
+		sp, warnings, err := bar.CompileCheck(source)
 		if err != nil {
 			return "", true, err
 		}
 		id := strings.TrimSpace(str("id"))
 		if id == "" {
 			id = sp.ID
+		}
+		if strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+			return "", true, fmt.Errorf("非法的 .bar id %q", id)
 		}
 		st, err := store.Open(s.DataDir)
 		if err != nil {
@@ -690,7 +721,11 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			return "", true, err
 		}
 		s.notifyChange()
-		return fmt.Sprintf("已保存 .bar 组件 %s（%s，mode=%s, display=%s）", id, sp.Title, pl.MenuBarMode, orStr(pl.Display, "cursor")), true, nil
+		out := fmt.Sprintf("已保存 .bar 组件 %s（%s，mode=%s, display=%s）", id, sp.Title, pl.MenuBarMode, orStr(pl.Display, "cursor"))
+		for _, w := range warnings {
+			out += "\n警告：" + w
+		}
+		return out, true, nil
 
 	case "app_info":
 		st, _ := store.Open(s.DataDir)
@@ -724,6 +759,11 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			"readOnly":        s.readOnly(),
 			"platform":        map[string]string{"os": caps.OS(), "kind": caps.Platform()},
 			"widgetTypes":     engine.ChartTypes,
+			"barVDOMNodes":    []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Chart", "Progress", "Badge", "Spacer", "Divider"},
+			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies"},
+			"cookieSupport":   true,
+			"storageSupport":  true,
+			"toolsCount":      len(AllTools()),
 			"trayActions":     append(append([]string(nil), engine.MenuActions...), "set_var:<k>=<v>", "set_dim:<k>=<v>"),
 			"trayIcons":       engine.MenuBarIcons,
 			"displayModes":    []string{"cursor", "internal", "external"},
@@ -742,6 +782,12 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return string(b), true, nil
+	}
+	if out, handled, err := s.callBar(name, a); handled {
+		return out, true, err
+	}
+	if out, handled, err := s.callFeed(name, a); handled {
+		return out, true, err
 	}
 	return "", false, nil
 }
@@ -815,12 +861,28 @@ func (s Server) renderBarMCPShow(sc store.Script, pl store.BarPlacement, set sto
 	}
 	inputs := bar.MergeInputs(sp, saved)
 	var snap bar.Snapshot
-	inst, err := bar.NewInstance(sp, bar.Options{Inputs: inputs, Lang: lang, Offline: true})
+	jar, _ := bar.NewCookieJar(bar.CookiesPath(s.DataDir, sc.ID))
+	kv, _ := bar.NewKVStore(bar.StoragePath(s.DataDir, sc.ID))
+	inst, err := bar.NewInstance(sp, bar.Options{
+		Inputs:  inputs,
+		Lang:    lang,
+		Offline: true,
+		Cookies: jar,
+		Storage: kv,
+	})
 	if err == nil {
 		snap = inst.Snapshot()
 		inst.Close()
 	} else {
 		snap.Error = err.Error()
+	}
+	cookieCount := 0
+	if jar != nil {
+		cookieCount = jar.Count()
+	}
+	var storageKeys []string
+	if kv != nil {
+		storageKeys = kv.Keys()
 	}
 	return map[string]any{
 		"id":          sc.ID,
@@ -830,10 +892,14 @@ func (s Server) renderBarMCPShow(sc store.Script, pl store.BarPlacement, set sto
 		"pinned":      pl.Enabled && pl.MenuBar,
 		"mode":        pl.MenuBarMode,
 		"display":     orStr(pl.Display, "cursor"),
-		"inputs":      inputs,
+		"inputs":      bar.MaskInputs(sp, inputs),
 		"permissions": sp.Permissions,
 		"tray":        snap.Tray,
+		"panel":       snap.Panel,
 		"panelTexts":  extractBarTexts(snap.Panel),
+		"logs":        snap.Logs,
+		"cookieCount": cookieCount,
+		"storageKeys": storageKeys,
 		"error":       snap.Error,
 	}
 }

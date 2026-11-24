@@ -32,8 +32,15 @@ var (
 var barMoreOpen bool
 
 func (a *app) selectBarComponent(id string) {
+	if a.barSelectedID == id {
+		return
+	}
 	a.barSelectedID = id
 	barMoreOpen = false
+	a.barCookieOpen = false
+	a.barCookieURL = ""
+	a.barCookieInput = ""
+	a.barCookieNote = ""
 }
 
 func (a *app) barView(c *ui.Context, compact bool) {
@@ -378,6 +385,9 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 		if len(sp.Inputs) > 0 {
 			a.barInputsSection(c, p, sc.ID, sp)
 		}
+		if len(sp.Permissions) > 0 || a.barCookieCount(sc.ID) > 0 {
+			a.barCookiesSection(c, p, sc.ID, sp)
+		}
 		a.barSourceSection(c, p, sc, sp)
 	}
 
@@ -631,6 +641,62 @@ func (a *app) barInputsSection(c *ui.Context, p palette, id string, sp bar.Spec)
 						ui.Text(c, in.Help).FontSize(fsTiny).TextColor(p.faint)
 					}
 				})
+			}
+		})
+	})
+}
+
+func (a *app) barCookiesSection(c *ui.Context, p palette, id string, sp bar.Spec) {
+	count := a.barCookieCount(id)
+	statusText := tr("未保存 Cookie")
+	if count > 0 {
+		statusText = fmt.Sprintf(tr("已保存 %d 条 Cookie"), count)
+	}
+	if a.barCookieURL == "" && len(sp.Permissions) > 0 {
+		a.barCookieURL = strings.Replace(sp.Permissions[0], "*.", "", 1)
+	}
+
+	ui.Column(c.Key("bar-cookies:"+id)).FillWidth().Gap(6).Children(func() {
+		ui.Text(c, tr("Cookie 会话")).FontSize(fsSmall).FontWeight(500).TextColor(p.muted)
+		card(c).FillWidth().Padding(12).Gap(10).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Text(c, statusText).FontSize(fsSmall).FontWeight(500).Grow(1).MinWidth(0)
+				toggleLbl := tr("管理 Cookie")
+				if a.barCookieOpen {
+					toggleLbl = tr("收起")
+				}
+				if btn(c, toggleLbl).Clicked() {
+					a.barCookieOpen = !a.barCookieOpen
+					a.barCookieNote = ""
+				}
+			})
+
+			if a.barCookieOpen {
+				textInput(c.Key("bar-ck-url:"+id), &a.barCookieURL, tr("目标地址（粘贴 curl 时可留空）")).FillWidth()
+				textArea(c.Key("bar-ck-in:"+id), &a.barCookieInput, tr("粘贴 curl 命令或 Cookie 字符串（如 a=1; b=2）"), 3).Font("monospace").FontSize(fsSmall)
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
+					if primaryBtn(c, tr("导入并刷新")).Clicked() {
+						n, err := a.importBarCookies(id, a.barCookieURL, a.barCookieInput)
+						if err != nil {
+							a.barCookieNote = err.Error()
+						} else {
+							a.barCookieInput = ""
+							a.barCookieNote = fmt.Sprintf(tr("已导入 %d 条 Cookie"), n)
+						}
+					}
+					if count > 0 {
+						if btn(c, tr("清空 Cookie")).Clicked() {
+							if err := a.clearBarCookies(id); err != nil {
+								a.barCookieNote = err.Error()
+							} else {
+								a.barCookieNote = "已清空 Cookie"
+							}
+						}
+					}
+				})
+				if a.barCookieNote != "" {
+					ui.Text(c, tr(a.barCookieNote)).FontSize(fsTiny).TextColor(p.muted)
+				}
 			}
 		})
 	})

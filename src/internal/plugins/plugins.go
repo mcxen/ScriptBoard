@@ -27,6 +27,10 @@ import (
 	"scriptboard/src/internal/engine"
 )
 
+// ScriptPrefix marks the IDs of scripts stored in the app's store that come
+// from the local plugins folder.
+const ScriptPrefix = "plugin-"
+
 // MaxIconBytes limits the size of one SVG icon.
 const MaxIconBytes = 32 * 1024
 

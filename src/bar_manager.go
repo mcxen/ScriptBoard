@@ -116,13 +116,21 @@ func barIconName(raw string) string {
 }
 
 func (a *app) barSpecOf(sc store.Script) (bar.Spec, error) {
-	if sp, ok := a.barSpecs[sc.ID]; ok && sp.Script != "" {
-		// Re-parse only if source changed; keep simple by parsing & caching by ID+len?
-		// Since source edits on .bar are rare, check raw script match via stored source cache if needed.
+	if a.barSourceSig != nil && a.barSourceSig[sc.ID] == sc.Source {
+		if sp, ok := a.barSpecs[sc.ID]; ok && sp.Script != "" {
+			return sp, nil
+		}
 	}
 	sp, err := bar.Parse(sc.Source)
 	if err == nil {
+		if a.barSpecs == nil {
+			a.barSpecs = map[string]bar.Spec{}
+		}
+		if a.barSourceSig == nil {
+			a.barSourceSig = map[string]string{}
+		}
 		a.barSpecs[sc.ID] = sp
+		a.barSourceSig[sc.ID] = sc.Source
 	}
 	return sp, err
 }
@@ -212,19 +220,27 @@ func (a *app) setBarInput(id, key, val string) {
 }
 
 func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error) {
+	if inst, ok := a.barInsts[sc.ID]; ok {
+		if a.barSourceSig != nil && a.barSourceSig[sc.ID] == sc.Source {
+			if sp, ok2 := a.barSpecs[sc.ID]; ok2 {
+				return inst, sp, nil
+			}
+		}
+		inst.Close()
+		delete(a.barInsts, sc.ID)
+	}
 	sp, err := a.barSpecOf(sc)
 	if err != nil {
 		return nil, bar.Spec{}, err
 	}
-	if inst, ok := a.barInsts[sc.ID]; ok {
-		return inst, sp, nil
-	}
 	id := sc.ID
 	inst, err := bar.NewInstance(sp, bar.Options{
-		Client:  a.client,
-		Inputs:  a.barInputs(id, sp),
-		Lang:    curLang(),
-		Offline: a.set.Offline,
+		Client:     a.client,
+		Inputs:     a.barInputs(id, sp),
+		Lang:       curLang(),
+		Offline:    a.set.Offline,
+		DataDir:    bar.ComponentDataDir(a.dataDir, id),
+		OnCopyText: func(s string) { a.post(func() { copyText(s) }) },
 		OnUpdate: func(_ bar.Snapshot) {
 			a.post(func() {
 				a.syncBarMenuBar()
@@ -232,7 +248,7 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 		},
 		OnOpenURL: func(rawURL string) {
 			if safeURL(rawURL) {
-				_ = mygo.Shell.OpenExternal(rawURL)
+				go func(u string) { _ = mygo.Shell.OpenExternal(u) }(rawURL)
 			}
 		},
 	})
@@ -265,6 +281,65 @@ func (a *app) invokeBarAction(id, actionID string) {
 	}
 }
 
+func (a *app) barCookieCount(id string) int {
+	if inst, ok := a.barInsts[id]; ok && inst.Cookies() != nil {
+		return inst.Cookies().Count()
+	}
+	jar, err := bar.NewCookieJar(bar.CookiesPath(a.dataDir, id))
+	if err != nil {
+		return 0
+	}
+	return jar.Count()
+}
+
+func (a *app) importBarCookies(id, rawURL, rawInput string) (int, error) {
+	text := strings.TrimSpace(rawInput)
+	if text == "" {
+		return 0, fmt.Errorf("%s", tr("请输入 curl 命令或 Cookie 字符串"))
+	}
+	var jar *bar.CookieJar
+	var err error
+	if inst, ok := a.barInsts[id]; ok && inst.Cookies() != nil {
+		jar = inst.Cookies()
+	} else {
+		jar, err = bar.NewCookieJar(bar.CookiesPath(a.dataDir, id))
+		if err != nil {
+			return 0, err
+		}
+	}
+	var count int
+	if len(text) >= 5 && strings.EqualFold(text[:5], "curl ") {
+		_, count, err = jar.ImportCurl(text)
+	} else {
+		count, err = jar.SetHeader(rawURL, text)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if inst, ok := a.barInsts[id]; ok {
+		inst.SetOffline(a.set.Offline)
+		inst.Refresh()
+	}
+	return count, nil
+}
+
+func (a *app) clearBarCookies(id string) error {
+	var err error
+	if inst, ok := a.barInsts[id]; ok && inst.Cookies() != nil {
+		err = inst.Cookies().Clear("")
+		if err == nil {
+			inst.SetOffline(a.set.Offline)
+			inst.Refresh()
+		}
+		return err
+	}
+	jar, err := bar.NewCookieJar(bar.CookiesPath(a.dataDir, id))
+	if err != nil {
+		return err
+	}
+	return jar.Clear("")
+}
+
 func (a *app) importBarSource(raw string) (store.Script, error) {
 	sp, err := bar.Parse(raw)
 	if err != nil {
@@ -295,7 +370,14 @@ func (a *app) importBarSource(raw string) (store.Script, error) {
 		old.Close()
 		delete(a.barInsts, sc.ID)
 	}
+	if a.barSpecs == nil {
+		a.barSpecs = map[string]bar.Spec{}
+	}
+	if a.barSourceSig == nil {
+		a.barSourceSig = map[string]string{}
+	}
 	a.barSpecs[sc.ID] = sp
+	a.barSourceSig[sc.ID] = raw
 	a.barSelectedID = sc.ID
 	return sc, nil
 }
@@ -315,6 +397,7 @@ func (a *app) deleteBarComponent(id string) error {
 		delete(a.barTraySig, id)
 	}
 	delete(a.barSpecs, id)
+	delete(a.barSourceSig, id)
 	delete(a.barFlyoutActive, id)
 	if a.barOverlayID == id {
 		a.barOverlayID = ""
@@ -324,6 +407,9 @@ func (a *app) deleteBarComponent(id string) error {
 		if err := a.store.SetSettings(a.set); err != nil {
 			a.set = a.store.Settings()
 		}
+	}
+	if dir := bar.ComponentDataDir(a.dataDir, id); dir != "" {
+		_ = os.RemoveAll(dir)
 	}
 	if err := a.store.DeleteScript(id); err != nil {
 		return err

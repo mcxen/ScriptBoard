@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"sort"
 	"strconv"
@@ -182,16 +185,37 @@ func (s Source) Request(now time.Time, vals map[string]string) Request {
 	return r
 }
 
-// CacheKey names the response of the request in the cache. A plain GET is
-// its address, as it always was; any other request has its method, body and
-// paging in its key, so that two requests to one address are two responses.
+// CacheKey names the response of the request in the cache. A plain GET with
+// no headers is its address, as it always was; any other request includes its
+// method, body, paging, and a hash of its headers so changing cookies or tokens
+// never hits stale cached responses and secrets stay out of cache metadata.
 func (r Request) CacheKey() string {
-	if r.Method == http.MethodGet && r.Body == "" && r.Paging == nil {
+	if r.Method == http.MethodGet && r.Body == "" && r.Paging == nil && len(r.Headers) == 0 {
 		return r.URL
 	}
 	key := r.Method + " " + r.URL + "\n" + r.Body
 	if p := r.Paging; p != nil {
 		key += fmt.Sprintf("\n#paged %s %d %d %d %s", p.Param, p.Start, p.Step, p.Pages, p.Items)
+	}
+	if len(r.Headers) > 0 {
+		canon := make(map[string]string, len(r.Headers))
+		keys := make([]string, 0, len(r.Headers))
+		for k, v := range r.Headers {
+			ck := textproto.CanonicalMIMEHeaderKey(k)
+			if _, seen := canon[ck]; !seen {
+				keys = append(keys, ck)
+			}
+			canon[ck] = v
+		}
+		sort.Strings(keys)
+		h := sha256.New()
+		for _, k := range keys {
+			h.Write([]byte(k))
+			h.Write([]byte(":"))
+			h.Write([]byte(canon[k]))
+			h.Write([]byte("\n"))
+		}
+		key += "\n#hdr " + hex.EncodeToString(h.Sum(nil)[:8])
 	}
 	return key
 }

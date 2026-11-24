@@ -167,21 +167,26 @@ type app struct {
 	uploadDesc string
 
 	// .bar component runtime, menu bar flyouts, and Component Studio state.
-	barInsts        map[string]*bar.Instance
-	barSpecs        map[string]bar.Spec
-	barTrays        map[string]*mygo.Tray
-	barTraySig      map[string]string
-	barFlyouts         map[string]*mygo.Window
-	barFlyoutActive    map[string]bool
-	barFlyoutClosedAt  map[string]time.Time
-	barPreviewTheme int
-	barSearch       string
-	barSelectedID   string
-	barImportOpen   bool
-	barImportText   string
-	barImportErr    string
-	barOverlayID    string
-	barInputDrafts  map[string]map[string]string
+	barInsts          map[string]*bar.Instance
+	barSpecs          map[string]bar.Spec
+	barSourceSig      map[string]string
+	barTrays          map[string]*mygo.Tray
+	barTraySig        map[string]string
+	barFlyouts        map[string]*mygo.Window
+	barFlyoutActive   map[string]bool
+	barFlyoutClosedAt map[string]time.Time
+	barPreviewTheme   int
+	barSearch         string
+	barSelectedID     string
+	barImportOpen     bool
+	barImportText     string
+	barImportErr      string
+	barOverlayID      string
+	barInputDrafts    map[string]map[string]string
+	barCookieOpen     bool
+	barCookieURL      string
+	barCookieInput    string
+	barCookieNote     string
 }
 
 type runState struct {
@@ -242,9 +247,10 @@ func newApp(dir string, offline bool) (*app, error) {
 		usageForms:      map[string]*usageForm{},
 		sels:            map[string]*int{},
 		cardSize:        1, // medium cards to start with
-		barInsts:        map[string]*bar.Instance{},
-		barSpecs:        map[string]bar.Spec{},
-		barTrays:        map[string]*mygo.Tray{},
+		barInsts:          map[string]*bar.Instance{},
+		barSpecs:          map[string]bar.Spec{},
+		barSourceSig:      map[string]string{},
+		barTrays:          map[string]*mygo.Tray{},
 		barTraySig:      map[string]string{},
 		barFlyouts:        map[string]*mygo.Window{},
 		barFlyoutActive:   map[string]bool{},
@@ -608,7 +614,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	now := a.now()
 	_, tz := now.Zone()
 	set := a.store.Settings()
-	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force, Lang: curLang(), Headers: s.Meta.SourceHeaders}
+	opt := engine.FetchOptions{TTL: sourceTTL, Offline: set.Offline, Force: force, Lang: curLang()}
 	opt.LiveTTL = s.Meta.LiveTTL()
 	if a.cache != nil {
 		opt.Cache = cacheAdapter{a.cache}
@@ -616,11 +622,20 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	// The variables the user chose fill the sources: each combination is its
 	// own URL, so its own cache and history.
 	vars := a.varsOf(sc, s.Meta)
+	expandedHeaders := make(map[string]map[string]string, len(s.Meta.SourceHeaders))
+	for name, hdrs := range s.Meta.SourceHeaders {
+		m := make(map[string]string, len(hdrs))
+		for k, v := range hdrs {
+			m[k] = engine.ExpandVars(v, now, vars)
+		}
+		expandedHeaders[name] = m
+	}
+	opt.Headers = expandedHeaders
 	reqs := make(map[string]engine.Request, len(s.Meta.Sources))
 	keys := make(map[string]string, len(s.Meta.Sources))
 	for name, src := range s.Meta.Sources {
 		r := src.Request(now, vars)
-		for k, v := range s.Meta.SourceHeaders[name] {
+		for k, v := range expandedHeaders[name] {
 			r.Headers[k] = v
 		}
 		reqs[name] = r

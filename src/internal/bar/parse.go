@@ -3,10 +3,13 @@
 package bar
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +29,9 @@ type Spec struct {
 	Refresh         string      `json:"refresh,omitempty"`
 	Material        string      `json:"material,omitempty"`
 	Permissions     []string    `json:"permissions,omitempty"`
+	CookieDomains   []string    `json:"cookieDomains,omitempty"`
+	StoragePerm     bool        `json:"storage,omitempty"`
+	ClipboardPerm   bool        `json:"clipboard,omitempty"`
 	Inputs          []InputSpec `json:"inputs,omitempty"`
 	Script          string      `json:"-"`
 	ScriptAPIs      []string    `json:"scriptAPIs,omitempty"`
@@ -55,7 +61,7 @@ type xmlBar struct {
 	ID              string          `xml:"id,attr"`
 	Title           string          `xml:"title,attr"`
 	Category        string          `xml:"category,attr"`
-	Icon            string          `xml:"icon,attr"`
+	Icon            string          `json:"icon,attr" xml:"icon,attr"`
 	Description     string          `xml:"description,attr"`
 	License         string          `xml:"license,attr"`
 	Homepage        string          `xml:"homepage,attr"`
@@ -67,11 +73,18 @@ type xmlBar struct {
 }
 
 type xmlPermissions struct {
-	Networks []xmlNetwork `xml:"network"`
+	Networks  []xmlNetwork    `xml:"network"`
+	Cookies   []xmlCookiePerm `xml:"cookies"`
+	Storage   *struct{}       `xml:"storage"`
+	Clipboard *struct{}       `xml:"clipboard"`
 }
 
 type xmlNetwork struct {
 	Origin string `xml:"origin,attr"`
+}
+
+type xmlCookiePerm struct {
+	Domain string `xml:"domain,attr"`
 }
 
 type xmlInputs struct {
@@ -152,6 +165,13 @@ func Parse(source string) (Spec, error) {
 				spec.Permissions = append(spec.Permissions, orig)
 			}
 		}
+		for _, ck := range doc.Permissions.Cookies {
+			if dom := strings.TrimSpace(ck.Domain); dom != "" {
+				spec.CookieDomains = append(spec.CookieDomains, dom)
+			}
+		}
+		spec.StoragePerm = doc.Permissions.Storage != nil
+		spec.ClipboardPerm = doc.Permissions.Clipboard != nil
 	}
 	if doc.Inputs != nil {
 		for _, in := range doc.Inputs.Inputs {
@@ -230,8 +250,32 @@ func MergeInputs(spec Spec, values map[string]string) map[string]string {
 	return out
 }
 
+// MaskInputs returns a copy of vals with non-empty password input values
+// replaced by "[REDACTED]".
+func MaskInputs(spec Spec, vals map[string]string) map[string]string {
+	if len(vals) == 0 {
+		return nil
+	}
+	isSecret := make(map[string]bool, len(spec.Inputs))
+	for _, in := range spec.Inputs {
+		if in.Type == "password" {
+			isSecret[in.Name] = true
+		}
+	}
+	out := make(map[string]string, len(vals))
+	for k, v := range vals {
+		if isSecret[k] && v != "" {
+			out[k] = "[REDACTED]"
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // OriginAllowed enforces that rawURL matches one of the allowed network
-// origins by normalized scheme, lowercase hostname, and effective port.
+// origins by normalized scheme, lowercase hostname (or *.subdomain wildcard),
+// and effective port.
 func OriginAllowed(rawURL string, allowed []string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -253,8 +297,18 @@ func OriginAllowed(rawURL string, allowed []string) error {
 			continue
 		}
 		aScheme := strings.ToLower(au.Scheme)
+		if aScheme != scheme || effectivePort(aScheme, au.Port()) != port {
+			continue
+		}
 		aHost := strings.ToLower(au.Hostname())
-		if aScheme == scheme && aHost == host && effectivePort(aScheme, au.Port()) == port {
+		if strings.HasPrefix(aHost, "*.") {
+			suffix := aHost[1:]
+			if len(suffix) > 1 && strings.HasSuffix(host, suffix) && len(host) > len(suffix) {
+				return nil
+			}
+			continue
+		}
+		if aHost == host {
 			return nil
 		}
 	}
@@ -273,4 +327,39 @@ func effectivePort(scheme, port string) string {
 	default:
 		return ""
 	}
+}
+
+func safeComponentID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || id == "." || id == ".." || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+		sum := sha256.Sum256([]byte(id))
+		return "bad-" + hex.EncodeToString(sum[:8])
+	}
+	return id
+}
+
+// ComponentDataDir returns the per-.bar persistent data folder under rootDataDir.
+func ComponentDataDir(rootDataDir, id string) string {
+	if rootDataDir == "" {
+		return ""
+	}
+	return filepath.Join(rootDataDir, "bars", safeComponentID(id))
+}
+
+// CookiesPath returns the persisted CookieJar JSON file path for component id.
+func CookiesPath(rootDataDir, id string) string {
+	dir := ComponentDataDir(rootDataDir, id)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "cookies.json")
+}
+
+// StoragePath returns the persisted KVStore JSON file path for component id.
+func StoragePath(rootDataDir, id string) string {
+	dir := ComponentDataDir(rootDataDir, id)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "storage.json")
 }

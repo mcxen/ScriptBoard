@@ -364,3 +364,108 @@ export function render() {
 		t.Fatalf("dark preview inside light window used wrong table header theme: darkHdrPixels=%d lightHdrPixels=%d (darkCardBox=%v)", darkCardDarkHdrN, darkCardLightHdrN, darkCardBox)
 	}
 }
+
+func TestBarCookiesUIImportClearAndBadgeProgressEnglish(t *testing.T) {
+	a := newTestApp(t)
+	src := `<bar id="cookie-ui-bar" title="Cookie UI" version="1.0.0" category="developer" icon="key" refresh="10m">
+  <permissions>
+    <network origin="https://api.example.com" />
+  </permissions>
+  <inputs>
+    <input name="tok" type="password" label="API Token" default="secret-default-token" />
+  </inputs>
+  <script><![CDATA[
+    const h = (type, props, ...children) => ({
+      type, props: props || {}, children: children.flat().filter(c => c !== null && c !== undefined && c !== false)
+    });
+    export default {
+      render(env) {
+        const cnt = Object.keys($metrix.cookies.get("https://api.example.com")).length;
+        return {
+          tray: { title: "CK:" + cnt },
+          panel: h("Column", { preferredWidth: 290, padding: 12, gap: 8 },
+            h("Row", { alignItems: "center", gap: 6 },
+              h("Text", { fontSize: 13, fontWeight: 600 }, "Session Panel"),
+              h("Spacer"),
+              h("Badge", { background: cnt > 0 ? "accent" : "warning" }, cnt > 0 ? "Live" : "Empty")
+            ),
+            h("Progress", { value: 60, max: 100, height: 8 })
+          )
+        };
+      }
+    };
+  ]]></script>
+</bar>`
+	sc, err := a.importBarSource(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tt := ui.NewTester(a.view, 1280, 1400)
+	a.router.Push("/bar/" + sc.ID)
+	settle(tt)
+	requireText(t, tt, "Session Panel")
+	requireText(t, tt, "Empty")
+	requireText(t, tt, "Cookie 会话")
+
+	// Open cookie session manager, import cookies, and verify count updates.
+	click(t, tt, "管理 Cookie")
+	requireText(t, tt, "收起")
+	a.barCookieURL = "https://api.example.com"
+	a.barCookieInput = "sid=demo123; csrf=456"
+	click(t, tt, "导入并刷新")
+	if got := a.barCookieCount(sc.ID); got != 2 {
+		t.Fatalf("barCookieCount after UI import = %d, want 2", got)
+	}
+	if inst, ok := a.barInsts[sc.ID]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "已保存 2 条 Cookie")
+	requireText(t, tt, "Live")
+
+	// Clear cookies via UI button.
+	click(t, tt, "清空 Cookie")
+	if got := a.barCookieCount(sc.ID); got != 0 {
+		t.Fatalf("barCookieCount after clear = %d, want 0", got)
+	}
+	if inst, ok := a.barInsts[sc.ID]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "未保存 Cookie")
+
+	// Switch to English UI and test importing & clearing in English.
+	setLang("en")
+	defer setLang("zh")
+	settle(tt)
+	requireText(t, tt, "Cookie session")
+	requireText(t, tt, "No cookies saved")
+	requireText(t, tt, "Cookies cleared")
+	requireText(t, tt, "Import & refresh")
+	onlyEnglish(t, tt, "bar cookies empty")
+
+	a.barCookieURL = "https://api.example.com"
+	a.barCookieInput = "sid=en123"
+	click(t, tt, "Import & refresh")
+	if got := a.barCookieCount(sc.ID); got != 1 {
+		t.Fatalf("barCookieCount after English import = %d, want 1", got)
+	}
+	if inst, ok := a.barInsts[sc.ID]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "1 cookies saved")
+	requireText(t, tt, "Clear cookies")
+	requireText(t, tt, "Live")
+	onlyEnglish(t, tt, "bar cookies loaded")
+
+	click(t, tt, "Clear cookies")
+	if inst, ok := a.barInsts[sc.ID]; ok {
+		inst.WaitIdle(0)
+	}
+	settle(tt)
+	requireText(t, tt, "No cookies saved")
+	requireText(t, tt, "Empty")
+	onlyEnglish(t, tt, "bar cookies cleared")
+}
