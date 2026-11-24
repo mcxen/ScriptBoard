@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12
+
+- `.bar` persistent CookieJar, KV storage & expanded runtime: adds per-component `CookieJar` (`cookies.json`, `0600`) with automatic `Set-Cookie` capture/reuse, `KVStore` (`storage.json`, `0600`), `$metrix.{cookies,storage,copy}`, `localStorage`, wildcard subdomain network permissions (`https://*.example.com`), `Badge` and `Progress` VDOM nodes, `Button` variants, render-only refresh support, and desktop Cookie session manager (`curl` / `Cookie:` import, refresh and clear) with English localization.
+- Full MCP `.bar` & feed development toolchain: adds `bar_guide`, `bar_list`, `bar_get`, `bar_delete`, `bar_check`, `bar_run` (isolated sandbox with `mockFetch` / `Set-Cookie`, seed cookies/curl, `useSavedState`, `allowNetwork`, and `actionID` click testing), `bar_cookies_{get,set,clear}`, `bar_storage_{get,set,clear}`, and `feed_{list,get,save,delete,test}`, with secret redaction by default, `ReadOnly` guards, `bar_save` compile validation, and full tool listing in `mcpPrompt`.
+- Engine caching, script variables & MCP reload fixes: includes hashed headers in `Request.CacheKey()` so Cookie/Authorization changes never serve stale cache, adds free-text and `password` script variables with `{var}` expansion in `SourceHeaders`, fixes `reloadFromMCP()` to restart modified `.bar` instances and clean up deleted ones, fixes `/bar/{id}` frame-reset of component UI state, and unifies local plugin IDs on `plugin-` (with `plugin:` alias compatibility).
+
 ## 0.1.11
 
 - IP & Network Bento dashboard: new reusable nested `bento` component (Hero IP, 6-target 12-dot connectivity probes, split-routing exit IP pills, IP quality inspector, hide-IP mask toggle and split-routing detail table), host `netprobe` capability with system/environment proxy support, built-in `ip-dashboard` script and visual editor Bento template.
