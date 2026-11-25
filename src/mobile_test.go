@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/mobile"
 
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/engine"
@@ -167,7 +168,10 @@ export function render(ctx) { return { title: "必应壁纸", big: "2", sub: "",
 	settle(ttEn)
 	requireText(t, ttEn, "Refresh data")
 	requireText(t, ttEn, "Share script")
-	requireText(t, ttEn, "Cancel")
+	requireText(t, ttEn, "Remove from home")
+	if mobile.Current() == mobile.Cupertino {
+		requireText(t, ttEn, "Cancel")
+	}
 	onlyEnglish(t, ttEn, "mobile:actionsheet")
 }
 
