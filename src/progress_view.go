@@ -119,10 +119,10 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 
 			ui.Column(c).Gap(4).Children(func() {
 				if it.Name != "" || !pb.HideLabel {
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
 						if !pb.HideLabel {
-							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap()
+							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap().Shrink(0)
 							if isNeon && p.dark {
 								lbl.TextColor(from)
 							}
@@ -527,10 +527,10 @@ func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit 
 			}
 			ui.Column(c).Gap(4).Children(func() {
 				if it.Name != "" || !pb.HideLabel {
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
 						if !pb.HideLabel {
-							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).NoWrap()
+							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap().Shrink(0)
 							if p.dark {
 								lbl.TextColor(col)
 							}
@@ -810,10 +810,16 @@ func ringCenter(st ringStyle, it engine.Progress) string {
 // ring layout "concentric", the rings nested in one, with a legend. d is the
 // ring's size, unless the chart sets one; limit is how many items show (0 is
 // all), the rest counted.
-func progressRingView(c *ui.Context, ch *engine.Chart, limit int, d float32) ui.Element {
+func progressRingView(c *ui.Context, ch *engine.Chart, width float32, limit int, d float32) ui.Element {
 	p := pal(c)
 	st := ringStyleOf(ch)
 	items := ch.Progress
+	narrow := width > 0 && width < 210
+	if narrow && !st.concentric {
+		if limit == 0 || limit > 2 {
+			limit = 2
+		}
+	}
 	shown, more := items, 0
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
@@ -824,12 +830,22 @@ func progressRingView(c *ui.Context, ch *engine.Chart, limit int, d float32) ui.
 		} else {
 			d *= 1.45
 		}
-		return progressConcentricView(c, p, st, shown, more, d)
+		if narrow {
+			d = min(d, 68)
+		}
+		return progressConcentricView(c, p, st, shown, more, d, narrow)
 	}
 	if st.size > 0 {
 		d = st.size
 	}
-	return ui.Row(c).Wrap().Gap(18).Justify(st.align).Children(func() {
+	if narrow {
+		d = min(d, 38)
+	}
+	gap := float32(18)
+	if narrow {
+		gap = 10
+	}
+	return ui.Row(c).Wrap().Gap(gap).Justify(st.align).Children(func() {
 		if len(items) == 0 {
 			ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
 		}
@@ -852,15 +868,15 @@ func progressRingView(c *ui.Context, ch *engine.Chart, limit int, d float32) ui.
 						ringArc(pt, cx, cy, (min(r.W, r.H)-w)/2, w, it.Raw(), from, to, track, hasTrack, st)
 					}).Children(func() {
 					if text := ringCenter(st, it); text != "" {
-						t := ui.Text(c, text).FontSize(clampF(d*0.24, 11, 20)).FontWeight(650).NoWrap()
+						t := ui.Text(c, text).FontSize(clampF(d*0.24, 10, 20)).FontWeight(650).NoWrap()
 						if st.matrix {
 							t.TextColor(ui.Hex("#F8FAFC"))
 						}
 					}
 				})
-				ui.Text(c, it.Name).FontSize(fsCaption).FontWeight(500).NoWrap()
+				ui.Text(c, it.Name).FontSize(fsCaption).FontWeight(500).SingleLine().Ellipsis("…")
 				if it.Max > 0 {
-					ui.Text(c, progressCount(it)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+					ui.Text(c, progressCount(it)).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
 				}
 			})
 		}
@@ -873,8 +889,12 @@ func progressRingView(c *ui.Context, ch *engine.Chart, limit int, d float32) ui.
 // progressConcentricView nests the items' rings in one, the first outermost, as
 // Apple's activity rings are, with each item's name and figure beside it in the
 // ring's color.
-func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engine.Progress, more int, d float32) ui.Element {
-	return ui.Row(c).AlignItems(ui.Center).Gap(18).Justify(st.align).Children(func() {
+func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engine.Progress, more int, d float32, narrow bool) ui.Element {
+	gap := float32(18)
+	if narrow {
+		gap = 10
+	}
+	return ui.Row(c).AlignItems(ui.Center).Gap(gap).Justify(st.align).Children(func() {
 		ui.Box(c).Size(d, d).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
 			cx, cy := r.X+r.W/2, r.Y+r.H/2
 			big := min(r.W, r.H) / 2
@@ -896,7 +916,7 @@ func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engi
 				ringArc(pt, cx, cy, big-w/2-float32(i)*(w+gap), w, it.Raw(), from, to, track, hasTrack, st)
 			}
 		})
-		ui.Column(c).Gap(8).MinWidth(0).Children(func() {
+		ui.Column(c).Gap(6).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 			if len(shown) == 0 {
 				ui.Text(c, tr("暂无进度")).FontSize(fsSmall).TextColor(p.muted)
 			}
@@ -906,9 +926,9 @@ func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engi
 				if it.Max > 0 {
 					figure = progressCount(it)
 				}
-				ui.Column(c).Gap(1).Children(func() {
-					ui.Text(c, it.Name).FontSize(fsTiny).FontWeight(650).TextColor(to).NoWrap()
-					ui.Text(c, figure).FontSize(fsBody).FontWeight(650).NoWrap()
+				ui.Column(c).Gap(1).MinWidth(0).Children(func() {
+					ui.Text(c, it.Name).FontSize(fsTiny).FontWeight(650).TextColor(to).SingleLine().Ellipsis("…")
+					ui.Text(c, figure).FontSize(fsBody).FontWeight(650).SingleLine().Ellipsis("…")
 				})
 			}
 			if more > 0 {

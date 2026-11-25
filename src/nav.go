@@ -89,7 +89,7 @@ func (a *app) view(c *ui.Context) {
 		}
 	}
 	// Cmd+, (macOS) or Ctrl+, (Windows/Linux) opens the settings window.
-	if !isAndroid() && root.OverlayShortcut(ui.Cmd, ui.KeyComma) {
+	if !isMobile() && root.OverlayShortcut(ui.Cmd, ui.KeyComma) {
 		a.goTo(settingsNavItem.path)
 	}
 	// Closing the window only minimizes it, and Windows and Linux have no menu
@@ -99,6 +99,7 @@ func (a *app) view(c *ui.Context) {
 	}
 	root.Children(func() {
 		p := pal(c)
+		a.syncSystemBars(p.dark)
 		path := a.router.Path()
 		switch {
 		// A phone has no menu bar and no window buttons, whatever the skin.
@@ -296,7 +297,7 @@ func (a *app) sidebarSettingsButton(c *ui.Context, p palette, active bool) {
 	}
 	lit := active || a.settingsWin != nil
 	if navRow(c, "nav:settings", settingsNavItem.icon, label, lit, sidebarWidth-20, func() {
-		if !isAndroid() {
+		if !isMobile() {
 			ui.Text(c, shortcut).FontSize(fsTiny).TextColor(p.faint)
 		}
 	}) {
@@ -388,9 +389,14 @@ func (a *app) sidebarStatus(c *ui.Context, p palette) {
 }
 
 // tabBar is the phone layout's navigation: an icon over a label for each
-// place.
+// place. It hides while the on-screen keyboard is open and fills the bottom
+// safe-area inset when at rest.
 func (a *app) tabBar(c *ui.Context, p palette, path string) {
-	ui.Row(c).Background(p.card).Padding(7, 6, 9, 6).BorderWidth(1, 0, 0, 0).BorderColor(p.hairline).Children(func() {
+	_, _, bottom, _ := c.SafeArea()
+	if bottom > 120 {
+		return
+	}
+	ui.Row(c).Background(p.card).Padding(7, 6, 9+bottom, 6).Margin(0, 0, -bottom, 0).BorderWidth(1, 0, 0, 0).BorderColor(p.hairline).Children(func() {
 		for _, n := range navItems {
 			n := n
 			active := n.active(path)
@@ -410,6 +416,9 @@ func (a *app) tabBar(c *ui.Context, p palette, path string) {
 				}
 			})
 			if el.Clicked() {
+				if !active {
+					a.hapticSelection()
+				}
 				a.goTo(n.path)
 			}
 		}

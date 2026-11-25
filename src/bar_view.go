@@ -494,7 +494,7 @@ func (a *app) barPlacementSection(c *ui.Context, p palette, id string, pl store.
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
 		ui.Text(c, tr("显示位置")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
 		box := ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
-		if isAndroid() {
+		if isMobile() {
 			box.Padding(12).Children(func() {
 				ui.Text(c, tr("移动端在应用内「菜单管理」与首页卡片中显示")).FontSize(fsSmall).TextColor(p.muted)
 			})

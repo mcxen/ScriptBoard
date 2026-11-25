@@ -12,6 +12,10 @@ import (
 // a weight or a price: a number field that starts at the latest value, and a
 // button that records it. A script declares such values in meta().inputs.
 func (a *app) quickEntry(c *ui.Context, scriptID string, in engine.ManualInput) {
+	a.quickEntryWidth(c, scriptID, in, 0)
+}
+
+func (a *app) quickEntryWidth(c *ui.Context, scriptID string, in engine.ManualInput, width float32) {
 	p := pal(c)
 	key := scriptID + "|" + in.Metric
 	v, ok := a.quick[key]
@@ -30,6 +34,28 @@ func (a *app) quickEntry(c *ui.Context, scriptID string, in engine.ManualInput) 
 	if step <= 0 {
 		step = 0.1
 	}
+	narrow := width > 0 && width < 210
+	recordBtn := func() {
+		if primaryBtn(c, tr("记录")).Shrink(0).Clicked() {
+			if err := a.recordMetric(in.Metric, *v); err != nil {
+				a.quickNote = tr("记录失败：") + err.Error()
+				a.hapticError()
+			} else {
+				a.quickNote = fmt.Sprintf(tr("已记录 %s %.2f"), in.Label, *v)
+				a.hapticSuccess()
+			}
+		}
+	}
+	if narrow {
+		inputW := clampF(width-58, 60, 108)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+				numberInput(c, v, 0, 1e6, step).Width(inputW)
+			})
+			recordBtn()
+		})
+		return
+	}
 	// The label gives way first, so the field and the button stay on the card.
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 		// A text keeps its width, so the label sits in a box that can shrink.
@@ -39,12 +65,6 @@ func (a *app) quickEntry(c *ui.Context, scriptID string, in engine.ManualInput) 
 		ui.Row(c).Shrink(0).Width(112).Children(func() {
 			numberInput(c, v, 0, 1e6, step).Width(112)
 		})
-		if primaryBtn(c, tr("记录")).Shrink(0).Clicked() {
-			if err := a.recordMetric(in.Metric, *v); err != nil {
-				a.quickNote = tr("记录失败：") + err.Error()
-			} else {
-				a.quickNote = fmt.Sprintf(tr("已记录 %s %.2f"), in.Label, *v)
-			}
-		}
+		recordBtn()
 	})
 }

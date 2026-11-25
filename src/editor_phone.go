@@ -147,7 +147,9 @@ func (a *app) phoneScript(c *ui.Context) {
 	a.specInfo(c, a.draft)
 	rows := int(clampF((a.height-360)/17, 9, 40))
 	field(c, tr("源码"), tr("ES 模块：导出 meta() 与 render(ctx)；log(...) 的输出会显示在预览里"), func() {
-		textArea(c, &a.draft.Source, "", rows).Font("monospace").FontSize(fsSmall)
+		textArea(c, &a.draft.Source, "", rows).Font("monospace").FontSize(fsSmall).
+			Capitalize(ui.CapitalizeNone).
+			Autocorrect(false)
 	})
 	a.phoneScriptActions(c)
 }
@@ -160,6 +162,9 @@ func (a *app) phoneScriptActions(c *ui.Context) {
 		}
 		if btn(c, tr("导出")).Clicked() {
 			a.panel, a.transferText, a.transferErr = "export", exportScript(a.draft), ""
+		}
+		if isMobile() && btn(c, tr("分享")).Clicked() {
+			a.shareScript(a.draft)
 		}
 		a.resetIcon(c, a.draft)
 		if a.originOf(a.draft) == store.OriginBuiltin && btn(c, tr("还原")).Clicked() {

@@ -165,7 +165,9 @@ func textArea(c *ui.Context, v *string, placeholder string, rows int) ui.Element
 }
 
 func numberInput(c *ui.Context, v *float64, lo, hi, step float64) ui.Element {
-	return lfield.InputNumber(c, v, lfield.InputNumberProps{Min: lo, Max: hi, Step: step, Precision: 2})
+	return lfield.InputNumber(c, v, lfield.InputNumberProps{Min: lo, Max: hi, Step: step, Precision: 2}).
+		Keyboard(ui.KeyboardDecimal).
+		ReturnKey(ui.ReturnDone)
 }
 
 // notice shows a line of feedback as a Lobe alert.

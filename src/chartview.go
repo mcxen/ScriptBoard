@@ -320,7 +320,7 @@ func chartWith(c *ui.Context, ch *engine.Chart, style string, h float32, sel *in
 		return progressBarView(c, pb, 0)
 	}
 	if ch != nil && ch.Type == "progressRing" {
-		return progressRingView(c, ch, 0, clampF(h*0.4, 56, 104))
+		return progressRingView(c, ch, 0, 0, clampF(h*0.4, 56, 104))
 	}
 	if isWidget(ch) {
 		return widgetView(c, ch, h, sel, full, time.Now(), 0)

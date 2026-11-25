@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/mobile"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -71,7 +72,7 @@ func (a *app) home(c *ui.Context, compact bool) {
 	now := a.now()
 	scripts := a.orderedHome(a.homeScripts())
 	subtitle := fmt.Sprintf(tr("%d月%d日 %s · %d 个组件"), int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]), len(scripts))
-	pageFull(c, compact, func() {
+	scrollEl := pageFull(c, compact, func() {
 		// A phone has room for the size switch under the title, not beside it;
 		// the scale slider is for a window with room to scale into.
 		sizeControls := func() {
@@ -132,6 +133,16 @@ func (a *app) home(c *ui.Context, compact bool) {
 		a.cols = colsFor(a.contentW(), compact)
 		a.homeGrid(c, items)
 	})
+	if a.homeRefresh.Refreshing && !a.anyHomeRefreshing(scripts) {
+		a.homeRefresh.Refreshing = false
+	}
+	if scrollEl.PullToRefresh(&a.homeRefresh) {
+		a.refreshAllHome(scripts)
+		if !a.anyHomeRefreshing(scripts) {
+			a.homeRefresh.Refreshing = false
+		}
+	}
+	a.cardActionSheet(c)
 }
 
 // fmtScale shows a scale as a percentage, such as 120%.
@@ -194,7 +205,11 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			iconName = st.res.Icon
 		}
 	}
+	narrow := w > 0 && w < 220
 	bigSize := clampF(34*s, 24, 46)
+	if narrow {
+		bigSize = clampF(28*s, 22, 34)
+	}
 	// What is left of the header for the title: the card less its padding, the
 	// icon, the two buttons, a tag when there is one, and the gaps.
 	hasTag := ready && (size > 0 || (st.res.Chart != nil && st.res.Chart.Type == "gauge"))
@@ -258,7 +273,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			}
 		}
 	}
-	base := card(c).Width(w)
+	base := card(c).Width(w).Clip()
 	if h > 0 {
 		base = base.Height(h)
 	}
@@ -266,9 +281,13 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// inline: its text and buttons are over it while the pointer is on it.
 	cv := a.coverOf(sc, st.res, ready && size != sizeMini && !a.editing && lay.Image != "inline")
 	padding := 16 * s
+	if narrow {
+		padding = 12 * s
+	}
 	if cv != nil {
 		padding = 0
 	}
+	innerW := max(w-2*padding, 80)
 	box := base.Padding(padding).Gap(6 * s).Cursor(ui.CursorPointer)
 	// The buttons show while the pointer is on the card. A touch screen has no
 	// pointer; a refresh under way and the edit layout show them too, and so does
@@ -312,7 +331,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 			// The smallest card: its number and nothing else. A click opens the
 			// full view and the right-click menu still picks a size.
 			if ready && isCalendar(st.res.Chart) {
-				a.calendarHomeCard(c, size, s, b.Height)
+				a.calendarHomeCard(c, size, s, b.Height, innerW)
 			} else {
 				ui.Spacer(c)
 				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).
@@ -321,7 +340,8 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					LetterSpacing(-1.8).
 					FontFeatures("tnum").
 					ContentTransition(ui.ContentTransition{Numeric: true}).
-					NoWrap()
+					SingleLine().
+					Ellipsis("…")
 			}
 		} else {
 			if showTitle {
@@ -345,7 +365,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				ui.Text(c, st.err.Error()).FontSize(fsTiny).TextColor(p.up)
 			default:
 				if isCalendar(st.res.Chart) {
-					a.calendarHomeCard(c, size, s, b.Height)
+					a.calendarHomeCard(c, size, s, b.Height, innerW)
 					break
 				}
 				// A card with no headline, or no summary, does not keep a line empty.
@@ -361,18 +381,25 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						LetterSpacing(-1.5).
 						FontFeatures("tnum").
 						ContentTransition(ui.ContentTransition{Numeric: true}).
-						NoWrap()
+						SingleLine().
+						Ellipsis("…")
 				}
 				hasSub := lay.Summary != "hide" && st.res.Sub != "" && !isBentoHero(viewRes.Chart)
 				switch {
 				case showTitle && hasSub:
-					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
+				case !showTitle && hasSub && !chipOK:
+					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
 				case !showTitle && (hasSub || chipOK):
+					subGap := float32(8)
+					if narrow {
+						subGap = 6
+					}
 					// The summary, with the change beside it.
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Row(c).AlignItems(ui.Center).Gap(subGap).Children(func() {
 						if hasSub {
-							ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
-								ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+							ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+								ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
 							})
 						}
 						chip()
@@ -382,7 +409,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				if size > 0 {
 					a.freshness(c, st, size)
 					if len(st.res.Images) > 0 {
-						a.imageCarousel(c, sc, st.res.Images, w-32*s, 120*s)
+						a.imageCarousel(c, sc, st.res.Images, innerW, 120*s)
 					}
 				}
 				switch size {
@@ -390,23 +417,23 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					if comp != nil && ((hasPB && len(pb.Items) > 0) || isBento(viewRes.Chart)) {
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: 0, Width: w - 2*padding, Limit: 1, Now: a.now(),
+							Size: 0, Width: innerW, Limit: 1, Now: a.now(),
 						})
 					}
 				case 1:
 					if hasPB {
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: 1, Limit: 2, Now: a.now(),
+							Size: 1, Width: innerW, Limit: 2, Now: a.now(),
 						})
 						for _, in := range inputs {
-							a.quickEntry(c, sc.ID, in)
+							a.quickEntryWidth(c, sc.ID, in, innerW)
 						}
 						break
 					}
 					if comp == nil || !hasChart {
 						for _, in := range inputs {
-							a.quickEntry(c, sc.ID, in)
+							a.quickEntryWidth(c, sc.ID, in, innerW)
 						}
 						break
 					}
@@ -420,10 +447,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					}
 					comp.RenderCard(c, ComponentRenderReq{
 						App: a, Script: sc, Result: viewRes, Style: subStyle,
-						Size: 1, Width: w - 2*padding, Height: sparkH, Limit: 3, Now: a.now(),
+						Size: 1, Width: innerW, Height: sparkH, Limit: 3, Now: a.now(),
 					})
 					for _, in := range inputs {
-						a.quickEntry(c, sc.ID, in)
+						a.quickEntryWidth(c, sc.ID, in, innerW)
 					}
 				case 2, 3:
 					if hasPB {
@@ -431,10 +458,10 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						a.varRow(c, sc, meta)
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: size, Limit: 0, Now: a.now(),
+							Size: size, Width: innerW, Limit: 0, Now: a.now(),
 						})
 						for _, in := range inputs {
-							a.quickEntry(c, sc.ID, in)
+							a.quickEntryWidth(c, sc.ID, in, innerW)
 						}
 						break
 					}
@@ -456,7 +483,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						sel := a.selOf("card:" + sc.ID)
 						comp.RenderCard(c, ComponentRenderReq{
 							App: a, Script: sc, Result: viewRes, Style: subStyle,
-							Size: size, Width: w - 2*padding, Height: chartH, Selected: sel, Now: a.now(), Legend: showLegend,
+							Size: size, Width: innerW, Height: chartH, Selected: sel, Now: a.now(), Legend: showLegend,
 						})
 						if compSpec.Capabilities.HasDetail && !isCalendar(viewRes.Chart) {
 							Detail(c, viewRes.Chart, sel)
@@ -469,7 +496,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 						}
 					}
 					for _, in := range inputs {
-						a.quickEntry(c, sc.ID, in)
+						a.quickEntryWidth(c, sc.ID, in, innerW)
 					}
 				}
 				// The stats are their own block at the foot of the card, when the
@@ -490,8 +517,14 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		}
 	})
 	// Right click on this card: a menu in the window with its sizes, legend,
-	// menu bar toggle, and compatible visual view swaps.
+	// menu bar toggle, and compatible visual view swaps. On touch screens, a
+	// long press opens a native bottom action sheet instead.
 	a.cardContextMenu(c, sc, meta, st, viewRes, compSpec, el)
+	if !a.editing && el.LongPressed() {
+		a.hapticMedium()
+		a.sheetScriptID = sc.ID
+		a.sheetOpen = true
+	}
 	if a.editing {
 		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
 		if a.rz != nil && a.rz.id == sc.ID {
@@ -703,7 +736,94 @@ func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s 
 			}
 		})
 	})
+	if !a.editing && el.LongPressed() {
+		a.hapticMedium()
+		a.sheetScriptID = sc.ID
+		a.sheetOpen = true
+	}
 	if el.Clicked() && !a.editing {
 		a.router.Push("/bar/" + sc.ID)
 	}
+}
+
+func (a *app) cardActionSheet(c *ui.Context) {
+	sc, ok := a.store.Script(a.sheetScriptID)
+	if !ok {
+		a.sheetOpen = false
+		return
+	}
+	var actions []mobile.Action
+	if sc.IsBar() {
+		actions = append(actions,
+			mobile.Action{Label: tr("刷新数据"), OnTap: func() { a.refreshBar(sc.ID) }},
+			mobile.Action{Label: tr("编辑"), OnTap: func() { a.router.Push("/bar/" + sc.ID) }},
+		)
+		if isMobile() {
+			actions = append(actions, mobile.Action{Label: tr("分享脚本"), OnTap: func() { a.shareScript(sc) }})
+		}
+		actions = append(actions, mobile.Action{
+			Label:       tr("从首页移除"),
+			Destructive: true,
+			OnTap:       func() { a.removeFromHome(sc) },
+		})
+		mobile.ActionSheet(c, &a.sheetOpen, mobile.ActionSheetOptions{Title: tr(sc.Name), Cancel: tr("取消")}, actions...)
+		return
+	}
+
+	meta, metaErr := a.metaOf(sc)
+	_, vals := a.viewOf(sc.ID, meta.Dims)
+	var st *runState
+	if metaErr == nil {
+		st = a.runs[a.runKeyOf(sc.ID, sc, meta, vals)]
+	}
+	curSize := classOf(a.boxOf(sc.ID))
+	names := sizeNames()
+	nextSize := (curSize + 1) % len(names)
+	actions = append(actions,
+		mobile.Action{Label: tr("刷新数据"), OnTap: func() { a.refreshScript(sc) }},
+		mobile.Action{Label: tr("切换大小：") + names[nextSize], OnTap: func() { a.setSize(sc.ID, nextSize) }},
+	)
+	if st != nil && st.err == nil && !st.loading {
+		comp, viewRes, _ := resolveComponent(st.res, a.styles[sc.ID])
+		if comp != nil && comp.Spec().Capabilities.Plot && viewRes.Chart != nil && len(viewRes.Chart.Series) > 1 {
+			legendLbl := tr("隐藏图例")
+			if a.set.LegendHidden[sc.ID] {
+				legendLbl = tr("显示图例")
+			}
+			actions = append(actions, mobile.Action{Label: legendLbl, OnTap: func() { a.toggleLegend(sc.ID) }})
+		}
+		if swaps := visualSwapOptions(st.res); len(swaps) > 1 && comp != nil {
+			curType := comp.Spec().Type
+			nextTarget := swaps[0]
+			for i, target := range swaps {
+				if target == curType {
+					nextTarget = swaps[(i+1)%len(swaps)]
+					break
+				}
+			}
+			if nextTarget != curType {
+				baseType := engine.ResultWidgetType(st.res)
+				actions = append(actions, mobile.Action{
+					Label: tr("切换为 ") + widgetDisplayName(nextTarget),
+					OnTap: func() {
+						if nextTarget == baseType {
+							a.setCardStyle(sc.ID, "")
+						} else {
+							a.setCardStyle(sc.ID, "view:"+nextTarget)
+						}
+					},
+				})
+			}
+		}
+	}
+	actions = append(actions, mobile.Action{Label: tr("编辑"), OnTap: func() { a.router.Push("/edit/" + sc.ID) }})
+	if isMobile() {
+		actions = append(actions, mobile.Action{Label: tr("分享脚本"), OnTap: func() { a.shareScript(sc) }})
+	}
+	actions = append(actions, mobile.Action{
+		Label:       tr("从首页移除"),
+		Destructive: true,
+		OnTap:       func() { a.removeFromHome(sc) },
+	})
+	mobile.ActionSheet(c, &a.sheetOpen, mobile.ActionSheetOptions{Title: tr(sc.Name), Cancel: tr("取消")}, actions...)
 }

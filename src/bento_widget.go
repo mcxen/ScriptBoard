@@ -218,7 +218,7 @@ func (a *app) bentoWidgetView(c *ui.Context, key string, b *engine.BentoSpec, wi
 		return bentoSmallView(c, b, bp, st.masked)
 	}
 	if !full && (size == 1 || (width > 0 && width < 520)) {
-		return bentoMediumView(c, b, bp, st.masked)
+		return bentoMediumView(c, b, bp, width, st.masked)
 	}
 	return a.bentoFullOrWideView(c, key, b, bp, st, width, full)
 }
@@ -234,10 +234,10 @@ func bentoSmallView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, masked b
 				if b.Hero.Flag != "" {
 					flagIcon(c, b.Hero.Flag, 18, 12)
 				}
-				ui.Text(c, ip).FontSize(fsBody).Bold().TextColor(bp.text).NoWrap()
+				ui.Text(c, ip).FontSize(fsBody).Bold().TextColor(bp.text).SingleLine().Ellipsis("…").Grow(1).Shrink(1).MinWidth(0)
 			})
 			if b.Hero.Location != "" {
-				ui.Text(c, b.Hero.Location).FontSize(fsTiny).TextColor(bp.muted).NoWrap()
+				ui.Text(c, b.Hero.Location).FontSize(fsTiny).TextColor(bp.muted).SingleLine().Ellipsis("…")
 			}
 		}
 		if b.Probes != nil && len(b.Probes.Items) > 0 {
@@ -252,61 +252,87 @@ func bentoSmallView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, masked b
 	})
 }
 
-func bentoMediumView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, masked bool) ui.Element {
+func bentoMediumView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, width float32, masked bool) ui.Element {
+	narrow := width > 0 && width < 220
 	return ui.Column(c).Gap(6).Children(func() {
 		if b.Hero != nil {
 			ip := b.Hero.Value
 			if masked {
 				ip = firstNonEmpty(b.Hero.Masked, maskIP(ip))
 			}
-			ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
+			heroFS := float32(16)
+			if narrow {
+				heroFS = 13.5
+			}
+			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				if b.Hero.Flag != "" {
 					flagIcon(c, b.Hero.Flag, 18, 12)
 				}
 				ui.Row(c).Grow(1).MinWidth(0).ClipX().Children(func() {
-					ui.Text(c, ip).FontSize(16).Bold().TextColor(bp.text).NoWrap()
+					ui.Text(c, ip).FontSize(heroFS).Bold().TextColor(bp.text).SingleLine().Ellipsis("…")
 				})
-				if b.Hero.Meta != "" {
+				if b.Hero.Meta != "" && !narrow {
 					chip(c, b.Hero.Meta, bp.muted, bp.subBorder.Alpha(0.5))
 				}
 			})
 			if b.Hero.Location != "" {
 				ui.Row(c).MinWidth(0).ClipX().Children(func() {
-					ui.Text(c, b.Hero.Location).FontSize(fsTiny).TextColor(bp.soft).NoWrap()
+					ui.Text(c, b.Hero.Location).FontSize(fsTiny).TextColor(bp.soft).SingleLine().Ellipsis("…")
 				})
 			}
 		}
 		if b.Probes != nil && len(b.Probes.Items) > 0 {
 			items := b.Probes.Items
-			if len(items) > 6 {
-				items = items[:6]
-			}
-			for r := 0; r < len(items); r += 2 {
-				ui.Row(c).Gap(6).Children(func() {
-					for col := 0; col < 2; col++ {
-						idx := r + col
-						if idx >= len(items) {
-							ui.Box(c).Grow(1).MinWidth(0)
-							continue
-						}
-						it := items[idx]
-						latText, latCol := probeLatencyDisplay(it, bp)
-						ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(5).
-							Padding(4, 6).Radius(6).Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).
-							Children(func() {
-								probeBrandIcon(c, it.Icon, it.Name, pal(c).accent, bp.dark, 13)
-								ui.Row(c).Grow(1).MinWidth(0).ClipX().Children(func() {
-									ui.Text(c, it.Name).FontSize(11).TextColor(bp.text).NoWrap()
-								})
-								ui.Text(c, latText).FontSize(11).FontWeight(650).TextColor(latCol).NoWrap()
+			if narrow {
+				if len(items) > 3 {
+					items = items[:3]
+				}
+				for _, it := range items {
+					latText, latCol := probeLatencyDisplay(it, bp)
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(5).
+						Padding(3.5, 6).Radius(6).Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).
+						Children(func() {
+							probeBrandIcon(c, it.Icon, it.Name, pal(c).accent, bp.dark, 12)
+							ui.Row(c).Grow(1).MinWidth(0).ClipX().Children(func() {
+								ui.Text(c, it.Name).FontSize(11).TextColor(bp.text).SingleLine().Ellipsis("…")
 							})
-					}
-				})
+							ui.Text(c, latText).FontSize(11).FontWeight(650).TextColor(latCol).NoWrap().Shrink(0)
+						})
+				}
+			} else {
+				if len(items) > 6 {
+					items = items[:6]
+				}
+				for r := 0; r < len(items); r += 2 {
+					ui.Row(c).Gap(6).Children(func() {
+						for col := 0; col < 2; col++ {
+							idx := r + col
+							if idx >= len(items) {
+								ui.Box(c).Grow(1).MinWidth(0)
+								continue
+							}
+							it := items[idx]
+							latText, latCol := probeLatencyDisplay(it, bp)
+							ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(5).
+								Padding(4, 6).Radius(6).Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).
+								Children(func() {
+									probeBrandIcon(c, it.Icon, it.Name, pal(c).accent, bp.dark, 13)
+									ui.Row(c).Grow(1).MinWidth(0).ClipX().Children(func() {
+										ui.Text(c, it.Name).FontSize(11).TextColor(bp.text).NoWrap()
+									})
+									ui.Text(c, latText).FontSize(11).FontWeight(650).TextColor(latCol).NoWrap()
+								})
+						}
+					})
+				}
 			}
 		}
 		if b.Pills != nil && len(b.Pills.Items) > 0 {
 			items := b.Pills.Items
 			maxPills := min(len(items), 2)
+			if narrow {
+				maxPills = min(len(items), 1)
+			}
 			ui.Row(c).Gap(6).Children(func() {
 				for i := 0; i < maxPills; i++ {
 					pl := items[i]
@@ -321,13 +347,13 @@ func bentoMediumView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, masked 
 								flagIcon(c, pl.Flag, 14, 10)
 							}
 							ui.Row(c).Grow(1).MinWidth(0).ClipX().Children(func() {
-								ui.Text(c, val).FontSize(11).TextColor(bp.soft).NoWrap()
+								ui.Text(c, val).FontSize(11).TextColor(bp.soft).SingleLine().Ellipsis("…")
 							})
 						})
 				}
 				if len(items) > maxPills {
 					ui.Row(c).AlignItems(ui.Center).Padding(4, 6).Radius(6).
-						Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).Children(func() {
+						Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).Shrink(0).Children(func() {
 						ui.Text(c, fmt.Sprintf("+%d", len(items)-maxPills)).FontSize(11).TextColor(bp.muted).NoWrap()
 					})
 				}

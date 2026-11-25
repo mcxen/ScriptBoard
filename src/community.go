@@ -182,7 +182,7 @@ func (a *app) community(c *ui.Context, compact bool) {
 	cl := a.communityClient()
 	a.loadCommunity()
 
-	page(c, compact, func() {
+	scrollEl := page(c, compact, func() {
 		header(c, tr("社区"), tr("下载无需登录，上传需要登录，并等管理员审核"), func() {
 			if btn(c, tr("刷新")).Clicked() {
 				a.comm.loaded = false
@@ -208,10 +208,21 @@ func (a *app) community(c *ui.Context, compact bool) {
 				// Fields of a form are one width, as wide as the form allows.
 				ui.Column(c).Gap(gapItem).MaxWidth(formMaxW).Children(func() {
 					field(c, tr("用户名"), "", func() {
-						textInput(c, &a.authUser, tr("3 到 20 位字母、数字或下划线"))
+						textInput(c, &a.authUser, tr("3 到 20 位字母、数字或下划线")).
+							Capitalize(ui.CapitalizeNone).
+							Autocorrect(false).
+							Autofill(ui.AutofillUsername).
+							ReturnKey(ui.ReturnNext)
 					})
 					field(c, tr("密码"), "", func() {
-						passwordInput(c, &a.authPass, tr("至少 8 位"))
+						if passwordInput(c, &a.authPass, tr("至少 8 位")).
+							Capitalize(ui.CapitalizeNone).
+							Autocorrect(false).
+							Autofill(ui.AutofillPassword).
+							ReturnKey(ui.ReturnGo).
+							Submitted() {
+							a.authenticate(false)
+						}
 					})
 				})
 				ui.Row(c).Gap(8).Children(func() {
@@ -276,6 +287,16 @@ func (a *app) community(c *ui.Context, compact bool) {
 			})
 		}
 	})
+	if a.commRefresh.Refreshing && !a.comm.loading {
+		a.commRefresh.Refreshing = false
+	}
+	if scrollEl.PullToRefresh(&a.commRefresh) {
+		a.comm.loaded = false
+		a.loadCommunity()
+		if !a.comm.loading {
+			a.commRefresh.Refreshing = false
+		}
+	}
 }
 
 // communityCard is one approved script, with the button that imports it.

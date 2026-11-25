@@ -513,7 +513,7 @@ var matrixFont5x7 = map[rune][7]uint8{
 	':': {0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000},
 }
 
-func matrixClockView(c *ui.Context, st engine.ClockSpec, now time.Time, h float32, full bool) ui.Element {
+func matrixClockView(c *ui.Context, st engine.ClockSpec, now time.Time, width, h float32, full bool) ui.Element {
 	p := pal(c)
 	col := parseColor(st.Color, ui.Hex("#38BDF8"))
 	if !hexColor.MatchString(st.Color) && st.Neon {
@@ -570,6 +570,10 @@ func matrixClockView(c *ui.Context, st engine.ClockSpec, now time.Time, h float3
 	const totalRows = 9 // 1 unlit top + 7 digit rows + 1 unlit bottom
 	idealPitch := (panelH - 20) / float32(totalRows)
 	panelW := clampF(float32(len(gridCols))*idealPitch+24, 180, 540)
+	if !full && width > 0 && panelW > width {
+		panelW = max(width, 96)
+		panelH = clampF((panelW-24)/float32(max(len(gridCols), 1))*float32(totalRows)+20, 48, panelH)
+	}
 	padY := float32(0)
 	if full {
 		padY = 18
@@ -635,6 +639,6 @@ func matrixClockView(c *ui.Context, st engine.ClockSpec, now time.Time, h float3
 				}
 			}
 		})
-		ui.Text(c, fmt.Sprintf("%s · %s", now.Format("2006-01-02"), tr(weekdays[now.Weekday()]))).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+		ui.Text(c, fmt.Sprintf("%s · %s", now.Format("2006-01-02"), tr(weekdays[now.Weekday()]))).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
 	})
 }

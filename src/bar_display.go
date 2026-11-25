@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"time"
 
@@ -110,10 +111,10 @@ func primaryDisplay(displays []displayInfo) (displayInfo, bool) {
 }
 
 // resolveTargetDisplay picks the target display (respecting "cursor",
-// "internal", or "external"), decides whether native NSPopover anchored to
+// "internal", or "external"), decides whether an anchored tray flyout to
 // trayBounds can be used on that display, and computes a work-area-clamped
 // screen position when opening a floating panel window on another display.
-func resolveTargetDisplay(displays []displayInfo, pref string, cursor mygo.Point, trayBounds mygo.Rectangle, panelW, panelH int) (target displayInfo, useNativePopover bool, pos mygo.Point) {
+func resolveTargetDisplay(displays []displayInfo, pref string, cursor mygo.Point, trayBounds mygo.Rectangle, panelW, panelH int) (target displayInfo, useAnchoredFlyout bool, pos mygo.Point) {
 	if len(displays) == 0 {
 		return displayInfo{}, trayBounds.Width > 0 && trayBounds.Height > 0, mygo.Point{}
 	}
@@ -171,7 +172,7 @@ func resolveTargetDisplay(displays []displayInfo, pref string, cursor mygo.Point
 		}
 	}
 
-	useNativePopover = hasTray && trayDisp.ID == target.ID
+	useAnchoredFlyout = hasTray && trayDisp.ID == target.ID
 
 	wa := target.WorkArea
 	if wa.Width <= 0 || wa.Height <= 0 {
@@ -190,7 +191,7 @@ func resolveTargetDisplay(displays []displayInfo, pref string, cursor mygo.Point
 	tb := target.Bounds
 	cursorInTarget := cursor.X >= tb.X && cursor.X < tb.X+tb.Width && cursor.Y >= tb.Y && cursor.Y < tb.Y+tb.Height
 	switch {
-	case useNativePopover:
+	case useAnchoredFlyout:
 		x = trayBounds.X + (trayBounds.Width-panelW)/2
 	case cursorInTarget:
 		x = cursor.X - panelW/2
@@ -219,7 +220,7 @@ func resolveTargetDisplay(displays []displayInfo, pref string, cursor mygo.Point
 	}
 	y = max(minY, min(y, maxY))
 
-	return target, useNativePopover, mygo.Point{X: x, Y: y}
+	return target, useAnchoredFlyout, mygo.Point{X: x, Y: y}
 }
 
 func (a *app) recentlyClosedFlyout(id string) bool {
@@ -255,35 +256,29 @@ func (a *app) openTrayPanelWindow(id string, t *mygo.Tray, pref string, panelW, 
 	return a.openTrayPanelWindowWithMaterial(id, t, pref, panelW, panelH, "popover", build)
 }
 
-func (a *app) openTrayPanelWindowWithMaterial(id string, t *mygo.Tray, pref string, panelW, panelH int, material string, build func(c *ui.Context)) *mygo.Window {
-	displays := connectedDisplays()
-	cursor := mygo.Screen.CursorScreenPoint()
-	trayBounds := t.Bounds()
-	_, useNativePopover, pos := resolveTargetDisplay(displays, pref, cursor, trayBounds, panelW, panelH)
-
-	vib := barMaterialVibrancy(material)
-	if useNativePopover {
-		f := mygo.NewFlyout(mygo.FlyoutOptions{
-			Tray:         t,
-			Placement:    mygo.PlacementBottom,
-			Gap:          4,
-			Width:        panelW,
-			Height:       panelH,
-			Focusable:    true,
-			Popover:      true,
-			Vibrancy:     vib,
-			Shadow:       true,
-			CornerRadius: 14,
-			Content:      ui.View(build),
-		})
-		f.OnClosed(func() {
-			a.markFlyoutClosed(id)
-		})
-		return f
+func trayFlyoutOptions(t *mygo.Tray, panelW, panelH int, vib mygo.Vibrancy, build func(c *ui.Context)) mygo.FlyoutOptions {
+	return mygo.FlyoutOptions{
+		Tray:      t,
+		Placement: mygo.PlacementBottom,
+		Gap:       4,
+		Width:     panelW,
+		Height:    panelH,
+		Focusable: true,
+		Hidden:    runtime.GOOS == "darwin",
+		// Keep Popover false: on macOS, MyGo's tray NSPopover calls
+		// activateIgnoringOtherApps:YES, which raises ScriptBoard's main window
+		// over the user's active app. A non-popover Flyout uses a nonactivating
+		// NSPanel at NSPopUpMenuWindowLevel so only the menu bar panel opens.
+		Popover:      false,
+		Vibrancy:     vib,
+		Shadow:       true,
+		CornerRadius: 14,
+		Content:      ui.View(build),
 	}
+}
 
-	var win *mygo.Window
-	win = mygo.NewWindow(mygo.WindowOptions{
+func trayPanelWindowOptions(pos mygo.Point, panelW, panelH int, vib mygo.Vibrancy, content mygo.Content) mygo.WindowOptions {
+	return mygo.WindowOptions{
 		Panel:             true,
 		Frameless:         true,
 		Transparent:       vib != mygo.VibrancyNone,
@@ -300,19 +295,44 @@ func (a *app) openTrayPanelWindowWithMaterial(id string, t *mygo.Tray, pref stri
 		DisableFullScreen: true,
 		AlwaysOnTop:       true,
 		SkipTaskbar:       true,
-		Content: ui.View(func(c *ui.Context) {
-			if c.Shortcut(0, ui.KeyEscape) && win != nil {
-				win.Close()
-			}
-			build(c)
-		}),
-	})
-	win.SetPosition(pos.X, pos.Y)
+		Content:           content,
+	}
+}
+
+func (a *app) openTrayPanelWindowWithMaterial(id string, t *mygo.Tray, pref string, panelW, panelH int, material string, build func(c *ui.Context)) *mygo.Window {
+	displays := connectedDisplays()
+	cursor := mygo.Screen.CursorScreenPoint()
+	trayBounds := t.Bounds()
+	_, useAnchoredFlyout, pos := resolveTargetDisplay(displays, pref, cursor, trayBounds, panelW, panelH)
+
+	vib := barMaterialVibrancy(material)
+	if useAnchoredFlyout {
+		f := mygo.NewFlyout(trayFlyoutOptions(t, panelW, panelH, vib, build))
+		f.OnClosed(func() {
+			a.markFlyoutClosed(id)
+		})
+		if runtime.GOOS == "darwin" {
+			// Join all Spaces (including full-screen apps) before showing so opening
+			// the flyout from another Space never switches to the main window's Space.
+			f.SetVisibleOnAllWorkspaces(true)
+			f.OnReadyToShow(f.Show)
+		}
+		return f
+	}
+
+	var win *mygo.Window
+	win = mygo.NewWindow(trayPanelWindowOptions(pos, panelW, panelH, vib, ui.View(func(c *ui.Context) {
+		if c.Shortcut(0, ui.KeyEscape) && win != nil {
+			win.Close()
+		}
+		build(c)
+	})))
 	win.OnBlur(func() {
 		win.Close()
 	})
 	win.OnClosed(func() {
 		a.markFlyoutClosed(id)
 	})
+	win.SetPosition(pos.X, pos.Y)
 	return win
 }

@@ -225,7 +225,7 @@ func (a *app) mcpGroups(c *ui.Context, compact, titled bool) {
 	if m.Enabled {
 		rows = append(rows,
 			row{title: tr("端口"), note: tr("改完按回车保存"), control: func() {
-				in := textInput(c, &a.mcpPort, "")
+				in := textInput(c, &a.mcpPort, "").Keyboard(ui.KeyboardNumber).ReturnKey(ui.ReturnDone)
 				in.Width(96)
 				if in.Submitted() {
 					port, err := strconv.Atoi(strings.TrimSpace(a.mcpPort))
@@ -254,7 +254,11 @@ func (a *app) mcpGroups(c *ui.Context, compact, titled bool) {
 				}
 			}},
 			row{title: tr("公开地址"), note: tr("可选，经代理访问时填写，如 https://example.com/mcp，会写进复制的配置；按回车保存"), control: func() {
-				in := textInput(c, &a.mcpPublic, "https://…")
+				in := textInput(c, &a.mcpPublic, "https://…").
+					Keyboard(ui.KeyboardURL).
+					Capitalize(ui.CapitalizeNone).
+					Autocorrect(false).
+					ReturnKey(ui.ReturnDone)
 				in.Width(w)
 				if in.Submitted() {
 					m.PublicURL = strings.TrimSpace(a.mcpPublic)

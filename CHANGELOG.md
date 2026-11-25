@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.14
+
+- Native mobile experience powered by MyGo v0.10.0 (iOS & Android parity):
+  - Unified `isMobile()` detection (`caps.Mobile`) so iOS shares the touch card controls, in-window Settings navigation, `⌘,` desktop guard removal, and Menu Bar mobile placement hints alongside Android.
+  - Pull-to-refresh (`ui.PullToRefresh`) on Home, Detail (`FullView`), and Community scroll containers to refresh cards, scripts, or the approved script list with a swipe down.
+  - Long-press native bottom action sheet (`Element.LongPressed` + `mobile.ActionSheet`) on Home cards for quick refresh, cycling card size, toggling chart legends, swapping visual views, editing, sharing, or removing from Home.
+  - Pinch-to-zoom & double-tap wallpaper gallery (`mobile.Zoomable` with scale reset pill and auto-reset on photo change) plus native share sheet (`mygo.Share`) across wallpapers, card actions, compact detail headers, script transfer panels, and mobile editor, alongside `mygo.Dialog.SaveCopy` for saving images on phones.
+  - Mobile polish & ergonomics: keyboard-aware and bottom safe-area inset handling on the phone `tabBar`, `mygo.Haptics` feedback on tab switches, long presses, quick entries, saves, and shares, `mygo.SystemBars` light/dark style synchronization, mobile keyboard/autocorrect/autofill hints on inputs, and `OnSaveState`/`RestoredState` route and tab preservation across OS background termination.
+- Responsive phone & narrow-card layout fixes: refines narrow-width card sizing and text truncation across quick-entry inputs, countdowns, world clock, calendar compact weekday headers, donut/checklist/KV/bento/progress/table/matrix widgets, plus multi-display & phone collision tests.
+- macOS menu bar focus fix: opening a `.bar` tray flyout uses `Popover: false` with non-activating panel placement on macOS so ScriptBoard's main window is no longer raised when clicking a menu bar item.
+
 ## 0.1.13
 
 - Apple-native `.bar` design system, `$ui` UIKit & `barui` renderer: introduces shared `src/internal/barui` renderer (with `contentTransition`, container `safeArea`, borderless vibrancy segmented controls, plain list icons, and 14 new Lucide wireframe icons), `$ui` helper toolkit (`iconButton`, `topBar`, `hero`, `rangeBar`, `rangeRow`, `staleError`, `skeleton`), 6 curated Weather-bar styled templates led by `native-glass`, and updated MCP `bar_guide`, `bar_template_*` & `bar_preview` layout auditing.

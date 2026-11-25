@@ -845,4 +845,9 @@ var enText = map[string]string{
 	"参考样式模板": "Reference templates",
 	"使用模板":   "Use template",
 	"移动端在应用内「菜单管理」与首页卡片中显示": "On mobile, components appear in Menu bar and Home cards",
+	"取消":     "Cancel",
+	"分享":     "Share",
+	"分享脚本":   "Share script",
+	"分享失败：":  "Share failed: ",
+	"切换大小：":  "Resize: ",
 }

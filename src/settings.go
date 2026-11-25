@@ -282,7 +282,12 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 	case "community":
 		group(c, singleTitle("社区"), compact,
 			row{title: tr("社区地址"), note: tr("Cloudflare Worker 的地址，留空则不用社区"), control: func() {
-				if textInput(c, &a.set.CommunityURL, "https://…workers.dev").Width(inputW).Changed() {
+				if textInput(c, &a.set.CommunityURL, "https://…workers.dev").Width(inputW).
+					Keyboard(ui.KeyboardURL).
+					Capitalize(ui.CapitalizeNone).
+					Autocorrect(false).
+					ReturnKey(ui.ReturnDone).
+					Changed() {
 					a.saveSettings()
 				}
 			}},

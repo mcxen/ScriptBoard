@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/mobile"
 
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/store"
@@ -118,6 +119,9 @@ func (a *app) carouselRows(c *ui.Context, sc store.Script, shown []engine.Image,
 		if cur.Local != "" && btn(c, tr("保存")).Clicked() {
 			a.saveImageFile(cur)
 		}
+		if isMobile() && btn(c, tr("分享")).Clicked() {
+			a.shareImage(cur)
+		}
 		if cur.Source != "" && btn(c, tr("打开来源")).Clicked() {
 			if err := mygo.Shell.OpenExternal(cur.Source); err != nil {
 				a.status = err.Error()
@@ -128,6 +132,14 @@ func (a *app) carouselRows(c *ui.Context, sc store.Script, shown []engine.Image,
 			a.status = tr("已复制")
 		}
 	})
+}
+
+func (a *app) shareImage(img engine.Image) {
+	var files []string
+	if img.Local != "" {
+		files = []string{img.Local}
+	}
+	a.shareContent(mygo.ShareOptions{Text: img.Caption, URL: img.URL, Files: files}, "")
 }
 
 // imageGalleryFull draws a photo-first gallery layout for image-centric
@@ -142,6 +154,11 @@ func (a *app) imageGalleryFull(c *ui.Context, sc store.Script, res engine.Result
 	}
 	cur := shown[idx]
 	p := pal(c)
+	zoomKey := fmt.Sprintf("%s:%d", sc.ID, idx)
+	if a.galleryZoomKey != zoomKey {
+		a.galleryZoom.Reset()
+		a.galleryZoomKey = zoomKey
+	}
 
 	// Size the cinema stage so the wallpaper is the unmistakable centerpiece
 	// while keeping the caption, save button and thumbnail strip in view.
@@ -157,7 +174,9 @@ func (a *app) imageGalleryFull(c *ui.Context, sc store.Script, res engine.Result
 		stage := ui.Box(c).Height(stageH).Background(ui.Hex("#0B0F19")).Radius(radCard, radCard, 0, 0).Clip()
 		stage.Children(func() {
 			if bm := a.bitmapOfMax(cur.Local, imageFullMaxSide); bm != nil {
-				ui.Image(c, bm).Fit(ui.Contain).Absolute().Fill()
+				mobile.Zoomable(c.Key("gallery-zoom:"+sc.ID), &a.galleryZoom, mobile.ZoomOptions{Min: 1, Max: 4, DoubleTap: 2}, func() {
+					ui.Image(c, bm).Fit(ui.Contain).Absolute().Fill()
+				}).Absolute().Fill()
 			} else {
 				ui.Column(c).Absolute().Fill().AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 					ui.Text(c, tr("图片不能显示")).FontSize(fsSmall).TextColor(ui.Hex("#94A3B8"))
@@ -186,6 +205,19 @@ func (a *app) imageGalleryFull(c *ui.Context, sc store.Script, res engine.Result
 				}
 				navBtn("‹", -1, false)
 				navBtn("›", 1, true)
+			}
+
+			if a.galleryZoom.Scale > 1.05 {
+				resetPill := ui.ButtonBase(c).Absolute().Left(14).Bottom(12).Padding(4, 10).Radius(99).
+					Background(ui.Hex("#0F172A").Alpha(0.68)).
+					BorderWidth(1).BorderColor(ui.Hex("#FFFFFF").Alpha(0.18)).
+					AlignItems(ui.Center).Cursor(ui.CursorPointer)
+				resetPill.Children(func() {
+					ui.Text(c, fmt.Sprintf("%.1f×", a.galleryZoom.Scale)).FontSize(fsTiny).FontWeight(600).TextColor(ui.Hex("#FFFFFF")).NoWrap()
+				})
+				if resetPill.Clicked() {
+					a.galleryZoom.Reset()
+				}
 			}
 
 			// Quiet counter badge at the bottom-right corner of the photo.
@@ -220,6 +252,9 @@ func (a *app) imageGalleryFull(c *ui.Context, sc store.Script, res engine.Result
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Shrink(0).Children(func() {
 				if cur.Local != "" && primaryBtn(c, tr("保存图片")).Clicked() {
 					a.saveImageFile(cur)
+				}
+				if isMobile() && btn(c, tr("分享")).Clicked() {
+					a.shareImage(cur)
 				}
 				if btn(c, tr("复制链接")).Clicked() {
 					copyText(cur.URL)
@@ -325,7 +360,11 @@ func (a *app) saveImageFile(img engine.Image) {
 	}
 	defName := imageFilename(img, data)
 	srcPath := img.Local
+	mobileSave := isMobile()
 	a.background(func() (string, error) {
+		if mobileSave {
+			return mygo.Dialog.SaveCopy(srcPath, defName)
+		}
 		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 			Title:       tr("保存图片"),
 			DefaultPath: defName,
@@ -339,8 +378,10 @@ func (a *app) saveImageFile(img engine.Image) {
 		switch {
 		case err != nil:
 			a.status = tr("保存失败：") + err.Error()
+			a.hapticError()
 		case path != "":
 			a.status = tr("已保存到 ") + path
+			a.hapticSuccess()
 		}
 	})
 }

@@ -70,3 +70,24 @@ func (a *app) refreshButton(c *ui.Context, sc store.Script, show bool) {
 		a.refreshScript(sc)
 	}
 }
+
+// refreshAllHome starts a refresh for every script and .bar widget on the home grid.
+func (a *app) refreshAllHome(scripts []store.Script) {
+	for _, sc := range scripts {
+		if sc.IsBar() {
+			a.refreshBar(sc.ID)
+			continue
+		}
+		a.refreshScript(sc)
+	}
+}
+
+// anyHomeRefreshing reports whether any non-bar home script still has an in-flight refresh.
+func (a *app) anyHomeRefreshing(scripts []store.Script) bool {
+	for _, sc := range scripts {
+		if !sc.IsBar() && a.refreshing[sc.ID] {
+			return true
+		}
+	}
+	return false
+}

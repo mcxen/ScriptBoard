@@ -148,6 +148,10 @@ func tableSpecToCSV(spec *engine.TableSpec, rows [][]string) string {
 // tableWidgetView renders a structured TableSpec as either a compact home card
 // preview or a full interactive sortable/searchable table with CSV copy/export.
 func (a *app) tableWidgetView(c *ui.Context, key string, spec *engine.TableSpec, full bool, limit int) ui.Element {
+	return a.tableWidgetViewWidth(c, key, spec, 0, full, limit)
+}
+
+func (a *app) tableWidgetViewWidth(c *ui.Context, key string, spec *engine.TableSpec, width float32, full bool, limit int) ui.Element {
 	p := pal(c)
 	if spec == nil || len(spec.Columns) == 0 {
 		return ui.Text(c, tr("暂无数据")).FontSize(fsSmall).TextColor(p.muted)
@@ -217,8 +221,19 @@ func (a *app) tableWidgetView(c *ui.Context, key string, spec *engine.TableSpec,
 		}
 
 		// Column header row (clickable to sort in full view).
-		ui.Row(c).AlignItems(ui.Center).Gap(14).Padding(6, 10).Radius(radControl).Background(p.chip).Children(func() {
-			for j, col := range spec.Columns {
+		narrow := !full && width > 0 && width < 220
+		cols := spec.Columns
+		if narrow && len(cols) > 2 {
+			cols = cols[:2]
+		}
+		rowGap := float32(14)
+		rowPadV, rowPadH := float32(6), float32(10)
+		if narrow {
+			rowGap = 6
+			rowPadV, rowPadH = 4, 6
+		}
+		ui.Row(c).AlignItems(ui.Center).Gap(rowGap).Padding(rowPadV, rowPadH).Radius(radControl).Background(p.chip).Children(func() {
+			for j, col := range cols {
 				j, col := j, col
 				weight := float32(max(col.Width, 1))
 				align := tableCellAlign(col.Align)
@@ -250,7 +265,7 @@ func (a *app) tableWidgetView(c *ui.Context, key string, spec *engine.TableSpec,
 					}
 				} else {
 					ui.Row(c).Grow(weight).MinWidth(0).Justify(align).ClipX().Children(func() {
-						ui.Text(c, title).FontSize(fsTiny).FontWeight(650).TextColor(p.muted).NoWrap()
+						ui.Text(c, title).FontSize(fsTiny).FontWeight(650).TextColor(p.muted).SingleLine().Ellipsis("…")
 					})
 				}
 			}
@@ -264,7 +279,7 @@ func (a *app) tableWidgetView(c *ui.Context, key string, spec *engine.TableSpec,
 		// Data rows.
 		for i := 0; i < maxRows; i++ {
 			r := rows[i]
-			rowEl := ui.Row(c).AlignItems(ui.Center).Gap(14).Padding(6, 10).Radius(6)
+			rowEl := ui.Row(c).AlignItems(ui.Center).Gap(rowGap).Padding(rowPadV, rowPadH).Radius(6)
 			if spec.Striped && i%2 == 1 {
 				rowEl = rowEl.Background(p.chip.Alpha(0.45))
 			}
@@ -272,7 +287,7 @@ func (a *app) tableWidgetView(c *ui.Context, key string, spec *engine.TableSpec,
 				rowEl = rowEl.Background(p.hover)
 			}
 			rowEl.Children(func() {
-				for j, col := range spec.Columns {
+				for j, col := range cols {
 					val := cell(r, j)
 					weight := float32(max(col.Width, 1))
 					align := tableCellAlign(col.Align)
@@ -320,7 +335,7 @@ func renderTableCell(c *ui.Context, p palette, col engine.TableColumn, val strin
 		} else if strings.HasPrefix(val, "-") && val != "-0.00%" && val != "-0%" {
 			fg = p.down
 		}
-		el = ui.Text(c, val).FontSize(fsSmall).FontWeight(600).TextColor(fg).NoWrap()
+		el = ui.Text(c, val).FontSize(fsSmall).FontWeight(600).TextColor(fg).SingleLine().Ellipsis("…")
 	case "badge":
 		el = chip(c, val, p.accent, p.accent.Alpha(0.14))
 	case "status":
@@ -337,12 +352,12 @@ func renderTableCell(c *ui.Context, p palette, col engine.TableColumn, val strin
 		}
 		el = ui.Row(c).AlignItems(ui.Center).Gap(5).Children(func() {
 			ui.Box(c).Size(7, 7).Radius(3.5).Background(dotCol).Shrink(0)
-			ui.Text(c, val).FontSize(fsSmall).TextColor(p.text).NoWrap()
+			ui.Text(c, val).FontSize(fsSmall).TextColor(p.text).SingleLine().Ellipsis("…")
 		})
 	case "number":
-		el = ui.Text(c, val).FontSize(fsSmall).FontWeight(600).TextColor(p.text).NoWrap()
+		el = ui.Text(c, val).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").TextColor(p.text).SingleLine().Ellipsis("…")
 	default:
-		el = ui.Text(c, val).FontSize(fsSmall).TextColor(p.text).NoWrap()
+		el = ui.Text(c, val).FontSize(fsSmall).TextColor(p.text).SingleLine().Ellipsis("…")
 	}
 	if clickable && el.Cursor(ui.CursorPointer).Clicked() {
 		onCopy(val)

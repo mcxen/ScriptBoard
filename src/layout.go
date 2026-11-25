@@ -210,12 +210,21 @@ func packRows(items []placed, cols int) [][]placed {
 	return rows
 }
 
+// gridGap returns the spacing between home cards: slightly tighter on a compact
+// 2-column phone grid so narrow cards keep room for their contents.
+func (a *app) gridGap() float32 {
+	if a.compact {
+		return 12
+	}
+	return cardGap
+}
+
 // homeGrid draws the cards in a single wrapping row whose widths are computed
 // by packRows so each row fills the full content width. Keeping every card as a
 // keyed direct child of one row preserves element identity (and active corner
 // resize drags) even when a card wraps onto another line while being resized.
 func (a *app) homeGrid(c *ui.Context, items []placed) {
-	gap := float32(cardGap)
+	gap := a.gridGap()
 	rawUnit := (a.contentW() - gap*float32(a.cols-1)) / float32(a.cols)
 	a.unit = float32(math.Floor(float64(rawUnit)*100)) / 100
 	ui.Row(c).Wrap().Gap(gap).AlignItems(ui.Start).Children(func() {
@@ -285,7 +294,7 @@ func (a *app) resizeHandle(c *ui.Context, id string, span int, b store.CardBox) 
 // heightStep. The change is kept when the drag ends.
 func (a *app) applyResize() {
 	r := a.rz
-	gap := float32(cardGap)
+	gap := a.gridGap()
 	startPx := a.unit*float32(r.span) + gap*float32(r.span-1)
 	target := startPx + r.dx
 	span := int(math.Round(float64((target + gap) / (a.unit + gap))))

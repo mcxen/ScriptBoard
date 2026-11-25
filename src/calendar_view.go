@@ -79,7 +79,13 @@ type calView struct {
 	Height              float32
 	Nav, Headers        bool
 	Captions, Clickable bool
+	Compact             bool
 }
+
+var (
+	weekdaysCompactZH = []string{"日", "一", "二", "三", "四", "五", "六"}
+	weekdaysCompactEN = []string{"S", "M", "T", "W", "T", "F", "S"}
+)
 
 func calendarOpts(full bool, h float32) calView {
 	return calView{
@@ -114,7 +120,14 @@ func calendarMonth(c *ui.Context, v calView) ui.Element {
 		c.OnWindowShortcut(0, ui.KeyHome, func() { *v.Sel = -1 })
 	}
 
-	col := ui.Column(c).Gap(8)
+	colGap := float32(8)
+	tightDesktop := !v.Compact && !v.Clickable && v.Height > 0 && v.Height < 180
+	if v.Compact {
+		colGap = 3
+	} else if tightDesktop {
+		colGap = 4
+	}
+	col := ui.Column(c).Gap(colGap)
 	if h > 0 {
 		col = col.Height(h)
 	} else {
@@ -139,7 +152,11 @@ func calendarMonth(c *ui.Context, v calView) ui.Element {
 		}
 		weeks := 6
 		gap := float32(2)
-		if v.Nav || v.Headers {
+		if v.Compact {
+			gap = 1
+		} else if tightDesktop {
+			gap = 2
+		} else if v.Nav || v.Headers {
 			gap = 4
 		}
 		if !v.Nav {
@@ -162,8 +179,23 @@ func calendarMonth(c *ui.Context, v calView) ui.Element {
 		}
 		grid.Children(func() {
 			if v.Headers {
-				for _, name := range weekdays {
-					ui.Text(c, tr(name)).FontSize(fsTiny).FontWeight(600).TextColor(p.muted).TextAlign(ui.Center).Padding(0, 0, 4, 0)
+				switch {
+				case v.Compact:
+					names := weekdaysCompactZH
+					if lang == "en" {
+						names = weekdaysCompactEN
+					}
+					for _, name := range names {
+						ui.Text(c, name).FontSize(9.5).FontWeight(600).TextColor(p.muted).TextAlign(ui.Center).NoWrap().Padding(0, 0, 1, 0)
+					}
+				case tightDesktop:
+					for _, name := range weekdays {
+						ui.Text(c, tr(name)).FontSize(fsTiny).FontWeight(600).TextColor(p.muted).TextAlign(ui.Center).NoWrap().Padding(0, 0, 2, 0)
+					}
+				default:
+					for _, name := range weekdays {
+						ui.Text(c, tr(name)).FontSize(fsTiny).FontWeight(600).TextColor(p.muted).TextAlign(ui.Center).NoWrap().Padding(0, 0, 4, 0)
+					}
 				}
 			}
 			start := int(month.Weekday())
@@ -195,7 +227,11 @@ func calendarCell(c *ui.Context, cell, month, today, chosen time.Time, v calView
 		fg = p.accent
 	}
 
-	box := ui.Column(c).Radius(8)
+	boxRad := float32(8)
+	if v.Compact {
+		boxRad = 5
+	}
+	box := ui.Column(c).Radius(boxRad)
 	if isToday {
 		box = box.Background(p.accentSoft)
 	} else if isChosen {
@@ -210,7 +246,7 @@ func calendarCell(c *ui.Context, cell, month, today, chosen time.Time, v calView
 		}
 		if v.Clickable && v.Sel != nil {
 			c.Key("cal-day-" + iso)
-			b := ui.ButtonBase(c).Fill().Radius(8).Cursor(ui.CursorPointer).Label(iso)
+			b := ui.ButtonBase(c).Fill().Radius(boxRad).Cursor(ui.CursorPointer).Label(iso)
 			if b.Clicked() {
 				*v.Sel = ymdOf(cell)
 			}
@@ -231,11 +267,26 @@ func calendarCellFace(c *ui.Context, cell time.Time, day calendar.Day, fg ui.Col
 	if v.Captions || v.Clickable {
 		numSize = fsBody
 	}
+	capSize := fsTiny
+	padY, padX := float32(4), float32(2)
+	cellGap := float32(1)
+	tightDesktop := !v.Compact && !v.Clickable && v.Height > 0 && v.Height < 180
+	switch {
+	case v.Compact:
+		numSize = 10.5
+		padY, padX = 1, 0
+		cellGap = 0
+	case tightDesktop:
+		numSize = 11.5
+		capSize = 9
+		padY, padX = 0, 1
+		cellGap = 0
+	}
 	caption := ""
 	if showCaption {
 		caption = day.CellCaption(curLang())
 	}
-	ui.Column(c).Grow(1).AlignItems(ui.Center).Justify(ui.Center).Gap(1).Padding(4, 2).Children(func() {
+	ui.Column(c).Grow(1).AlignItems(ui.Center).Justify(ui.Center).Gap(cellGap).Padding(padY, padX).Children(func() {
 		n := ui.Text(c, strconv.Itoa(cell.Day())).FontSize(numSize).TextColor(fg).TextAlign(ui.Center).NoWrap()
 		if isToday {
 			n.Bold()
@@ -252,7 +303,7 @@ func calendarCellFace(c *ui.Context, cell time.Time, day calendar.Day, fg ui.Col
 		if !inMonth {
 			capColor = p.faint
 		}
-		cap := ui.Text(c, caption).FontSize(fsTiny).TextColor(capColor).TextAlign(ui.Center).NoWrap()
+		cap := ui.Text(c, caption).FontSize(capSize).TextColor(capColor).TextAlign(ui.Center).NoWrap()
 		if len(day.Holidays) > 0 {
 			cap.FontWeight(600)
 		}
@@ -353,26 +404,49 @@ func (a *app) calendarPage(c *ui.Context, sel *int, compact bool) {
 
 // calendarHomeCard draws the month itself on a home card, not a headline
 // number with a spark under it.
-func (a *app) calendarHomeCard(c *ui.Context, size int, s, cardH float32) {
+func (a *app) calendarHomeCard(c *ui.Context, size int, s, cardH, innerW float32) {
 	now := a.now()
 	lang := curLang()
 	day := calendar.Lookup(now)
 	p := pal(c)
 	if size == sizeMini {
 		ui.Spacer(c)
-		ui.Text(c, strconv.Itoa(day.Time.Day())).FontSize(clampF(44*s, 28, 60)).Bold().NoWrap()
+		ui.Text(c, strconv.Itoa(day.Time.Day())).FontSize(clampF(44*s, 28, 60)).Bold().SingleLine().Ellipsis("…")
 		return
 	}
 	if size == 0 {
 		ui.Text(c, strconv.Itoa(day.Time.Day())).FontSize(clampF(30*s, 22, 44)).Bold().NoWrap()
-		ui.Text(c, day.Headline(lang)).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+		ui.Text(c, day.Headline(lang)).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
+		return
+	}
+	narrow := innerW > 0 && innerW < 220
+	if narrow {
+		sub := day.LunarDate(lang)
+		if sub == "" {
+			sub = day.WeekdayName(lang)
+		}
+		ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
+			ui.Text(c, calendar.MonthTitle(now, lang)).FontSize(11.5).FontWeight(600).NoWrap().Shrink(0)
+			ui.Spacer(c)
+			ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
+				ui.Text(c, sub).FontSize(10).TextColor(p.muted).SingleLine().Ellipsis("…")
+			})
+		})
+		gridH := max(96, cardH*s-46*s)
+		calendarMonth(c, calView{
+			Now:      now,
+			Height:   gridH,
+			Headers:  true,
+			Captions: false,
+			Compact:  true,
+		})
 		return
 	}
 	ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 		ui.Text(c, calendar.MonthTitle(now, lang)).FontSize(fsSmall).FontWeight(600).NoWrap().Shrink(0)
 		ui.Spacer(c)
 		ui.Row(c).Shrink(1).MinWidth(0).ClipX().Children(func() {
-			ui.Text(c, day.Headline(lang)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+			ui.Text(c, day.Headline(lang)).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
 		})
 	})
 	gridH := max(96, cardH*s-64*s)

@@ -144,7 +144,11 @@ func (a *app) usageGroups(c *ui.Context, compact, titled bool) {
 		}
 		rows = append(rows, row{title: tr(p.Name()), note: note, stack: true, control: func() {
 			if p.NeedsKey() {
-				if passwordInput(c, &f.key, tr("API 密钥")).Width(180).Changed() {
+				if passwordInput(c, &f.key, tr("API 密钥")).Width(180).
+					Capitalize(ui.CapitalizeNone).
+					Autocorrect(false).
+					ReturnKey(ui.ReturnDone).
+					Changed() {
 					save()
 				}
 			}

@@ -73,13 +73,13 @@ func readableTextColor(col ui.Color, dark bool) ui.Color {
 
 // widgetView draws any of the six widget components in this file.
 func widgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
-	return widgetViewWith(c, nil, "", ch, "", h, sel, full, now, limit)
+	return widgetViewWith(c, nil, "", ch, "", 0, h, sel, full, now, limit)
 }
 
 // widgetViewWith draws a widget component with optional app context, script ID,
 // and runtime sub-style override (for interactive checklist toggles, KV copy
 // feedback, donut slice selection, and clock style switching).
-func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, subStyle string, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
+func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, subStyle string, width, h float32, sel *int, full bool, now time.Time, limit int) ui.Element {
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -99,13 +99,13 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 			cp.Donut = &d
 			ch = &cp
 		}
-		return donutWidgetView(c, ch, h, sel, full)
+		return donutWidgetView(c, ch, width, h, sel, full)
 	case "checklist":
 		return checklistViewWith(c, a, scriptID, ch.Checklist, limit, full)
 	case "kv":
-		return kvViewWith(c, a, ch.KV, limit, full)
+		return kvViewWith(c, a, ch.KV, width, limit, full)
 	case "countdown":
-		return countdownView(c, ch.Countdown, now, limit, full)
+		return countdownView(c, ch.Countdown, now, width, limit, full)
 	case "clock":
 		spec := ch.Clock
 		if subStyle == "analog" || subStyle == "digital" || subStyle == "matrix" || subStyle == "world" {
@@ -116,7 +116,7 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 			cp.Style = subStyle
 			spec = &cp
 		}
-		return clockView(c, spec, now, h, full)
+		return clockView(c, spec, now, width, h, full)
 	case "contrib":
 		spec := ch.Contrib
 		if spec != nil && (subStyle == "classic" || subStyle == "matrix") {
@@ -128,7 +128,7 @@ func widgetViewWith(c *ui.Context, a *app, scriptID string, ch *engine.Chart, su
 			}
 			spec = &cp
 		}
-		return contribView(c, spec, sel, full)
+		return contribView(c, spec, width, sel, full)
 	}
 	return ui.Text(c, "")
 }
@@ -142,7 +142,7 @@ var donutPalette = []ui.Color{
 	ui.Hex("#F43F5E"), ui.Hex("#8B5CF6"), ui.Hex("#06B6D4"), ui.Hex("#EC4899"),
 }
 
-func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full bool) ui.Element {
+func donutWidgetView(c *ui.Context, ch *engine.Chart, width, h float32, sel *int, full bool) ui.Element {
 	p := pal(c)
 	var items []engine.Slice
 	total := 0.0
@@ -165,8 +165,11 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 	}
 	thick = clampF(thick, 0.12, 0.45)
 
+	narrow := !full && width > 0 && width < 210
 	d := clampF(h*0.86, 92, 210)
-	if !full {
+	if narrow {
+		d = clampF(min(h*0.56, width*0.54), 58, 86)
+	} else if !full {
 		d = clampF(h*0.95, 92, 148)
 	}
 	activeIdx := -1
@@ -200,10 +203,18 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 		cols[i] = parseColor(it.Color, defCol)
 	}
 	maxLegend := len(items)
-	if !full && maxLegend > 4 {
+	if narrow && maxLegend > 3 {
+		maxLegend = 3
+	} else if !full && maxLegend > 4 {
 		maxLegend = 4
 	}
-	return ui.Row(c).AlignItems(ui.Center).Gap(18).Wrap().Children(func() {
+	rowGap := float32(18)
+	legendMinW := float32(110)
+	if narrow {
+		rowGap = 8
+		legendMinW = 0
+	}
+	return ui.Row(c).AlignItems(ui.Center).Gap(rowGap).Wrap().Children(func() {
 		ui.Column(c).Size(d, d).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
 			Draw(func(pt *ui.Painter, r ui.Rect) {
 				if isMatrix {
@@ -230,23 +241,23 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 					pt.FillPath(chart.Sector(cx, cy, inner, outR, sl), col)
 				}
 			}).Children(func() {
-			t := ui.Text(c, center).FontSize(centerFS).FontWeight(700).NoWrap()
+			t := ui.Text(c, center).FontSize(centerFS).FontWeight(700).SingleLine().Ellipsis("…")
 			if isMatrix {
 				t.TextColor(ui.Hex("#F8FAFC"))
 			}
 			if centerSub != "" {
-				sub := ui.Text(c, centerSub).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				sub := ui.Text(c, centerSub).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
 				if isMatrix {
 					sub.TextColor(ui.Hex("#94A3B8"))
 				}
 			}
 		})
-		ui.Column(c).Gap(4).Grow(1).MinWidth(110).Children(func() {
+		ui.Column(c).Gap(4).Grow(1).MinWidth(legendMinW).Children(func() {
 			for i := 0; i < maxLegend; i++ {
 				i := i
 				it := items[i]
 				pct := it.Value / total * 100
-				rowEl := ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(3, 6).Radius(6)
+				rowEl := ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(3, 4).Radius(6)
 				if full && sel != nil {
 					if i == activeIdx {
 						rowEl = rowEl.Background(p.rowSel)
@@ -257,9 +268,9 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, h float32, sel *int, full 
 				}
 				built := rowEl.Children(func() {
 					ui.Box(c).Size(8, 8).Radius(4).Background(cols[i]).Shrink(0)
-					ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).MinWidth(0).NoWrap()
+					ui.Text(c, it.Name).FontSize(fsSmall).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
 					valStr := trimNum(it.Value) + it.Unit
-					ui.Text(c, fmt.Sprintf("%s · %.0f%%", valStr, math.Round(pct))).FontSize(fsSmall).FontWeight(600).NoWrap()
+					ui.Text(c, fmt.Sprintf("%s · %.0f%%", valStr, math.Round(pct))).FontSize(fsSmall).FontWeight(600).NoWrap().Shrink(0)
 				})
 				if full && sel != nil && built.Clicked() {
 					if *sel == i {
@@ -333,20 +344,20 @@ func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.Ch
 				} else {
 					ui.Box(c).Size(18, 18).Radius(9).BorderWidth(1.5).BorderColor(p.border).Shrink(0)
 				}
-				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
-					t := ui.Text(c, it.Label).FontSize(fsSmall).NoWrap()
+				ui.Column(c).Gap(1).Grow(1).MinWidth(0).ClipX().Children(func() {
+					t := ui.Text(c, it.Label).FontSize(fsSmall).SingleLine().Ellipsis("…")
 					if checked {
 						t.TextColor(p.muted)
 					} else {
 						t.FontWeight(500)
 					}
 					if it.Note != "" {
-						ui.Text(c, it.Note).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+						ui.Text(c, it.Note).FontSize(fsTiny).TextColor(p.faint).SingleLine().Ellipsis("…")
 					}
 				})
 				if it.Badge != "" {
 					bc := parseColor(it.Color, p.muted)
-					chip(c, it.Badge, bc, bc.Alpha(0.13))
+					chip(c, it.Badge, bc, bc.Alpha(0.13)).Shrink(0)
 				}
 			})
 			if interactive && a != nil && scriptID != "" && built.Clicked() {
@@ -387,10 +398,10 @@ func kvStatusColor(p palette, status, custom string) (ui.Color, bool) {
 }
 
 func kvView(c *ui.Context, items []engine.KVItem, limit int, full bool) ui.Element {
-	return kvViewWith(c, nil, items, limit, full)
+	return kvViewWith(c, nil, items, 0, limit, full)
 }
 
-func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bool) ui.Element {
+func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, width float32, limit int, full bool) ui.Element {
 	p := pal(c)
 	if len(items) == 0 {
 		return ui.Text(c, tr("暂无指标")).FontSize(fsSmall).TextColor(p.muted)
@@ -399,14 +410,21 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bo
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
 	}
+	narrow := !full && width > 0 && width < 210
 	rowPadY, rowPadX := float32(10), float32(6)
+	rowGap := float32(10)
+	valFS := fsBody
 	if !full {
 		rowPadY, rowPadX = 4.5, 2
+	}
+	if narrow {
+		rowGap = 6
+		valFS = 12
 	}
 	return ui.Column(c).Gap(0).Children(func() {
 		for i, it := range shown {
 			it := it
-			row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPadY, rowPadX).Radius(6)
+			row := ui.Row(c).AlignItems(ui.Center).Gap(rowGap).Padding(rowPadY, rowPadX).Radius(6)
 			if i > 0 {
 				row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
 			}
@@ -421,10 +439,10 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bo
 				if hasDot {
 					ui.Box(c).Size(8, 8).Radius(4).Background(col).Shrink(0)
 				}
-				ui.Column(c).Gap(1).Grow(1).MinWidth(0).ClipX().Children(func() {
-					ui.Text(c, it.Label).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+				ui.Column(c).Gap(1).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+					ui.Text(c, it.Label).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
 					if it.Sub != "" && (full || len(shown) <= 2) {
-						ui.Text(c, it.Sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+						ui.Text(c, it.Sub).FontSize(fsTiny).TextColor(p.faint).SingleLine().Ellipsis("…")
 					}
 				})
 				if it.Badge != "" {
@@ -432,9 +450,9 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, limit int, full bo
 					if hasDot {
 						bc = col
 					}
-					chip(c, it.Badge, bc, bc.Alpha(0.13))
+					chip(c, it.Badge, bc, bc.Alpha(0.13)).Shrink(0)
 				}
-				vt := ui.Text(c, it.Value).FontSize(fsBody).FontWeight(650).NoWrap()
+				vt := ui.Text(c, it.Value).FontSize(valFS).FontWeight(650).FontFeatures("tnum").NoWrap().Shrink(0)
 				if hasDot && (it.Status == "err" || it.Status == "warn") {
 					vt.TextColor(col)
 				}
@@ -498,7 +516,31 @@ func countdownParts(now, target time.Time) (days int, hours int, mins int, past 
 	return days, hours, mins, past
 }
 
-func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, limit int, full bool) ui.Element {
+func shortDateRange(start, target string) string {
+	parse := func(raw string) (time.Time, bool) {
+		raw = strings.TrimSpace(raw)
+		for _, layout := range []string{"2006-01-02", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
+			if t, err := time.Parse(layout, raw); err == nil {
+				return t, true
+			}
+		}
+		return time.Time{}, false
+	}
+	st, ok1 := parse(start)
+	tg, ok2 := parse(target)
+	if !ok1 || !ok2 {
+		return start + " → " + target
+	}
+	if st.Month() == 1 && st.Day() == 1 && tg.Month() == 1 && tg.Day() == 1 {
+		return fmt.Sprintf("%d → %d", st.Year(), tg.Year())
+	}
+	if st.Year() == tg.Year() {
+		return st.Format("01-02") + " → " + tg.Format("01-02")
+	}
+	return st.Format("06.01") + " → " + tg.Format("06.01")
+}
+
+func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, width float32, limit int, full bool) ui.Element {
 	p := pal(c)
 	if len(items) == 0 {
 		return ui.Text(c, tr("暂无倒计时")).FontSize(fsSmall).TextColor(p.muted)
@@ -507,6 +549,7 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, l
 	if limit > 0 && len(items) > limit {
 		shown, more = items[:limit], len(items)-limit
 	}
+	narrow := !full && width > 0 && width < 210
 	// Single-item hero layout: large numeric boxes + optional neon progress bar.
 	if len(shown) == 1 && more == 0 {
 		it := shown[0]
@@ -527,28 +570,52 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, l
 		boxPadY, boxPadX := float32(8), float32(12)
 		boxFS := fsCount
 		titleFS := fsBody
+		topGap := float32(8)
+		colGap := float32(12)
 		if full {
 			boxMinW = 88
 			boxPadY, boxPadX = 14, 22
 			boxFS = 34
 			titleFS = fsHeading
+		} else if narrow {
+			titleFS = 12.5
+			topGap = 6
+			colGap = 10
 		}
-		return ui.Column(c).Gap(12).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, it.Label).FontSize(titleFS).FontWeight(650).Grow(1).MinWidth(0).NoWrap()
-				chip(c, tag, txtCol, col.Alpha(0.14))
-			})
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				unitBox := func(val int, unit string) {
-					ui.Column(c).MinWidth(boxMinW).Padding(boxPadY, boxPadX).Radius(radControl + 2).Background(p.chip).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, fmt.Sprintf("%d", val)).FontSize(boxFS).FontWeight(700).TextColor(txtCol).NoWrap()
-						ui.Text(c, unit).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-					})
+		return ui.Column(c).Gap(colGap).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Gap(topGap).Children(func() {
+				ui.Text(c, it.Label).FontSize(titleFS).FontWeight(650).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
+				if narrow {
+					ui.Text(c, tag).FontSize(10).FontWeight(600).TextColor(txtCol).Padding(2, 6).Radius(6).Background(col.Alpha(0.14)).NoWrap().Shrink(0)
+				} else {
+					chip(c, tag, txtCol, col.Alpha(0.14)).Shrink(0)
 				}
-				unitBox(days, tr("天"))
-				unitBox(hrs, tr("时"))
-				unitBox(mins, tr("分"))
 			})
+			if narrow {
+				ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
+					unitBox := func(val int, unit string) {
+						ui.Column(c).Grow(1).MinWidth(0).Padding(6, 2).Radius(8).Background(p.chip).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, fmt.Sprintf("%d", val)).FontSize(16).FontWeight(700).FontFeatures("tnum").TextColor(txtCol).SingleLine().Ellipsis("…")
+							ui.Text(c, unit).FontSize(10).TextColor(p.muted).NoWrap()
+						})
+					}
+					unitBox(days, tr("天"))
+					unitBox(hrs, tr("时"))
+					unitBox(mins, tr("分"))
+				})
+			} else {
+				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+					unitBox := func(val int, unit string) {
+						ui.Column(c).MinWidth(boxMinW).Padding(boxPadY, boxPadX).Radius(radControl + 2).Background(p.chip).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, fmt.Sprintf("%d", val)).FontSize(boxFS).FontWeight(700).FontFeatures("tnum").TextColor(txtCol).NoWrap()
+							ui.Text(c, unit).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+						})
+					}
+					unitBox(days, tr("天"))
+					unitBox(hrs, tr("时"))
+					unitBox(mins, tr("分"))
+				})
+			}
 			if start, ok := parseTargetTime(it.Start, now.Location()); ok && target.After(start) {
 				total := target.Sub(start).Seconds()
 				elapsed := clampF(float32(now.Sub(start).Seconds()/total*100), 0, 100)
@@ -556,9 +623,13 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, l
 				if st == "" {
 					st = "neon"
 				}
+				rangeName := it.Start + " → " + it.Target
+				if narrow {
+					rangeName = shortDateRange(it.Start, it.Target)
+				}
 				pb := &engine.ProgressBar{
 					BarStyle: engine.BarStyle{Style: st, Height: 8},
-					Items:    []engine.Progress{{Name: it.Start + " → " + it.Target, Value: float64(elapsed), Max: 0, Color: it.Color, To: it.To}},
+					Items:    []engine.Progress{{Name: rangeName, Value: float64(elapsed), Max: 0, Color: it.Color, To: it.To}},
 				}
 				progressBarView(c, pb, 1)
 			} else if it.Note != "" || full {
@@ -566,7 +637,7 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, l
 				if it.Note != "" {
 					sub += " · " + it.Note
 				}
-				ui.Text(c, sub).FontSize(fsTiny).TextColor(p.muted)
+				ui.Text(c, sub).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
 			}
 		})
 	}
@@ -593,15 +664,15 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, l
 			ui.Column(c).Gap(4).Children(func() {
 				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Box(c).Size(6, 18).Radius(3).Background(col).Shrink(0)
-					ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
-						ui.Text(c, it.Label).FontSize(fsSmall).FontWeight(550).NoWrap()
+					ui.Column(c).Gap(1).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+						ui.Text(c, it.Label).FontSize(fsSmall).FontWeight(550).SingleLine().Ellipsis("…")
 						sub := it.Target
 						if it.Note != "" {
 							sub += " · " + it.Note
 						}
-						ui.Text(c, sub).FontSize(fsTiny).TextColor(p.faint).NoWrap()
+						ui.Text(c, sub).FontSize(fsTiny).TextColor(p.faint).SingleLine().Ellipsis("…")
 					})
-					chip(c, badgeText, readableTextColor(col, p.dark), col.Alpha(0.14))
+					chip(c, badgeText, readableTextColor(col, p.dark), col.Alpha(0.14)).Shrink(0)
 				})
 				if start, ok2 := parseTargetTime(it.Start, now.Location()); ok && ok2 && target.After(start) {
 					elapsed := clampF(float32(now.Sub(start).Seconds()/target.Sub(start).Seconds()*100), 0, 100)
@@ -647,7 +718,20 @@ func zoneOffsetLabel(offset float64) string {
 	return fmt.Sprintf("UTC%s%d:%02d", sign, mins/60, mins%60)
 }
 
-func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, full bool) ui.Element {
+func shortZoneOffsetLabel(offset float64) string {
+	mins := int(math.Round(zoneDuration(offset).Minutes()))
+	sign := "+"
+	if mins < 0 {
+		sign = "-"
+		mins = -mins
+	}
+	if mins%60 == 0 {
+		return fmt.Sprintf("%s%d", sign, mins/60)
+	}
+	return fmt.Sprintf("%s%d:%02d", sign, mins/60, mins%60)
+}
+
+func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, width, h float32, full bool) ui.Element {
 	p := pal(c)
 	var st engine.ClockSpec
 	if spec != nil {
@@ -662,6 +746,7 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 	if st.Seconds {
 		timeFmt = "15:04:05"
 	}
+	narrow := !full && width > 0 && width < 210
 
 	if st.Style == "world" && len(st.Zones) > 0 {
 		localDay := now.Format("2006-01-02")
@@ -671,8 +756,19 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 			shown, more = shown[:4], len(shown)-4
 		}
 		rowPad := float32(10)
+		rowGap := float32(10)
+		rowTimeFmt := timeFmt
+		labelFS := fsSmall
+		subFS := fsTiny
 		if !full {
 			rowPad = 4
+		}
+		if narrow {
+			rowPad = 3.5
+			rowGap = 6
+			rowTimeFmt = "15:04"
+			labelFS = 11.5
+			subFS = 10
 		}
 		return ui.Column(c).Gap(0).Children(func() {
 			for i, z := range shown {
@@ -683,16 +779,25 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 				} else if zDay < localDay {
 					dayDiff = tr("昨天")
 				}
-				row := ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(rowPad, 0)
+				offsetLbl := zoneOffsetLabel(z.Offset)
+				if narrow {
+					offsetLbl = shortZoneOffsetLabel(z.Offset)
+				}
+				row := ui.Row(c).AlignItems(ui.Center).Gap(rowGap).Padding(rowPad, 0)
 				if i > 0 {
 					row = row.BorderWidth(1, 0, 0, 0).BorderColor(p.hairline)
 				}
 				row.Children(func() {
-					ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
-						ui.Text(c, z.Label).FontSize(fsSmall).FontWeight(600).NoWrap()
-						ui.Text(c, dayDiff+" · "+zoneOffsetLabel(z.Offset)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+					ui.Column(c).Gap(1).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
+						ui.Text(c, z.Label).FontSize(labelFS).FontWeight(600).SingleLine().Ellipsis("…")
+						ui.Text(c, dayDiff+" · "+offsetLbl).FontSize(subFS).TextColor(p.muted).SingleLine().Ellipsis("…")
 					})
-					t := ui.Text(c, zt.Format(timeFmt)).Font("monospace").FontSize(fsCount).FontWeight(700).NoWrap()
+					var t ui.Element
+					if narrow {
+						t = ui.Text(c, zt.Format(rowTimeFmt)).FontSize(14).FontWeight(700).FontFeatures("tnum").NoWrap().Shrink(0)
+					} else {
+						t = ui.Text(c, zt.Format(rowTimeFmt)).Font("monospace").FontSize(fsCount).FontWeight(700).NoWrap().Shrink(0)
+					}
 					if st.Neon {
 						t.TextColor(txtCol)
 					}
@@ -705,7 +810,7 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 	}
 
 	if st.Style == "matrix" {
-		return matrixClockView(c, st, now, h, full)
+		return matrixClockView(c, st, now, width, h, full)
 	}
 
 	if st.Style == "digital" {
@@ -713,12 +818,34 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 		if full {
 			padY = 28
 		}
+		numFS := clampF(h*0.32, 28, 56)
+		if narrow {
+			numFS = clampF(min(h*0.30, width*0.18), 18, 32)
+		}
 		return ui.Column(c).Grow(1).Padding(padY, 0).Gap(6).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-			t := ui.Text(c, now.Format(timeFmt)).Font("monospace").FontSize(clampF(h*0.32, 28, 56)).FontWeight(700).NoWrap()
+			t := ui.Text(c, now.Format(timeFmt)).Font("monospace").FontSize(numFS).FontWeight(700).SingleLine().Ellipsis("…")
 			if st.Neon {
 				t.TextColor(txtCol)
 			}
-			ui.Text(c, fmt.Sprintf("%s · %s", now.Format("2006-01-02"), tr(weekdays[now.Weekday()]))).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			ui.Text(c, fmt.Sprintf("%s · %s", now.Format("2006-01-02"), tr(weekdays[now.Weekday()]))).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
+		})
+	}
+
+	dateStr := fmt.Sprintf("%d月%d日 %s", int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]))
+	if curLang() == langEN {
+		dateStr = fmt.Sprintf("%s · %s", now.Format("Jan 2"), tr(weekdays[now.Weekday()]))
+	}
+	if narrow {
+		d := clampF(min(h*0.52, width*0.56), 58, 86)
+		return ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Box(c).Size(d, d).Shrink(0).Draw(func(pt *ui.Painter, r ui.Rect) {
+				paintAnalogClock(pt, r, now, p, col, st.Seconds, st.Neon)
+			})
+			t := ui.Text(c, now.Format(timeFmt)).FontSize(15).FontWeight(700).FontFeatures("tnum").SingleLine().Ellipsis("…")
+			if st.Neon {
+				t.TextColor(txtCol)
+			}
+			ui.Text(c, dateStr).FontSize(fsTiny).TextColor(p.muted).SingleLine().Ellipsis("…")
 		})
 	}
 
@@ -736,11 +863,7 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, h float32, 
 			if st.Neon {
 				t.TextColor(txtCol)
 			}
-			dateStr := fmt.Sprintf("%d月%d日 %s", int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]))
-			if curLang() == langEN {
-				dateStr = fmt.Sprintf("%s · %s", now.Format("Jan 2"), tr(weekdays[now.Weekday()]))
-			}
-			ui.Text(c, dateStr).FontSize(fsSmall).TextColor(p.muted).NoWrap()
+			ui.Text(c, dateStr).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
 			if len(st.Zones) > 0 {
 				limitZones := 1
 				if full {
@@ -824,7 +947,7 @@ func paintAnalogClock(pt *ui.Painter, r ui.Rect, now time.Time, p palette, accen
 // 6. contrib: 7-row GitHub-style activity / habit contribution grid
 // ---------------------------------------------------------------------------
 
-func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) ui.Element {
+func contribView(c *ui.Context, spec *engine.ContribSpec, width float32, sel *int, full bool) ui.Element {
 	p := pal(c)
 	if spec == nil || len(spec.Cells) == 0 {
 		return ui.Text(c, tr("暂无打卡记录")).FontSize(fsSmall).TextColor(p.muted)
@@ -832,6 +955,7 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 	if spec.Style == "matrix" {
 		return matrixContribView(c, spec, sel, full)
 	}
+	narrow := !full && width > 0 && width < 210
 	base := parseColor(spec.Color, ui.Hex("#10B981"))
 	cells := spec.Cells
 	maxWeeks := spec.Weeks
@@ -843,6 +967,13 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 	}
 	if maxWeeks > 52 {
 		maxWeeks = 52
+	}
+	if narrow {
+		const bSize, gap = float32(8), float32(2)
+		fitWeeks := max(6, int((width+gap)/(bSize+gap)))
+		if maxWeeks > fitWeeks {
+			maxWeeks = fitWeeks
+		}
 	}
 	need := maxWeeks * 7
 	if len(cells) > need {
@@ -891,6 +1022,10 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 			boxSize = 13
 			gap = 3
 		}
+	} else if narrow {
+		boxSize = 8
+		gap = 2
+		rad = 2
 	} else if cols > 12 {
 		boxSize = 10
 		gap = 2.5
@@ -944,7 +1079,7 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 				if cell.Label != "" {
 					lbl = cell.Label
 				}
-				ui.Text(c, fmt.Sprintf("%s · %s%s", lbl, trimNum(cell.Value), spec.Unit)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				ui.Text(c, fmt.Sprintf("%s · %s%s", lbl, trimNum(cell.Value), spec.Unit)).FontSize(fsTiny).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
 			} else {
 				active := 0
 				for _, cell := range cells {
@@ -956,14 +1091,16 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full bool) u
 				if full {
 					msg = fmt.Sprintf(tr("活跃 %d / %d 天 · 点选格子查看当天"), active, len(cells))
 				}
-				ui.Text(c, msg).FontSize(fsTiny).TextColor(p.muted).NoWrap()
+				ui.Text(c, msg).FontSize(fsTiny).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
 			}
-			ui.Spacer(c)
-			ui.Text(c, tr("少")).FontSize(fsTiny).TextColor(p.faint)
-			for _, f := range []float64{0, 0.25, 0.5, 0.75, 1.0} {
-				ui.Box(c).Size(9, 9).Radius(2).Background(levelColor(f * hi))
+			if !narrow {
+				ui.Spacer(c)
+				ui.Text(c, tr("少")).FontSize(fsTiny).TextColor(p.faint)
+				for _, f := range []float64{0, 0.25, 0.5, 0.75, 1.0} {
+					ui.Box(c).Size(9, 9).Radius(2).Background(levelColor(f * hi))
+				}
+				ui.Text(c, tr("多")).FontSize(fsTiny).TextColor(p.faint)
 			}
-			ui.Text(c, tr("多")).FontSize(fsTiny).TextColor(p.faint)
 		})
 	})
 }

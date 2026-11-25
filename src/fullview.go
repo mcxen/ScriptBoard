@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
+	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"scriptboard/src/internal/engine"
@@ -35,6 +36,10 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 	}
 	sel := a.selOf("full:" + sc.ID)
 	pinned := a.pinnedSelOf(sc.ID)
+	if a.fullRefreshID != sc.ID {
+		a.fullRefreshID = sc.ID
+		a.fullRefresh.Refreshing = false
+	}
 
 	// The whole window, as the home page: the tiles and the chart are sized to it.
 	pageEl := pageFull(c, compact, func() {
@@ -89,6 +94,11 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 				// the chart the window's height, which a phone has none to spare.
 				a.refreshButton(c, sc, true)
 				a.resetIcon(c, sc)
+				if isMobile() && !sc.IsTable() {
+					if action.ActionIcon(c, lucide.Share2(), action.ActionIconProps{Size: theme.Small, Title: tr("分享")}).Clicked() {
+						a.shareScript(sc)
+					}
+				}
 				if action.ActionIcon(c, icon("pencil-line"), action.ActionIconProps{Size: theme.Small, Title: tr("编辑")}).Clicked() {
 					a.router.Push("/edit/" + sc.ID)
 				}
@@ -345,6 +355,15 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		}
 		a.infoBlock(c, sc, meta, compact)
 	})
+	if a.fullRefresh.Refreshing && !a.refreshing[sc.ID] {
+		a.fullRefresh.Refreshing = false
+	}
+	if pageEl.PullToRefresh(&a.fullRefresh) {
+		a.refreshScript(sc)
+		if !a.refreshing[sc.ID] {
+			a.fullRefresh.Refreshing = false
+		}
+	}
 	// Keyboard scrubbing for plot charts in Visual mode: Left/Right/Home/End.
 	if a.fullModeOf(sc.ID) == 0 && st.err == nil && !st.loading {
 		comp, viewRes, _ := resolveComponent(st.res, a.styles[sc.ID])

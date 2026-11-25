@@ -20,7 +20,7 @@ const (
 // goTo is where a click on a place of the sidebar or the tab bar goes: the page,
 // or, for the settings on a computer, their window.
 func (a *app) goTo(path string) {
-	if path == "/settings" && !isAndroid() {
+	if path == "/settings" && !isMobile() {
 		if a.openSettingsHook != nil {
 			a.openSettingsHook()
 			return

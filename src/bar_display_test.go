@@ -1,10 +1,12 @@
 package main
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestResolveTargetDisplayBuiltInAndExternal(t *testing.T) {
@@ -65,5 +67,42 @@ func TestResolveTargetDisplayBuiltInAndExternal(t *testing.T) {
 	summary := displaysSummary(displays)
 	if !strings.Contains(summary, "内接") || !strings.Contains(summary, "外接") {
 		t.Fatalf("unexpected displaysSummary: %q", summary)
+	}
+}
+
+func TestTrayFlyoutOptionsNonActivating(t *testing.T) {
+	opts := trayFlyoutOptions(nil, 300, 420, mygo.VibrancyPopover, func(*ui.Context) {})
+	if opts.Popover {
+		t.Fatalf("opts.Popover = true, want false so clicking menubar does not call activateIgnoringOtherApps and raise main window")
+	}
+	if !opts.Focusable || !opts.Shadow || opts.CornerRadius != 14 {
+		t.Fatalf("unexpected flyout presentation options: Focusable=%v Shadow=%v CornerRadius=%d", opts.Focusable, opts.Shadow, opts.CornerRadius)
+	}
+	if opts.Placement != mygo.PlacementBottom || opts.Gap != 4 || opts.Width != 300 || opts.Height != 420 {
+		t.Fatalf("unexpected flyout geometry options: Placement=%q Gap=%d Width=%d Height=%d", opts.Placement, opts.Gap, opts.Width, opts.Height)
+	}
+	if opts.Vibrancy != mygo.VibrancyPopover {
+		t.Fatalf("opts.Vibrancy = %q, want %q", opts.Vibrancy, mygo.VibrancyPopover)
+	}
+	if wantHidden := runtime.GOOS == "darwin"; opts.Hidden != wantHidden {
+		t.Fatalf("opts.Hidden = %v, want %v", opts.Hidden, wantHidden)
+	}
+}
+
+func TestTrayPanelWindowOptionsNonActivating(t *testing.T) {
+	opts := trayPanelWindowOptions(mygo.Point{X: 100, Y: 40}, 300, 320, mygo.VibrancyPopover, nil)
+	if !opts.Panel || !opts.Frameless || !opts.Transparent || !opts.AlwaysOnTop || !opts.SkipTaskbar {
+		t.Fatalf("unexpected window panel options: %+v", opts)
+	}
+	if opts.Vibrancy != mygo.VibrancyPopover || opts.CornerRadius != 14 {
+		t.Fatalf("unexpected vibrancy/radius: Vibrancy=%q CornerRadius=%d", opts.Vibrancy, opts.CornerRadius)
+	}
+	if opts.Width != 300 || opts.Height != 320 || opts.X != 100 || opts.Y != 40 {
+		t.Fatalf("unexpected bounds: %dx%d at (%d,%d)", opts.Width, opts.Height, opts.X, opts.Y)
+	}
+
+	solidOpts := trayPanelWindowOptions(mygo.Point{X: 10, Y: 20}, 300, 320, mygo.VibrancyNone, nil)
+	if solidOpts.Transparent {
+		t.Fatalf("solid panel Transparent = true, want false when Vibrancy is VibrancyNone")
 	}
 }

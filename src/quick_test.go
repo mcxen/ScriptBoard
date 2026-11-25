@@ -30,3 +30,24 @@ func TestQuickEntryFitsTheCard(t *testing.T) {
 		t.Errorf("record button ends at %.0f, past the %d DIP card", right, cardW)
 	}
 }
+
+func TestQuickEntryFitsNarrowPhoneCard(t *testing.T) {
+	a := newTestApp(t)
+	in := engine.ManualInput{Metric: "weight", Label: "体重", Unit: "kg", Step: 0.1}
+	const cardW = 149
+	view := func(c *ui.Context) {
+		applySkin(c)
+		ui.Row(c).Width(cardW).Children(func() {
+			a.quickEntryWidth(c, "quick-phone-test", in, cardW)
+		})
+	}
+	tt := ui.NewTester(view, 220, 80)
+	settle(tt)
+	info, ok := tt.Access("记录")
+	if !ok {
+		t.Fatal("no record button on narrow card")
+	}
+	if right := info.Bounds.X + info.Bounds.W; right > cardW {
+		t.Errorf("record button ends at %.1f, past the %d DIP narrow card", right, cardW)
+	}
+}

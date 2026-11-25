@@ -39,7 +39,7 @@ func (a *app) coverOf(sc store.Script, res engine.Result, allowed bool) *cover {
 }
 
 // touchUI says whether the screen has no pointer to hover with: a phone.
-func (a *app) touchUI() bool { return isAndroid() }
+func (a *app) touchUI() bool { return isMobile() }
 
 // coverCard fills the card with its picture, and puts its text and buttons over
 // it in two panels, the buttons at the top and the title, summary and the

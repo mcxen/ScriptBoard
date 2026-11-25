@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/bar"
@@ -123,7 +124,9 @@ func (a *app) transferPanel(c *ui.Context) {
 		if a.panel == "import" {
 			ui.Text(c, tr("导入脚本")).Bold()
 			hint(c, tr("粘贴脚本：JSON（导出的格式）或 ES 模块源码"))
-			textArea(c, &a.transferText, "", 8).Font("monospace").FontSize(fsSmall)
+			textArea(c, &a.transferText, "", 8).Font("monospace").FontSize(fsSmall).
+				Capitalize(ui.CapitalizeNone).
+				Autocorrect(false)
 			if a.transferErr != "" {
 				ui.Text(c, a.transferErr).FontSize(fsSmall).TextColor(p.up)
 			}
@@ -146,9 +149,16 @@ func (a *app) transferPanel(c *ui.Context) {
 		}
 		ui.Text(c, tr("导出脚本")).Bold()
 		hint(c, tr("复制后发给别人，或粘贴到「导入」里"))
-		textArea(c, &a.transferText, "", 8).Font("monospace").FontSize(fsSmall)
-		if btn(c, tr("关闭")).Clicked() {
-			a.panel = ""
-		}
+		textArea(c, &a.transferText, "", 8).Font("monospace").FontSize(fsSmall).
+			Capitalize(ui.CapitalizeNone).
+			Autocorrect(false)
+		ui.Row(c).Gap(8).Children(func() {
+			if isMobile() && btn(c, tr("分享")).Clicked() {
+				a.shareContent(mygo.ShareOptions{Text: a.transferText}, "")
+			}
+			if btn(c, tr("关闭")).Clicked() {
+				a.panel = ""
+			}
+		})
 	})
 }

@@ -46,7 +46,11 @@ func main() {
 	// that cannot update themselves (development builds, a package manager's
 	// install) never check.
 	mygo.Use(native.New(updater.Options{Language: curLang()}))
+	mygo.App.OnSaveState(a.encodeAppState)
 	mygo.App.WhenReady(func() {
+		if data := mygo.App.RestoredState(); len(data) > 0 {
+			a.restoreAppState(data)
+		}
 		applyUpdateSource(a.set.UpdateSource)
 		w := mygo.NewWindow(framedOptions(mygo.WindowOptions{
 			Title:     appName(),

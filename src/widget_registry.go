@@ -486,10 +486,10 @@ func init() {
 				d = 64
 				limit = 0
 			}
-			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), limit, d)
+			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), req.Width, limit, d)
 		},
 		fullFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
-			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), 0, 84)
+			return progressRingView(c, applyRingFillOverride(req.Result.Chart, req.Style), req.Width, 0, 84)
 		},
 		tilesFn: func(a *app, c *ui.Context, res engine.Result) bool {
 			return a.kindTiles(c, res.Chart)
@@ -513,10 +513,10 @@ func init() {
 		registerComponent(componentAdapter{
 			typ: typ,
 			cardFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
-				return widgetViewWith(c, req.App, req.Script.ID, req.Result.Chart, req.Style, req.Height, req.Selected, false, req.Now, req.Limit)
+				return widgetViewWith(c, req.App, req.Script.ID, req.Result.Chart, req.Style, req.Width, req.Height, req.Selected, false, req.Now, req.Limit)
 			},
 			fullFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
-				return widgetViewWith(c, req.App, req.Script.ID, req.Result.Chart, req.Style, req.Height, req.Selected, true, req.Now, 0)
+				return widgetViewWith(c, req.App, req.Script.ID, req.Result.Chart, req.Style, req.Width, req.Height, req.Selected, true, req.Now, 0)
 			},
 			tilesFn: func(a *app, c *ui.Context, res engine.Result) bool {
 				return a.widgetTiles(c, res.Chart)
@@ -534,7 +534,7 @@ func init() {
 			if req.Result.Chart == nil || req.Result.Chart.Table == nil {
 				return ui.Text(c, tr("暂无数据")).FontSize(fsSmall).TextColor(pal(c).muted)
 			}
-			return req.App.tableWidgetView(c, "card:"+req.Script.ID, req.Result.Chart.Table, false, req.Limit)
+			return req.App.tableWidgetViewWidth(c, "card:"+req.Script.ID, req.Result.Chart.Table, req.Width, false, req.Limit)
 		},
 		fullFn: func(c *ui.Context, req ComponentRenderReq) ui.Element {
 			if req.Result.Chart == nil || req.Result.Chart.Table == nil {

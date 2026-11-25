@@ -13,6 +13,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/mobile"
 
 	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/cache"
@@ -187,6 +188,18 @@ type app struct {
 	barCookieURL      string
 	barCookieInput    string
 	barCookieNote     string
+
+	// Mobile-specific UI & device state.
+	homeRefresh    ui.RefreshState
+	fullRefresh    ui.RefreshState
+	fullRefreshID  string
+	commRefresh    ui.RefreshState
+	sheetOpen      bool
+	sheetScriptID  string
+	galleryZoom    mobile.ZoomState
+	galleryZoomKey string
+	lastBarStyle   mygo.BarStyle
+	shareFn        func(mygo.ShareOptions) error
 }
 
 type runState struct {

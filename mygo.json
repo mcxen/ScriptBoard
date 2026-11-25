@@ -3,7 +3,7 @@
   "name": "ScriptBoard",
   "slug": "scriptboard",
   "identifier": "app.openspring.scriptboard",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "out": "build",
   "updates": {
     "publicKey": "7O6VOAAnVCzwDLYnNadP8n2s/vWLjnPjnzXiMX+ubxM=",
