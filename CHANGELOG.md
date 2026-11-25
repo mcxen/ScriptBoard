@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.15
+
+- Role-aware dark mode color & contrast adaptation engine (`src/internal/colortheme`): adds WCAG 2.1 contrast enforcement across semantic roles (`RoleText`, `RoleMuted`, `RoleSurface`, `RoleBorder`, `RoleAccent`), automatic neutral light/dark inversion, pastel badge surface tinting, nested surface polarity tracking (`WithSurface`), `OnColor` ink selection, and unified CSS hex / `rgb()` / `rgba()` / named color parsing.
+- `.bar` renderer & audit upgrades (`src/internal/barui`): routes all VDOM node colors through role-aware `Theme.Resolve` with nested container surface propagation, `rawColor`/`adaptColors` opt-out, subtree `ui.Themed` isolation for light/dark previews and native inputs, and expanded hardcoded neutral-color hazard checks in `AuditSnapshot`.
+- Script widget, chart & Bento dark-mode fixes: fixes `readableTextColor` dark-mode inversion and adapts custom hex/CSS colors across `kv`, `checklist`, `countdown`, `clock`, `donut`, `contrib`, `progressBar`, `progressRing`, `barh`, `line` charts, and card accents; isolates opposite-polarity Bento `theme` overrides inside themed containers; exposes `ctx.theme` and `ctx.dark` to script `render(ctx)`.
+- Native OS appearance & live sync: applies `mygo.Theme.SetSource` on launch and Settings changes, listens to `mygo.Theme.OnUpdated` for live refreshes across the main window, settings window, open tray flyouts, and active `.bar` instances, syncs `.bar` appearance prior to `Snapshot()`, keeps Mac OS 9 light under Dark Mode, and splits Android widget light/dark XML color resources.
+
 ## 0.1.14
 
 - Native mobile experience powered by MyGo v0.10.0 (iOS & Android parity):
