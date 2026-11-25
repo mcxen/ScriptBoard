@@ -234,10 +234,7 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 		return nil, bar.Spec{}, err
 	}
 	id := sc.ID
-	themeName := "dark"
-	if curThemeMode() == themeLight {
-		themeName = "light"
-	}
+	themeName := a.effectiveThemeName()
 	inst, err := bar.NewInstance(sp, bar.Options{
 		Client:     a.client,
 		Inputs:     a.barInputs(id, sp),

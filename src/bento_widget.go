@@ -214,13 +214,36 @@ func (a *app) bentoWidgetView(c *ui.Context, key string, b *engine.BentoSpec, wi
 	bp := bentoPalette(c, b.Theme)
 	st := a.bentoViewStateOf(key)
 
-	if !full && size == 0 {
-		return bentoSmallView(c, b, bp, st.masked)
+	renderContent := func(availW float32) ui.Element {
+		if !full && size == 0 {
+			return bentoSmallView(c, b, bp, st.masked)
+		}
+		if !full && (size == 1 || (availW > 0 && availW < 520)) {
+			return bentoMediumView(c, b, bp, availW, st.masked)
+		}
+		return a.bentoFullOrWideView(c, key, b, bp, st, availW, full)
 	}
-	if !full && (size == 1 || (width > 0 && width < 520)) {
-		return bentoMediumView(c, b, bp, width, st.masked)
+	if bp.dark != p.dark {
+		surfBG := ui.Hex("#FFFFFF")
+		if bp.dark {
+			surfBG = ui.Hex("#1A1D24")
+		}
+		innerW := width
+		if innerW > 24 {
+			innerW -= 24
+		}
+		return ui.Themed(c, brandDefault.Theme(bp.dark)).
+			FillWidth().
+			Background(surfBG).
+			BorderWidth(1).
+			BorderColor(bp.subBorder).
+			Radius(radControl + 4).
+			Padding(12).
+			Children(func() {
+				renderContent(innerW)
+			})
 	}
-	return a.bentoFullOrWideView(c, key, b, bp, st, width, full)
+	return renderContent(width)
 }
 
 func bentoSmallView(c *ui.Context, b *engine.BentoSpec, bp bentoColors, masked bool) ui.Element {
@@ -444,7 +467,7 @@ func (a *app) bentoFullOrWideView(c *ui.Context, key string, b *engine.BentoSpec
 								ui.Text(c, h.Meta).FontSize(12).TextColor(bp.muted).NoWrap()
 							}
 							if h.Badge != "" {
-								bc := parseColor(h.BadgeColor, bp.good)
+								bc := adaptTextColor(parseColor(h.BadgeColor, bp.good), bp.dark)
 								chip(c, h.Badge, bc, bc.Alpha(0.14))
 							}
 						})
@@ -816,7 +839,7 @@ func bentoCellsGrid(c *ui.Context, cells []engine.BentoCell, width float32, bp b
 					continue
 				}
 				cl := cells[idx]
-				accentCol := parseColor(cl.Color, p.accent)
+				accentCol := adaptTextColor(parseColor(cl.Color, p.accent), bp.dark)
 				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Padding(10, 12).Radius(8).
 					Background(bp.subBg).BorderWidth(1).BorderColor(bp.subBorder).Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {

@@ -57,18 +57,10 @@ func hasChartDetail(ch *engine.Chart) bool {
 	return isPlotChart(ch) || isCalendar(ch)
 }
 
-// readableTextColor keeps neon colors vivid in dark mode while deepening
-// ultra-bright hues (like #00F5D4) on light backgrounds so text and chips stay
-// crisp and high-contrast.
+// readableTextColor adapts text and chip ink colors for dark or light surfaces
+// while keeping vibrant neon accents vivid when contrast permits.
 func readableTextColor(col ui.Color, dark bool) ui.Color {
-	if dark {
-		return col
-	}
-	lum := 0.299*float64(col.R) + 0.587*float64(col.G) + 0.114*float64(col.B)
-	if lum > 0.62 {
-		return col.Mix(ui.Hex("#0F172A"), 0.36)
-	}
-	return col
+	return adaptTextColor(col, dark)
 }
 
 // widgetView draws any of the six widget components in this file.
@@ -200,7 +192,7 @@ func donutWidgetView(c *ui.Context, ch *engine.Chart, width, h float32, sel *int
 		if isMatrix {
 			defCol = matrixPalette[i%len(matrixPalette)]
 		}
-		cols[i] = parseColor(it.Color, defCol)
+		cols[i] = adaptAccentColor(parseColor(it.Color, defCol), p.dark || isMatrix)
 	}
 	maxLegend := len(items)
 	if narrow && maxLegend > 3 {
@@ -328,7 +320,7 @@ func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.Ch
 		for i, it := range shown {
 			i, it := i, it
 			checked := isDone(i, it.Done)
-			col := parseColor(it.Color, p.down)
+			col := adaptAccentColor(parseColor(it.Color, p.down), p.dark)
 			rowEl := ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(3, 4).Radius(6)
 			if interactive && a != nil && scriptID != "" {
 				if rowEl.Hovered() {
@@ -339,7 +331,7 @@ func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.Ch
 			built := rowEl.Children(func() {
 				if checked {
 					ui.Row(c).Size(18, 18).Radius(9).Background(col).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-						ui.Text(c, "✓").FontSize(11).Bold().TextColor(ui.Hex("#FFFFFF")).NoWrap()
+						ui.Text(c, "✓").FontSize(11).Bold().TextColor(onColor(col)).NoWrap()
 					})
 				} else {
 					ui.Box(c).Size(18, 18).Radius(9).BorderWidth(1.5).BorderColor(p.border).Shrink(0)
@@ -356,7 +348,7 @@ func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.Ch
 					}
 				})
 				if it.Badge != "" {
-					bc := parseColor(it.Color, p.muted)
+					bc := adaptTextColor(parseColor(it.Color, p.muted), p.dark)
 					chip(c, it.Badge, bc, bc.Alpha(0.13)).Shrink(0)
 				}
 			})
@@ -381,8 +373,8 @@ func checklistViewWith(c *ui.Context, a *app, scriptID string, items []engine.Ch
 // ---------------------------------------------------------------------------
 
 func kvStatusColor(p palette, status, custom string) (ui.Color, bool) {
-	if hexColor.MatchString(custom) {
-		return ui.Hex(custom), true
+	if col, ok := parseCustomColor(custom); ok {
+		return adaptAccentColor(col, p.dark), true
 	}
 	switch status {
 	case "ok":
@@ -448,13 +440,13 @@ func kvViewWith(c *ui.Context, a *app, items []engine.KVItem, width float32, lim
 				if it.Badge != "" {
 					bc := p.accent
 					if hasDot {
-						bc = col
+						bc = adaptTextColor(col, p.dark)
 					}
 					chip(c, it.Badge, bc, bc.Alpha(0.13)).Shrink(0)
 				}
 				vt := ui.Text(c, it.Value).FontSize(valFS).FontWeight(650).FontFeatures("tnum").NoWrap().Shrink(0)
 				if hasDot && (it.Status == "err" || it.Status == "warn") {
-					vt.TextColor(col)
+					vt.TextColor(adaptTextColor(col, p.dark))
 				}
 			})
 			if full && built.Clicked() {
@@ -558,7 +550,7 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, w
 			return ui.Text(c, tr("目标日期格式不对")).FontSize(fsSmall).TextColor(p.up)
 		}
 		days, hrs, mins, past := countdownParts(now, target)
-		col := parseColor(it.Color, p.accent)
+		col := adaptAccentColor(parseColor(it.Color, p.accent), p.dark)
 		txtCol := readableTextColor(col, p.dark)
 		tag := tr("距离目标")
 		if past {
@@ -646,7 +638,7 @@ func countdownView(c *ui.Context, items []engine.CountdownItem, now time.Time, w
 	return ui.Column(c).Gap(8).Children(func() {
 		for _, it := range shown {
 			target, ok := parseTargetTime(it.Target, now.Location())
-			col := parseColor(it.Color, p.accent)
+			col := adaptAccentColor(parseColor(it.Color, p.accent), p.dark)
 			badgeText := "—"
 			if ok {
 				days, hrs, _, past := countdownParts(now, target)
@@ -737,7 +729,8 @@ func clockView(c *ui.Context, spec *engine.ClockSpec, now time.Time, width, h fl
 	if spec != nil {
 		st = *spec
 	}
-	col := parseColor(st.Color, p.accent)
+	darkFace := p.dark || st.Neon || st.Style == "matrix"
+	col := adaptAccentColor(parseColor(st.Color, p.accent), darkFace)
 	if st.Neon && !hexColor.MatchString(st.Color) {
 		col = ui.Hex("#00F5D4")
 	}
@@ -956,7 +949,7 @@ func contribView(c *ui.Context, spec *engine.ContribSpec, width float32, sel *in
 		return matrixContribView(c, spec, sel, full)
 	}
 	narrow := !full && width > 0 && width < 210
-	base := parseColor(spec.Color, ui.Hex("#10B981"))
+	base := adaptAccentColor(parseColor(spec.Color, ui.Hex("#10B981")), p.dark)
 	cells := spec.Cells
 	maxWeeks := spec.Weeks
 	if maxWeeks <= 0 {

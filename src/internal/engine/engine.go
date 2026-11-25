@@ -744,6 +744,8 @@ type Input struct {
 	Now time.Time
 	// Lang is the language of the user: "zh" or "en".
 	Lang string
+	// Theme is the active UI polarity: "dark" or "light".
+	Theme string
 	// OS is the system the app runs on ("macos", "windows", "linux", "android",
 	// "ios") and Kind its group ("desktop" or "mobile"): ctx.platform. A script
 	// asks the host for what is system specific, and rarely needs these.
@@ -807,13 +809,23 @@ func (s *Script) HasRender() bool {
 	return err == nil
 }
 
+func themeOr(s string) string {
+	if s == "dark" {
+		return "dark"
+	}
+	return "light"
+}
+
 // Run calls render with in and returns its result.
 func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, RunTimeout)
 	defer cancel()
+	themeName := themeOr(in.Theme)
 	arg, err := json.Marshal(map[string]any{
 		"now":        in.Now.UnixMilli(),
 		"lang":       langOr(in.Lang),
+		"theme":      themeName,
+		"dark":       themeName == "dark",
 		"platform":   map[string]string{"os": in.OS, "kind": in.Kind},
 		"granted":    grantedSet(in.Granted),
 		"tzOffset":   in.TZOffset,

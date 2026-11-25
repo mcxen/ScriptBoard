@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/colortheme"
 )
 
 // PreviewOptions configures headless PNG rendering of a .bar Snapshot.
@@ -267,12 +267,17 @@ func AuditSnapshot(snap bar.Snapshot, spec bar.Spec) VisualAudit {
 			}
 		}
 
-		for _, key := range []string{"background", "textColor", "color", "borderColor"} {
-			if raw, ok := PropString(n.Props, key); ok {
-				low := strings.ToLower(strings.TrimSpace(raw))
-				if (low == "#000" || low == "#000000" || low == "#fff" || low == "#ffffff") && !hardcodedWarned {
-					hardcodedWarned = true
-					a.Warnings = append(a.Warnings, fmt.Sprintf("hardcoded %q color %q breaks Light/Dark adaptation; prefer semantic tokens (surfaceCard, text, textMuted, accent)", key, raw))
+		isRaw := propBool(n.Props, "rawColor", false)
+		if v, ok := n.Props["adaptColors"].(bool); ok && !v {
+			isRaw = true
+		}
+		if !isRaw {
+			for _, key := range []string{"background", "textColor", "color", "borderColor", "valueColor", "iconBg"} {
+				if raw, ok := PropString(n.Props, key); ok {
+					if colortheme.IsHardcodedAdaptiveHazard(raw) && !hardcodedWarned {
+						hardcodedWarned = true
+						a.Warnings = append(a.Warnings, fmt.Sprintf("hardcoded %q color %q breaks Light/Dark adaptation; prefer semantic tokens (surfaceCard, text, textMuted, accent)", key, raw))
+					}
 				}
 			}
 		}

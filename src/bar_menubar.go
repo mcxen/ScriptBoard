@@ -313,6 +313,9 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 			return
 		}
 		th := barThemeFor(c, barThemeAuto)
+		if c.Vibrancy() && strings.EqualFold(strings.TrimSpace(sp.Material), "hud") {
+			th = barThemeFor(c, barThemeDark)
+		}
 		themeStr := "dark"
 		if !th.dark {
 			themeStr = "light"
@@ -322,7 +325,7 @@ func (a *app) toggleBarFlyout(id string, t *mygo.Tray) {
 		onAct := func(aid string) { a.invokeBarAction(id, aid) }
 		onActArg := func(aid string, arg any) { a.invokeBarActionWithArg(id, aid, arg) }
 		if c.Vibrancy() && snap.Panel != nil && !strings.EqualFold(sp.Material, "solid") {
-			ui.Column(c).Fill().Children(func() {
+			ui.Themed(c, brandDefault.Theme(th.dark)).Background(ui.Transparent).Fill().Children(func() {
 				renderBarNodeInteractive(c, snap.Panel, th, true, onAct, onActArg)
 			})
 			return

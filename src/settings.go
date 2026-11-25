@@ -203,6 +203,7 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 					a.set.Skin = skinNames[a.skinIdx]
 					setSkin(a.set.Skin)
 					a.saveSettings()
+					a.syncAppearance()
 				}
 			}},
 			row{stack: true, title: tr("明暗"), note: tr("跟随系统，或固定为浅色或深色。"), control: func() {
@@ -210,6 +211,7 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 					a.set.ThemeMode = themeModes[a.themeIdx]
 					setThemeMode(a.set.ThemeMode)
 					a.saveSettings()
+					a.syncAppearance()
 				}
 			}},
 			row{stack: true, title: tr("语言"), control: func() {

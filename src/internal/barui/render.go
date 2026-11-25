@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui/chart"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/colortheme"
 )
 
 // Theme carries resolved semantic palette tokens for rendering a .bar virtual
@@ -122,179 +123,204 @@ func ThemeFor(dark, vibrancy bool) Theme {
 	return th
 }
 
-// Color resolves a semantic color token, #RGB/#RGBA/#RRGGBB/#RRGGBBAA hex, or
-// rgb()/rgba() string into a ui.Color.
+// Color resolves a semantic color token, #RGB/#RGBA/#RRGGBB/#RRGGBBAA hex,
+// rgb()/rgba(), or CSS named color literal into a raw ui.Color.
 func (th Theme) Color(name string, fallback ui.Color) ui.Color {
 	s := strings.TrimSpace(name)
-	switch s {
-	case "":
+	if s == "" {
 		return fallback
-	case "surface":
-		return th.Surface
-	case "surfaceCard", "card":
-		return th.SurfaceCard
-	case "surfaceElevated", "elevated":
-		return th.SurfaceElevated
-	case "surfaceSubtle", "subtle":
-		return th.SurfaceSubtle
-	case "surfaceHover":
-		return th.SurfaceHover
-	case "surfacePressed":
-		return th.SurfacePressed
-	case "text", "foreground":
-		return th.Text
-	case "textMuted", "muted", "secondary":
-		return th.TextMuted
-	case "textFaint", "faint":
-		return th.TextFaint
-	case "accent", "primary":
-		return th.Accent
-	case "accentSurface":
-		return th.AccentSurface
-	case "success":
-		return th.Success
-	case "successSurface":
-		return th.SuccessSurface
-	case "warning":
-		return th.Warning
-	case "warningSurface":
-		return th.WarningSurface
-	case "danger", "error":
-		return th.Danger
-	case "dangerSurface":
-		return th.DangerSurface
-	case "purple":
-		return th.Purple
-	case "purpleSurface":
-		return th.PurpleSurface
-	case "cyan":
-		return th.Cyan
-	case "cyanSurface":
-		return th.CyanSurface
-	case "border", "divider":
-		return th.Border
-	case "borderStrong":
-		return th.BorderStrong
-	case "neutral":
-		return th.TextMuted
-	case "neutralSurface":
-		return th.SurfaceSubtle
-	case "transparent":
-		return ui.Color{}
 	}
-	if strings.HasPrefix(s, "#") {
-		if c, ok := parseHexColor(s); ok {
-			return c
-		}
-		return ui.Hex(s)
+	if col, ok := th.semanticColor(s); ok {
+		return col
 	}
-	if c, ok := parseRGBFunc(s); ok {
-		return c
+	if col, ok := colortheme.Parse(s); ok {
+		return col
 	}
 	return fallback
 }
 
-func (th Theme) toneColors(tone string) (fg, surface ui.Color) {
-	switch strings.ToLower(strings.TrimSpace(tone)) {
+func (th Theme) semanticColor(s string) (ui.Color, bool) {
+	switch s {
+	case "surface":
+		return th.Surface, true
+	case "surfaceCard", "card":
+		return th.SurfaceCard, true
+	case "surfaceElevated", "elevated":
+		return th.SurfaceElevated, true
+	case "surfaceSubtle", "subtle":
+		return th.SurfaceSubtle, true
+	case "surfaceHover":
+		return th.SurfaceHover, true
+	case "surfacePressed":
+		return th.SurfacePressed, true
+	case "text", "foreground":
+		return th.Text, true
+	case "textMuted", "muted", "secondary":
+		return th.TextMuted, true
+	case "textFaint", "faint":
+		return th.TextFaint, true
+	case "accent", "primary":
+		return th.Accent, true
+	case "accentSurface":
+		return th.AccentSurface, true
 	case "success":
-		return th.Success, th.SuccessSurface
+		return th.Success, true
+	case "successSurface":
+		return th.SuccessSurface, true
 	case "warning":
-		return th.Warning, th.WarningSurface
+		return th.Warning, true
+	case "warningSurface":
+		return th.WarningSurface, true
 	case "danger", "error":
-		return th.Danger, th.DangerSurface
+		return th.Danger, true
+	case "dangerSurface":
+		return th.DangerSurface, true
 	case "purple":
-		return th.Purple, th.PurpleSurface
+		return th.Purple, true
+	case "purpleSurface":
+		return th.PurpleSurface, true
 	case "cyan":
-		return th.Cyan, th.CyanSurface
-	case "neutral", "muted":
-		return th.TextMuted, th.SurfaceSubtle
-	default:
-		return th.Accent, th.AccentSurface
-	}
-}
-
-func parseHexColor(s string) (ui.Color, bool) {
-	h := strings.TrimPrefix(s, "#")
-	switch len(h) {
-	case 3:
-		r, ok1 := parseHexByte(h[0:1] + h[0:1])
-		g, ok2 := parseHexByte(h[1:2] + h[1:2])
-		b, ok3 := parseHexByte(h[2:3] + h[2:3])
-		if ok1 && ok2 && ok3 {
-			return ui.RGB(r, g, b), true
-		}
-	case 4:
-		r, ok1 := parseHexByte(h[0:1] + h[0:1])
-		g, ok2 := parseHexByte(h[1:2] + h[1:2])
-		b, ok3 := parseHexByte(h[2:3] + h[2:3])
-		a, ok4 := parseHexByte(h[3:4] + h[3:4])
-		if ok1 && ok2 && ok3 && ok4 {
-			return ui.RGBA(r, g, b, float32(a)/255), true
-		}
-	case 6:
-		return ui.Hex("#" + h), true
-	case 8:
-		r, ok1 := parseHexByte(h[0:2])
-		g, ok2 := parseHexByte(h[2:4])
-		b, ok3 := parseHexByte(h[4:6])
-		a, ok4 := parseHexByte(h[6:8])
-		if ok1 && ok2 && ok3 && ok4 {
-			return ui.RGBA(r, g, b, float32(a)/255), true
-		}
+		return th.Cyan, true
+	case "cyanSurface":
+		return th.CyanSurface, true
+	case "border", "divider":
+		return th.Border, true
+	case "borderStrong":
+		return th.BorderStrong, true
+	case "neutral":
+		return th.TextMuted, true
+	case "neutralSurface":
+		return th.SurfaceSubtle, true
+	case "transparent":
+		return ui.Color{}, true
 	}
 	return ui.Color{}, false
 }
 
-func parseHexByte(s string) (uint8, bool) {
-	v, err := strconv.ParseUint(s, 16, 8)
-	return uint8(v), err == nil
+// Palette returns the base colortheme.Palette corresponding to th.
+func (th Theme) Palette() colortheme.Palette {
+	surf := th.Surface
+	if surf.A < 255 {
+		surf = colortheme.CompositeOver(surf, colortheme.DefaultPalette(th.Dark).Surface)
+	}
+	return colortheme.Palette{
+		Dark:       th.Dark,
+		Surface:    surf,
+		SurfaceAlt: th.SurfaceElevated,
+		Text:       th.Text,
+		TextMuted:  th.TextMuted,
+		Border:     th.Border,
+	}
 }
 
-func parseRGBFunc(s string) (ui.Color, bool) {
-	low := strings.ToLower(s)
-	inner := ""
-	isRGBA := false
-	switch {
-	case strings.HasPrefix(low, "rgba(") && strings.HasSuffix(low, ")"):
-		inner = s[5 : len(s)-1]
-		isRGBA = true
-	case strings.HasPrefix(low, "rgb(") && strings.HasSuffix(low, ")"):
-		inner = s[4 : len(s)-1]
+// Resolve maps semantic tokens directly (respecting surface polarity overrides)
+// and adapts literal CSS colors according to role and surface context unless
+// rawColor is true.
+func (th Theme) Resolve(name string, role colortheme.Role, pal colortheme.Palette, rawColor bool, fallback ui.Color) ui.Color {
+	s := strings.TrimSpace(name)
+	if s == "" {
+		return fallback
+	}
+	if col, ok := th.semanticColor(s); ok {
+		if pal.Dark != th.Dark {
+			switch s {
+			case "text", "foreground":
+				return pal.Text
+			case "textMuted", "muted", "secondary":
+				return pal.TextMuted
+			case "textFaint", "faint":
+				return pal.TextMuted.Alpha(0.72)
+			case "border", "divider":
+				return pal.Border
+			}
+		}
+		return col
+	}
+	col, ok := colortheme.Parse(s)
+	if !ok {
+		return fallback
+	}
+	if rawColor || col.A == 0 {
+		return col
+	}
+	return colortheme.Adapt(col, role, pal)
+}
+
+func (th Theme) lookupTone(tone string) (fg, surface ui.Color, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(tone)) {
+	case "success":
+		return th.Success, th.SuccessSurface, true
+	case "warning":
+		return th.Warning, th.WarningSurface, true
+	case "danger", "error":
+		return th.Danger, th.DangerSurface, true
+	case "purple":
+		return th.Purple, th.PurpleSurface, true
+	case "cyan":
+		return th.Cyan, th.CyanSurface, true
+	case "neutral", "muted":
+		return th.TextMuted, th.SurfaceSubtle, true
+	case "accent", "primary":
+		return th.Accent, th.AccentSurface, true
 	default:
-		return ui.Color{}, false
+		return ui.Color{}, ui.Color{}, false
 	}
-	parts := strings.Split(inner, ",")
-	if len(parts) < 3 {
-		return ui.Color{}, false
+}
+
+func (th Theme) toneColors(tone string) (fg, surface ui.Color) {
+	if fg, surface, ok := th.lookupTone(tone); ok {
+		return fg, surface
 	}
-	r, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-	g, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-	b, err3 := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-	if err1 != nil || err2 != nil || err3 != nil {
-		return ui.Color{}, false
+	return th.Accent, th.AccentSurface
+}
+
+type renderState struct {
+	pal      colortheme.Palette
+	rawColor bool
+}
+
+func (st renderState) withProps(props map[string]any) renderState {
+	if propBool(props, "rawColor", false) {
+		st.rawColor = true
 	}
-	clampByte := func(v float64) uint8 {
-		if v < 0 {
-			return 0
+	if props != nil {
+		if v, ok := props["adaptColors"].(bool); ok && !v {
+			st.rawColor = true
 		}
-		if v > 255 {
-			return 255
-		}
-		return uint8(v + 0.5)
 	}
-	if isRGBA && len(parts) >= 4 {
-		a, err4 := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64)
-		if err4 != nil {
-			return ui.Color{}, false
-		}
-		if a < 0 {
-			a = 0
-		} else if a > 1 {
-			a = 1
-		}
-		return ui.RGBA(clampByte(r), clampByte(g), clampByte(b), float32(a)), true
+	return st
+}
+
+func (st renderState) themeFor(th Theme) Theme {
+	if st.pal.Dark != th.Dark {
+		return ThemeFor(st.pal.Dark, th.Vibrancy)
 	}
-	return ui.RGB(clampByte(r), clampByte(g), clampByte(b)), true
+	return th
+}
+
+func barUITheme(th Theme) *ui.Theme {
+	var out ui.Theme
+	if th.Dark {
+		out = *ui.DarkTheme()
+	} else {
+		out = *ui.LightTheme()
+	}
+	out.Dark = th.Dark
+	out.Background = th.Surface
+	out.Surface = th.SurfaceSubtle
+	out.SurfaceHover = th.SurfaceHover
+	out.SurfacePressed = th.SurfacePressed
+	out.Border = th.Border
+	out.Text = th.Text
+	out.TextMuted = th.TextMuted
+	out.Accent = th.Accent
+	out.AccentHover = th.Accent.Mix(out.Text, 0.12)
+	out.AccentPressed = th.Accent.Mix(out.Background, 0.14)
+	out.AccentText = colortheme.OnColor(th.Accent)
+	out.Danger = th.Danger
+	out.Warning = th.Warning
+	out.Success = th.Success
+	return &out
 }
 
 // RenderOptions configures RenderPanel and RenderNode.
@@ -373,7 +399,7 @@ func RenderPanel(c *ui.Context, snap bar.Snapshot, th Theme, opts RenderOptions)
 			}
 		}
 	}
-	cardEl := ui.Column(c).
+	cardEl := ui.Themed(c, barUITheme(th)).
 		Width(width).
 		Background(surface).
 		Radius(14).
@@ -383,9 +409,10 @@ func RenderPanel(c *ui.Context, snap bar.Snapshot, th Theme, opts RenderOptions)
 	if prefH > 0 {
 		cardEl = cardEl.Height(prefH)
 	}
+	st := renderState{pal: th.Palette()}
 	return cardEl.Children(func() {
 		if snap.Panel != nil {
-			RenderNode(c, snap.Panel, th, opts)
+			renderNodeWith(c, snap.Panel, th, opts, st)
 		} else if snap.Error != "" {
 			ui.Column(c).Padding(16).Gap(8).Children(func() {
 				ui.Text(c, snap.Error).FontSize(12).TextColor(th.Danger)
@@ -407,57 +434,72 @@ func RenderNode(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	if n == nil {
 		return
 	}
+	st := renderState{pal: th.Palette()}
+	if c != nil && c.Theme().Dark != th.Dark {
+		ui.Themed(c, barUITheme(th)).Children(func() {
+			renderNodeWith(c, n, th, opts, st)
+		})
+		return
+	}
+	renderNodeWith(c, n, th, opts, st)
+}
+
+func renderNodeWith(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
+	if n == nil {
+		return
+	}
 	props := n.Props
+	st = st.withProps(props)
 
 	switch n.Type {
 	case "Spacer":
 		ui.Spacer(c)
 		return
 	case "Divider":
-		col := th.Border
+		col := st.pal.Border
 		if cs, ok := PropString(props, "color"); ok {
-			col = th.Color(cs, th.Border)
+			col = th.Resolve(cs, colortheme.RoleBorder, st.pal, st.rawColor, col)
 		}
 		ui.Box(c).FillWidth().Height(1).Background(col)
 		return
 	case "Text":
-		renderText(c, n, th)
+		renderText(c, n, th, st)
 		return
 	case "Icon":
-		renderIcon(c, n, th, opts)
+		renderIcon(c, n, th, opts, st)
 		return
 	case "Button":
-		renderButton(c, n, th, opts)
+		renderButton(c, n, th, opts, st)
 		return
 	case "Badge":
-		renderBadge(c, n, th)
+		renderBadge(c, n, th, st)
 		return
 	case "Progress":
-		renderProgress(c, n, th)
+		renderProgress(c, n, th, st)
 		return
 	case "Ring":
-		renderRing(c, n, th)
+		renderRing(c, n, th, st)
 		return
 	case "StatusDot":
-		renderStatusDot(c, n, th)
+		renderStatusDot(c, n, th, st)
 		return
 	case "Segmented":
-		renderSegmented(c, n, th, opts)
+		renderSegmented(c, n, th, opts, st)
 		return
 	case "Switch":
-		renderSwitch(c, n, th, opts)
+		renderSwitch(c, n, th, opts, st)
 		return
 	case "ListRow":
-		renderListRow(c, n, th, opts)
+		renderListRow(c, n, th, opts, st)
 		return
 	case "Image":
 		renderImage(c, n, th)
 		return
 	case "Input":
-		renderInput(c, n, th, opts)
+		renderInput(c, n, th, opts, st)
 		return
 	case "Chart":
-		renderChart(c, n, th)
+		renderChart(c, n, th, st)
 		return
 	}
 
@@ -473,7 +515,8 @@ func RenderNode(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 		el = ui.Column(c)
 	}
 
-	el = applyBoxProps(c, el, props, th, n.OnClickID != "")
+	el, childPal := applyBoxProps(c, el, props, th, st, n.OnClickID != "")
+	childState := renderState{pal: childPal, rawColor: st.rawColor}
 
 	for keySpec, aid := range n.Shortcuts {
 		if mod, key, ok := parseShortcutSpec(keySpec); ok {
@@ -488,14 +531,14 @@ func RenderNode(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 	if el.Children(func() {
 		for _, ch := range n.Children {
-			RenderNode(c, ch, th, opts)
+			renderNodeWith(c, ch, th, opts, childState)
 		}
 	}).Clicked() && n.OnClickID != "" {
 		opts.fireAction(n.OnClickID)
 	}
 }
 
-func renderText(c *ui.Context, n *bar.Node, th Theme) {
+func renderText(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
 	txt := n.Text
 	if txt == "" && len(n.Children) > 0 {
@@ -531,9 +574,9 @@ func renderText(c *ui.Context, n *bar.Node, th Theme) {
 	if feats := propStringSlice(props, "fontFeatures"); len(feats) > 0 {
 		el = el.FontFeatures(feats...)
 	}
-	col := th.Text
+	col := st.pal.Text
 	if tc, ok := PropString(props, "textColor"); ok {
-		col = th.Color(tc, th.Text)
+		col = th.Resolve(tc, colortheme.RoleText, st.pal, st.rawColor, st.pal.Text)
 	}
 	el = el.TextColor(col)
 
@@ -577,7 +620,7 @@ func renderText(c *ui.Context, n *bar.Node, th Theme) {
 	applySizeProps(el, props)
 }
 
-func renderIcon(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderIcon(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
 	svgStr, _ := PropString(props, "svg")
 	svg := ParseSVG(svgStr)
@@ -595,9 +638,9 @@ func renderIcon(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	} else if w, ok := PropFloat(props, "width"); ok && w > 0 {
 		size = w
 	}
-	col := th.Text
+	col := st.pal.Text
 	if tc, ok := PropString(props, "textColor"); ok {
-		col = th.Color(tc, th.Text)
+		col = th.Resolve(tc, colortheme.RoleText, st.pal, st.rawColor, st.pal.Text)
 	}
 	el := ui.Icon(c, svg).FontSize(size).TextColor(col)
 	if ct := parseContentTransition(props["contentTransition"]); ct != nil {
@@ -626,7 +669,7 @@ func renderIcon(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 }
 
-func renderButton(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderButton(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
 	lbl := n.Text
 	if lbl == "" && len(n.Children) > 0 {
@@ -635,27 +678,36 @@ func renderButton(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	variant, _ := PropString(props, "variant")
 	disabled := propBool(props, "disabled", false)
 
-	fg := th.Accent
-	baseBG := th.AccentSurface
+	baseTh := st.themeFor(th)
+	fg := baseTh.Accent
+	baseBG := baseTh.AccentSurface
 	switch variant {
 	case "primary":
 		baseBG = th.Accent
-		fg = ui.Hex("#FFFFFF")
+		fg = colortheme.OnColor(baseBG)
 	case "danger":
-		baseBG = th.DangerSurface
-		fg = th.Danger
+		baseBG = baseTh.DangerSurface
+		fg = baseTh.Danger
 	case "ghost":
 		baseBG = ui.Color{}
-		fg = th.TextMuted
+		fg = st.pal.TextMuted
 	case "soft":
-		baseBG = th.SurfaceSubtle
-		fg = th.Text
+		baseBG = baseTh.SurfaceSubtle
+		fg = st.pal.Text
 	}
-	if tc, ok := PropString(props, "textColor"); ok {
-		fg = th.Color(tc, fg)
+	bs, hasBG := PropString(props, "background")
+	if hasBG {
+		baseBG = th.Resolve(bs, colortheme.RoleSurface, st.pal, st.rawColor, baseBG)
 	}
-	if bs, ok := PropString(props, "background"); ok {
-		baseBG = th.Color(bs, baseBG)
+	btnPal := st.pal.WithSurface(baseBG)
+	tc, hasTC := PropString(props, "textColor")
+	if variant == "primary" {
+		fg = colortheme.OnColor(btnPal.Surface)
+	} else if hasBG && !hasTC && baseBG.A >= 180 {
+		fg = colortheme.OnColor(btnPal.Surface)
+	}
+	if hasTC {
+		fg = th.Resolve(tc, colortheme.RoleText, btnPal, st.rawColor, fg)
 	}
 
 	b := ui.Row(c).
@@ -668,18 +720,19 @@ func renderButton(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 		b = b.Cursor(ui.CursorPointer)
 	}
 	bg := baseBG
+	solidFill := variant == "primary" || (hasBG && !colortheme.IsNeutral(baseBG) && baseBG.A >= 180)
 	if !disabled {
 		if b.Pressed() {
-			if variant == "primary" {
+			if solidFill {
 				bg = baseBG.Alpha(0.82)
 			} else {
-				bg = th.SurfacePressed
+				bg = baseTh.SurfacePressed
 			}
 		} else if b.Hovered() {
-			if variant == "primary" {
+			if solidFill {
 				bg = baseBG.Alpha(0.90)
 			} else {
-				bg = th.SurfaceHover
+				bg = baseTh.SurfaceHover
 			}
 		}
 	} else {
@@ -704,38 +757,47 @@ func renderButton(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 }
 
-func renderBadge(c *ui.Context, n *bar.Node, th Theme) {
+func renderBadge(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
 	txt := n.Text
 	if txt == "" && len(n.Children) > 0 {
 		txt = n.Children[0].Text
 	}
+	baseTh := st.themeFor(th)
 	tone, hasTone := PropString(props, "tone")
-	fg, bg := th.Accent, th.AccentSurface
+	fg, bg := baseTh.Accent, baseTh.AccentSurface
 	if hasTone {
-		fg, bg = th.toneColors(tone)
+		fg, bg = baseTh.toneColors(tone)
 	}
+	customLiteralBG := false
 	if bs, ok := PropString(props, "background"); ok {
-		bg = th.Color(bs, bg)
+		handledSemanticBG := false
 		if !hasTone {
 			switch bs {
 			case "warning":
-				bg = th.WarningSurface
-				fg = th.Warning
+				bg, fg, handledSemanticBG = baseTh.WarningSurface, baseTh.Warning, true
 			case "danger", "error":
-				bg = th.DangerSurface
-				fg = th.Danger
+				bg, fg, handledSemanticBG = baseTh.DangerSurface, baseTh.Danger, true
 			case "success":
-				bg = th.SuccessSurface
-				fg = th.Success
+				bg, fg, handledSemanticBG = baseTh.SuccessSurface, baseTh.Success, true
 			case "accent", "primary":
-				bg = th.AccentSurface
-				fg = th.Accent
+				bg, fg, handledSemanticBG = baseTh.AccentSurface, baseTh.Accent, true
 			}
 		}
+		if !handledSemanticBG {
+			bg = th.Resolve(bs, colortheme.RoleSurface, st.pal, st.rawColor, bg)
+			customLiteralBG = true
+		}
 	}
+	badgePal := st.pal.WithSurface(bg)
 	if tc, ok := PropString(props, "textColor"); ok {
-		fg = th.Color(tc, fg)
+		fg = th.Resolve(tc, colortheme.RoleText, badgePal, st.rawColor, fg)
+	} else if customLiteralBG {
+		if bg.A >= 180 && colortheme.RelativeLuminance(badgePal.Surface) >= 0.35 {
+			fg = colortheme.OnColor(badgePal.Surface)
+		} else {
+			fg = colortheme.EnsureContrast(fg, badgePal.Surface, 4.5)
+		}
 	}
 	fs := float32(11)
 	if v, ok := PropFloat(props, "fontSize"); ok && v > 0 {
@@ -752,7 +814,7 @@ func renderBadge(c *ui.Context, n *bar.Node, th Theme) {
 	})
 }
 
-func renderProgress(c *ui.Context, n *bar.Node, th Theme) {
+func renderProgress(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
 	val, _ := PropFloat(props, "value")
 	maxVal, hasMax := PropFloat(props, "max")
@@ -782,21 +844,26 @@ func renderProgress(c *ui.Context, n *bar.Node, th Theme) {
 		rad = rv
 	}
 
-	fillCol := th.Accent
+	baseTh := st.themeFor(th)
+	effPal := st.pal
+	if style == "matrix" || style == "neon" {
+		effPal = colortheme.DefaultPalette(true)
+	}
+	fillCol := baseTh.Accent
 	if fc, ok := PropString(props, "color"); ok {
-		fillCol = th.Color(fc, fillCol)
+		fillCol = th.Resolve(fc, colortheme.RoleAccent, effPal, st.rawColor, fillCol)
 	}
 	toCol := fillCol.Mix(ui.Hex("#FFFFFF"), 0.25)
 	if tc, ok := PropString(props, "toColor"); ok {
-		toCol = th.Color(tc, toCol)
+		toCol = th.Resolve(tc, colortheme.RoleAccent, effPal, st.rawColor, toCol)
 	} else if style == "gradient" {
-		toCol = fillCol.Mix(th.Cyan, 0.55)
+		toCol = fillCol.Mix(baseTh.Cyan, 0.55)
 	}
-	trackCol := th.SurfaceHover
+	trackCol := baseTh.SurfaceHover
 	if tc, ok := PropString(props, "trackColor"); ok {
-		trackCol = th.Color(tc, trackCol)
+		trackCol = th.Resolve(tc, colortheme.RoleSurface, st.pal, st.rawColor, trackCol)
 	} else if tc, ok := PropString(props, "background"); ok {
-		trackCol = th.Color(tc, trackCol)
+		trackCol = th.Resolve(tc, colortheme.RoleSurface, st.pal, st.rawColor, trackCol)
 	}
 
 	if style == "segmented" {
@@ -906,7 +973,7 @@ func renderProgress(c *ui.Context, n *bar.Node, th Theme) {
 	})
 }
 
-func renderRing(c *ui.Context, n *bar.Node, th Theme) {
+func renderRing(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
 	val, _ := PropFloat(props, "value")
 	maxVal, hasMax := PropFloat(props, "max")
@@ -931,19 +998,24 @@ func renderRing(c *ui.Context, n *bar.Node, th Theme) {
 	style, _ := PropString(props, "style")
 	style = strings.ToLower(strings.TrimSpace(style))
 
-	col := th.Accent
+	baseTh := st.themeFor(th)
+	effPal := st.pal
+	if style == "matrix" {
+		effPal = colortheme.DefaultPalette(true)
+	}
+	col := baseTh.Accent
 	if cs, ok := PropString(props, "color"); ok {
-		col = th.Color(cs, col)
+		col = th.Resolve(cs, colortheme.RoleAccent, effPal, st.rawColor, col)
 	}
 	toCol := col
 	if ts, ok := PropString(props, "toColor"); ok {
-		toCol = th.Color(ts, col)
+		toCol = th.Resolve(ts, colortheme.RoleAccent, effPal, st.rawColor, col)
 	} else if style == "gradient" {
-		toCol = th.Cyan
+		toCol = baseTh.Cyan
 	}
-	trackCol := th.SurfaceHover
+	trackCol := baseTh.SurfaceHover
 	if ts, ok := PropString(props, "trackColor"); ok {
-		trackCol = th.Color(ts, trackCol)
+		trackCol = th.Resolve(ts, colortheme.RoleSurface, st.pal, st.rawColor, trackCol)
 	}
 
 	label, _ := PropString(props, "label")
@@ -1014,11 +1086,11 @@ func renderRing(c *ui.Context, n *bar.Node, th Theme) {
 	})
 	wrap.Children(func() {
 		if label != "" || sublabel != "" {
-			txtCol := th.Text
+			txtCol := st.pal.Text
 			if style == "matrix" {
 				txtCol = ui.Hex("#F1F4F9")
 			}
-			mutedCol := th.TextMuted
+			mutedCol := st.pal.TextMuted
 			if style == "matrix" {
 				mutedCol = ui.Hex("#9AA3B5")
 			}
@@ -1035,10 +1107,10 @@ func renderRing(c *ui.Context, n *bar.Node, th Theme) {
 	})
 }
 
-func renderStatusDot(c *ui.Context, n *bar.Node, th Theme) {
+func renderStatusDot(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
 	colName, _ := PropString(props, "color")
-	col := th.Color(colName, th.Success)
+	col := th.Resolve(colName, colortheme.RoleAccent, st.pal, st.rawColor, st.themeFor(th).Success)
 	size := float32(7)
 	if sv, ok := PropFloat(props, "size"); ok && sv >= 4 {
 		size = sv
@@ -1060,7 +1132,7 @@ func renderStatusDot(c *ui.Context, n *bar.Node, th Theme) {
 	})
 }
 
-func renderSegmented(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderSegmented(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
 	curVal, _ := PropString(props, "value")
 	rawOpts, _ := props["options"].([]any)
@@ -1087,9 +1159,10 @@ func renderSegmented(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 		return
 	}
 
-	tray := ui.Row(c).Padding(2).Radius(9).Gap(2).Background(th.SurfaceSubtle)
-	if !th.Vibrancy {
-		tray = tray.BorderWidth(1).BorderColor(th.Border)
+	baseTh := st.themeFor(th)
+	tray := ui.Row(c).Padding(2).Radius(9).Gap(2).Background(baseTh.SurfaceSubtle)
+	if !baseTh.Vibrancy {
+		tray = tray.BorderWidth(1).BorderColor(st.pal.Border)
 	}
 	if propBool(props, "fillWidth", true) {
 		tray = tray.FillWidth()
@@ -1102,13 +1175,13 @@ func renderSegmented(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 			btn := ui.Row(c.Key(fmt.Sprintf("seg-%d-%s", idx, it.val))).
 				Grow(1).Shrink(1).Basis(0).MinWidth(0).
 				Padding(5, 8).Radius(7).Center().Cursor(ui.CursorPointer)
-			fg := th.TextMuted
+			fg := st.pal.TextMuted
 			if active {
-				btn = btn.Background(th.SurfaceElevated).Shadow(0, 1, 3, 0, ui.RGBA(0, 0, 0, 0.14))
-				fg = th.Text
+				btn = btn.Background(baseTh.SurfaceElevated).Shadow(0, 1, 3, 0, ui.RGBA(0, 0, 0, 0.14))
+				fg = st.pal.Text
 			} else if btn.Hovered() {
-				btn = btn.Background(th.SurfaceHover)
-				fg = th.Text
+				btn = btn.Background(baseTh.SurfaceHover)
+				fg = st.pal.Text
 			}
 			if btn.Children(func() {
 				ui.Text(c, it.lbl).FontSize(11).FontWeight(600).TextColor(fg).SingleLine().Ellipsis("…")
@@ -1123,20 +1196,21 @@ func renderSegmented(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	})
 }
 
-func renderSwitch(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderSwitch(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
 	checked := propBool(props, "checked", false)
 	disabled := propBool(props, "disabled", false)
-	onCol := th.Accent
+	baseTh := st.themeFor(th)
+	onCol := baseTh.Accent
 	if cs, ok := PropString(props, "color"); ok {
-		onCol = th.Color(cs, onCol)
+		onCol = th.Resolve(cs, colortheme.RoleAccent, st.pal, st.rawColor, onCol)
 	}
-	trackCol := th.SurfaceHover
+	trackCol := baseTh.SurfaceHover
 	if checked {
 		trackCol = onCol
 	}
 
-	el := ui.Box(c).Size(36, 20).Radius(10).Background(trackCol).BorderWidth(1).BorderColor(th.Border)
+	el := ui.Box(c).Size(36, 20).Radius(10).Background(trackCol).BorderWidth(1).BorderColor(st.pal.Border)
 	if checked {
 		el = el.BorderColor(trackCol)
 	}
@@ -1166,8 +1240,9 @@ func renderSwitch(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 }
 
-func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
+	baseTh := st.themeFor(th)
 	title, _ := PropString(props, "title")
 	if title == "" {
 		title = n.Text
@@ -1191,11 +1266,11 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 	bg := ui.Color{}
 	if active {
-		bg = th.AccentSurface
+		bg = baseTh.AccentSurface
 	} else if clickable && row.Pressed() {
-		bg = th.SurfacePressed
+		bg = baseTh.SurfacePressed
 	} else if clickable && row.Hovered() {
-		bg = th.SurfaceHover
+		bg = baseTh.SurfaceHover
 	}
 	if bg != (ui.Color{}) {
 		row = row.Background(bg)
@@ -1205,9 +1280,9 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	}
 	row = applySizeProps(row, props)
 
-	valCol := th.TextMuted
+	valCol := st.pal.TextMuted
 	if vc, ok := PropString(props, "valueColor"); ok {
-		valCol = th.Color(vc, valCol)
+		valCol = th.Resolve(vc, colortheme.RoleText, st.pal, st.rawColor, valCol)
 	}
 	iconSVG := opts.lookupIcon(iconName)
 	chevSVG := opts.lookupIcon("chevron-right")
@@ -1215,7 +1290,7 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	var childrenRes ui.Element
 	childrenRes = row.Children(func() {
 		if hasDot && dotName != "" {
-			dotCol := th.Color(dotName, th.Success)
+			dotCol := th.Resolve(dotName, colortheme.RoleAccent, st.pal, st.rawColor, baseTh.Success)
 			dSize := float32(7)
 			if pulse {
 				dSize = 13
@@ -1235,25 +1310,30 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 				plain = true
 			}
 			if plain {
-				icFg := th.TextMuted
+				icFg := st.pal.TextMuted
 				if hasIcTone && icTone != "" {
-					if strings.HasPrefix(icTone, "#") || strings.HasPrefix(strings.ToLower(icTone), "rgb") {
-						icFg = th.Color(icTone, th.TextMuted)
+					if tfg, _, ok := baseTh.lookupTone(icTone); ok {
+						icFg = tfg
 					} else {
-						icFg, _ = th.toneColors(icTone)
+						icFg = th.Resolve(icTone, colortheme.RoleAccent, st.pal, st.rawColor, st.pal.TextMuted)
 					}
 				}
 				ui.Box(c).Size(18, 18).Center().Children(func() {
 					ui.Icon(c, iconSVG).FontSize(15).TextColor(icFg)
 				})
 			} else {
-				icFg, icBg := th.toneColors(icTone)
-				if icTone != "" && (strings.HasPrefix(icTone, "#") || strings.HasPrefix(strings.ToLower(icTone), "rgb")) {
-					icFg = th.Color(icTone, th.Accent)
-					icBg = icFg.Alpha(0.15)
+				icFg, icBg := baseTh.toneColors(icTone)
+				if icTone != "" {
+					if _, _, ok := baseTh.lookupTone(icTone); !ok {
+						icFg = th.Resolve(icTone, colortheme.RoleAccent, st.pal, st.rawColor, baseTh.Accent)
+						icBg = icFg.Alpha(0.15)
+					}
 				}
 				if ib, ok := PropString(props, "iconBg"); ok {
-					icBg = th.Color(ib, icBg)
+					icBg = th.Resolve(ib, colortheme.RoleSurface, st.pal, st.rawColor, icBg)
+					if icBg.A > 0 && !hasIcTone {
+						icFg = colortheme.OnColor(st.pal.WithSurface(icBg).Surface)
+					}
 				}
 				ui.Box(c).Size(24, 24).Radius(7).Background(icBg).Center().Children(func() {
 					ui.Icon(c, iconSVG).FontSize(13).TextColor(icFg)
@@ -1261,9 +1341,9 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 			}
 		}
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, title).FontSize(12.5).FontWeight(550).TextColor(th.Text).SingleLine().Ellipsis("…")
+			ui.Text(c, title).FontSize(12.5).FontWeight(550).TextColor(st.pal.Text).SingleLine().Ellipsis("…")
 			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(10.5).TextColor(th.TextMuted).SingleLine().Ellipsis("…")
+				ui.Text(c, subtitle).FontSize(10.5).TextColor(st.pal.TextMuted).SingleLine().Ellipsis("…")
 			}
 		})
 		if badge != "" {
@@ -1271,7 +1351,7 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 			if bt == "" {
 				bt = "accent"
 			}
-			bfg, bbg := th.toneColors(bt)
+			bfg, bbg := baseTh.toneColors(bt)
 			ui.Row(c).Padding(2, 6).Radius(999).Background(bbg).Center().Children(func() {
 				ui.Text(c, badge).FontSize(10).FontWeight(600).TextColor(bfg).NoWrap()
 			})
@@ -1280,12 +1360,12 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 			ui.Text(c, value).FontSize(11.5).FontWeight(600).FontFeatures("tnum").TextColor(valCol).NoWrap()
 		}
 		if shortcut != "" {
-			ui.Row(c).Padding(2, 5).Radius(5).Background(th.SurfaceSubtle).BorderWidth(1).BorderColor(th.Border).Center().Children(func() {
-				ui.Text(c, shortcut).FontSize(10).Font("monospace").TextColor(th.TextMuted).NoWrap()
+			ui.Row(c).Padding(2, 5).Radius(5).Background(baseTh.SurfaceSubtle).BorderWidth(1).BorderColor(st.pal.Border).Center().Children(func() {
+				ui.Text(c, shortcut).FontSize(10).Font("monospace").TextColor(st.pal.TextMuted).NoWrap()
 			})
 		}
 		if chevron && chevSVG != nil {
-			ui.Icon(c, chevSVG).FontSize(13).TextColor(th.TextFaint)
+			ui.Icon(c, chevSVG).FontSize(13).TextColor(baseTh.TextFaint)
 		}
 	})
 	if clickable && childrenRes.Clicked() {
@@ -1364,8 +1444,9 @@ func renderImage(c *ui.Context, n *bar.Node, th Theme) {
 	applySizeProps(el, props)
 }
 
-func renderInput(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
+func renderInput(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st renderState) {
 	props := n.Props
+	baseTh := st.themeFor(th)
 	val, _ := PropString(props, "value")
 	ph, _ := PropString(props, "placeholder")
 	keyHint := n.OnChangeID + ":" + n.OnSubmitID + ":" + ph
@@ -1373,9 +1454,9 @@ func renderInput(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	wrap := ui.Row(c.Key("in-wrap:"+keyHint)).
 		Padding(6, 10).
 		Radius(8).
-		Background(th.SurfaceSubtle).
+		Background(baseTh.SurfaceSubtle).
 		BorderWidth(1).
-		BorderColor(th.Border).
+		BorderColor(st.pal.Border).
 		AlignItems(ui.Center)
 	if propBool(props, "fillWidth", true) {
 		wrap = wrap.FillWidth()
@@ -1387,7 +1468,7 @@ func renderInput(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 		ti := ui.TextInput(c.Key("in:"+keyHint), &cur).
 			FillWidth().
 			FontSize(12.5).
-			TextColor(th.Text)
+			TextColor(st.pal.Text)
 		if ph != "" {
 			ti = ti.Placeholder(ph)
 		}
@@ -1400,8 +1481,9 @@ func renderInput(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions) {
 	})
 }
 
-func renderChart(c *ui.Context, n *bar.Node, th Theme) {
+func renderChart(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	props := n.Props
+	baseTh := st.themeFor(th)
 	h := float32(40)
 	if v, ok := PropFloat(props, "height"); ok && v > 0 {
 		h = v
@@ -1426,9 +1508,9 @@ func renderChart(c *ui.Context, n *bar.Node, th Theme) {
 			if !ok {
 				continue
 			}
-			col := th.Accent
+			col := baseTh.Accent
 			if cs, ok := PropString(sm, "color"); ok {
-				col = th.Color(cs, th.Accent)
+				col = th.Resolve(cs, colortheme.RoleAccent, st.pal, st.rawColor, col)
 			}
 			cs := chartSeries{col: col}
 			if fm, ok := sm["fill"].(map[string]any); ok {
@@ -1496,14 +1578,14 @@ func renderChart(c *ui.Context, n *bar.Node, th Theme) {
 	}
 	var hasRef bool
 	var refVal float64
-	refCol := th.Warning.Alpha(0.65)
+	refCol := baseTh.Warning.Alpha(0.65)
 	if rf, ok := toFloat64(props["referenceLine"]); ok {
 		hasRef, refVal = true, rf
 	} else if rm, ok := props["referenceLine"].(map[string]any); ok {
 		if v, ok := toFloat64(rm["value"]); ok {
 			hasRef, refVal = true, v
 			if cs, ok := PropString(rm, "color"); ok {
-				refCol = th.Color(cs, refCol).Alpha(0.75)
+				refCol = th.Resolve(cs, colortheme.RoleAccent, st.pal, st.rawColor, refCol).Alpha(0.75)
 			}
 		}
 	}
@@ -1610,9 +1692,10 @@ func paintLED(pt *ui.Painter, cx, cy, dotR float32, col ui.Color, intensity, whi
 	}
 }
 
-func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme, clickable bool) ui.Element {
+func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme, st renderState, clickable bool) (ui.Element, colortheme.Palette) {
+	childPal := st.pal
 	if props == nil {
-		return el
+		return el, childPal
 	}
 	el = applySizeProps(el, props)
 
@@ -1703,7 +1786,7 @@ func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme,
 		el = el.BorderStyle(ui.BorderDashed)
 	}
 	if bc, ok := PropString(props, "borderColor"); ok {
-		el = el.BorderColor(th.Color(bc, th.Border))
+		el = el.BorderColor(th.Resolve(bc, colortheme.RoleBorder, st.pal, st.rawColor, st.pal.Border))
 	}
 	if tip, ok := PropString(props, "tooltip"); ok && tip != "" {
 		el = el.Tooltip(tip)
@@ -1732,13 +1815,14 @@ func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme,
 	}
 
 	if gm, ok := props["gradient"].(map[string]any); ok {
-		fromCol := th.Accent
+		baseTh := st.themeFor(th)
+		fromCol := baseTh.Accent
 		if fs, ok := PropString(gm, "from"); ok {
-			fromCol = th.Color(fs, fromCol)
+			fromCol = th.Resolve(fs, colortheme.RoleSurface, st.pal, st.rawColor, fromCol)
 		}
-		toCol := th.Cyan
+		toCol := baseTh.Cyan
 		if ts, ok := PropString(gm, "to"); ok {
-			toCol = th.Color(ts, toCol)
+			toCol = th.Resolve(ts, colortheme.RoleSurface, st.pal, st.rawColor, toCol)
 		}
 		angle := float32(135)
 		if av, ok := PropFloat(gm, "angle"); ok {
@@ -1753,37 +1837,38 @@ func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme,
 		if rawStops, ok := gm["stops"].([]any); ok && len(rawStops) > 0 {
 			for _, rs := range rawStops {
 				if stMap, ok := rs.(map[string]any); ok {
-					sc := th.Accent
+					sc := baseTh.Accent
 					if cs, ok := PropString(stMap, "color"); ok {
-						sc = th.Color(cs, sc)
+						sc = th.Resolve(cs, colortheme.RoleSurface, st.pal, st.rawColor, sc)
 					}
 					at, _ := PropFloat(stMap, "at")
 					lg.Stops = append(lg.Stops, ui.GradientStop{Color: sc, At: at})
 				}
 			}
 		}
+		childPal = st.pal.WithSurface(fromCol.Mix(toCol, 0.5))
 		el = el.LinearGradient(lg)
-		return el
+		return el, childPal
 	}
 
 	var bg ui.Color
 	hasBG := false
 	if bs, ok := PropString(props, "background"); ok {
-		bg = th.Color(bs, ui.Color{})
+		bg = th.Resolve(bs, colortheme.RoleSurface, st.pal, st.rawColor, ui.Color{})
 		hasBG = true
 	}
 	if clickable || props["hover"] != nil || props["pressed"] != nil {
 		if el.Pressed() {
 			if pm, ok := props["pressed"].(map[string]any); ok {
 				if bs, ok := PropString(pm, "background"); ok {
-					bg = th.Color(bs, bg)
+					bg = th.Resolve(bs, colortheme.RoleSurface, st.pal, st.rawColor, bg)
 					hasBG = true
 				}
 			}
 		} else if el.Hovered() {
 			if hm, ok := props["hover"].(map[string]any); ok {
 				if bs, ok := PropString(hm, "background"); ok {
-					bg = th.Color(bs, bg)
+					bg = th.Resolve(bs, colortheme.RoleSurface, st.pal, st.rawColor, bg)
 					hasBG = true
 				}
 			}
@@ -1791,8 +1876,11 @@ func applyBoxProps(c *ui.Context, el ui.Element, props map[string]any, th Theme,
 	}
 	if hasBG {
 		el = el.Background(bg)
+		if bg.A > 0 {
+			childPal = st.pal.WithSurface(bg)
+		}
 	}
-	return el
+	return el, childPal
 }
 
 func applySizeProps(el ui.Element, props map[string]any) ui.Element {

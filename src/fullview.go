@@ -186,7 +186,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 			a.infoBlock(c, sc, meta, compact)
 			return
 		}
-		accent := accentOf(res, p.accent)
+		accent := accentFor(res, p.accent, p.dark)
 
 		// The hero: the headline number, the controls, and the component or chart.
 		card(c).Padding(compactPad(compact)).Gap(gapItem).Children(func() {
@@ -707,7 +707,7 @@ func (a *app) interactiveLegendRow(c *ui.Context, id string, ch *engine.Chart) {
 				name = fmt.Sprintf("#%d", i+1)
 			}
 			isHidden := hidden[i]
-			col := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
+			col := adaptAccentColor(parseColor(sr.Color, seriesPalette[i%len(seriesPalette)]), p.dark)
 			dotCol := col
 			txtCol := p.text
 			bg := p.chip

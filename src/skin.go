@@ -3,6 +3,7 @@ package main
 import (
 	"sync/atomic"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -130,6 +131,10 @@ func setThemeMode(name string) {
 func applySkin(c *ui.Context) {
 	setTypeScale(isMac())
 	cfg := brandFor(curSkin())
+	if curSkin() == skinMac9 {
+		c.SetTheme(cfg.Theme(false))
+		return
+	}
 	switch curThemeMode() {
 	case themeLight:
 		c.SetTheme(cfg.Theme(false))
@@ -137,6 +142,27 @@ func applySkin(c *ui.Context) {
 		c.SetTheme(cfg.Theme(true))
 	default:
 		cfg.Apply(c)
+	}
+}
+
+func nativeThemeSource() mygo.ThemeSource {
+	if curSkin() == skinMac9 {
+		return mygo.ThemeLight
+	}
+	switch curThemeMode() {
+	case themeLight:
+		return mygo.ThemeLight
+	case themeDark:
+		return mygo.ThemeDark
+	default:
+		return mygo.ThemeSystem
+	}
+}
+
+func applyNativeThemeSource() {
+	want := nativeThemeSource()
+	if mygo.Theme.Source() != want {
+		mygo.Theme.SetSource(want)
 	}
 }
 

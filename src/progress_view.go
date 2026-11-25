@@ -108,10 +108,11 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 			if isNeon {
 				base = neonPalette[i%len(neonPalette)]
 			}
-			from := parseColor(it.Color, base)
+			effDark := p.dark || isNeon
+			from := adaptAccentColor(parseColor(it.Color, base), effDark)
 			to := from
-			if hexColor.MatchString(it.To) {
-				to = ui.Hex(it.To)
+			if toCol, ok := parseCustomColor(it.To); ok {
+				to = adaptAccentColor(toCol, effDark)
 			} else if isNeon || style == "gradient" {
 				to = from.Mix(ui.Hex("#FFFFFF"), 0.28)
 			}
@@ -124,7 +125,7 @@ func progressBarView(c *ui.Context, pb *engine.ProgressBar, limit int) ui.Elemen
 						if !pb.HideLabel {
 							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap().Shrink(0)
 							if isNeon && p.dark {
-								lbl.TextColor(from)
+								lbl.TextColor(adaptTextColor(from, p.dark))
 							}
 						}
 					})
@@ -443,7 +444,7 @@ func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit 
 			if v <= 0 {
 				continue
 			}
-			col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+			col := adaptAccentColor(parseColor(it.Color, matrixPalette[i%len(matrixPalette)]), true)
 			start := float32(cursor / total)
 			cursor += v
 			end := float32(min(cursor/total, 1.0))
@@ -469,7 +470,7 @@ func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit 
 			if !pb.HideLabel {
 				ui.Row(c).Wrap().Gap(12).AlignItems(ui.Center).Children(func() {
 					for i, it := range shown {
-						col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+						col := adaptAccentColor(parseColor(it.Color, matrixPalette[i%len(matrixPalette)]), p.dark)
 						valText := trimNum(it.Value) + it.Unit
 						if it.Unit == "" && total == 100 && it.Max <= 0 {
 							valText = fmt.Sprintf("%.0f%%", math.Round(it.Value))
@@ -519,7 +520,7 @@ func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit 
 			i, it := i, it
 			pct := it.Percent()
 			frac := float32(pct / 100)
-			col := parseColor(it.Color, matrixPalette[i%len(matrixPalette)])
+			col := adaptAccentColor(parseColor(it.Color, matrixPalette[i%len(matrixPalette)]), true)
 			bg, hasBg, darkBg := matrixTrackStyle(p, pb.Track, col)
 			var segs []matrixSegment
 			if frac > 0 {
@@ -532,7 +533,7 @@ func matrixProgressView(c *ui.Context, p palette, pb *engine.ProgressBar, limit 
 						if !pb.HideLabel {
 							lbl := ui.Text(c, progressLabel(it, pct)).FontSize(fsSmall).FontWeight(600).FontFeatures("tnum").NoWrap().Shrink(0)
 							if p.dark {
-								lbl.TextColor(col)
+								lbl.TextColor(adaptTextColor(col, p.dark))
 							}
 						}
 					})
@@ -772,12 +773,13 @@ func ringColors(p palette, st ringStyle, it engine.Progress, i int) (from, to ui
 	case it.Raw() >= 100:
 		base = p.down
 	}
-	base = parseColor(it.Color, base)
+	effDark := p.dark || st.matrix
+	base = adaptAccentColor(parseColor(it.Color, base), effDark)
 	if st.solid {
 		return base, base
 	}
-	if hexColor.MatchString(it.To) {
-		return base, ui.Hex(it.To)
+	if toCol, ok := parseCustomColor(it.To); ok {
+		return base, adaptAccentColor(toCol, effDark)
 	}
 	return base.Alpha(0.5), base
 }
@@ -927,7 +929,7 @@ func progressConcentricView(c *ui.Context, p palette, st ringStyle, shown []engi
 					figure = progressCount(it)
 				}
 				ui.Column(c).Gap(1).MinWidth(0).Children(func() {
-					ui.Text(c, it.Name).FontSize(fsTiny).FontWeight(650).TextColor(to).SingleLine().Ellipsis("…")
+					ui.Text(c, it.Name).FontSize(fsTiny).FontWeight(650).TextColor(adaptTextColor(to, p.dark)).SingleLine().Ellipsis("…")
 					ui.Text(c, figure).FontSize(fsBody).FontWeight(650).SingleLine().Ellipsis("…")
 				})
 			}
@@ -1033,7 +1035,7 @@ func legendRow(c *ui.Context, ch *engine.Chart) {
 			if sr.Name == "" {
 				continue
 			}
-			color := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
+			color := adaptAccentColor(parseColor(sr.Color, seriesPalette[i%len(seriesPalette)]), p.dark)
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Box(c).Size(8, 8).Radius(4).Background(color).Shrink(0)
 				ui.Text(c, sr.Name).FontSize(fsTiny).TextColor(p.muted).NoWrap()

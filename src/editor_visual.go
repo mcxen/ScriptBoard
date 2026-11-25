@@ -270,7 +270,7 @@ func (a *app) visualTemplateGrid(c *ui.Context, compact bool) {
 	p := pal(c)
 	renderTile := func(tpl visualTemplate) {
 		active := a.visual.cfg != nil && a.visual.cfg.Type == tpl.Key
-		col := parseColor(tpl.Color, p.accent)
+		col := adaptAccentColor(parseColor(tpl.Color, p.accent), p.dark)
 		tile := ui.ButtonBase(c).Grow(1).MinWidth(0).Padding(8, 10).Radius(radControl).Background(p.card).
 			BorderWidth(1).BorderColor(p.hairline).Justify(ui.Start).AlignItems(ui.Center).Cursor(ui.CursorPointer)
 		if active {

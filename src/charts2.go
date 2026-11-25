@@ -151,7 +151,7 @@ func barhView(c *ui.Context, ch *engine.Chart, h float32) ui.Element {
 			if i < len(ch.Labels) {
 				name = ch.Labels[i]
 			}
-			color := parseColor(s.Color, seriesPalette[i%len(seriesPalette)])
+			color := adaptAccentColor(parseColor(s.Color, seriesPalette[i%len(seriesPalette)]), p.dark)
 			frac := float32(s.Points[i] / hi)
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 				ui.Row(c).Width(96).MinWidth(0).ClipX().Children(func() {
@@ -249,7 +249,7 @@ func ringsView(c *ui.Context, rings []engine.Ring, d float32) {
 	for _, rg := range rings {
 		rg := rg
 		frac := math.Max(0, math.Min(1, rg.Percent/100))
-		color := parseColor(rg.Color, p.accent)
+		color := adaptAccentColor(parseColor(rg.Color, p.accent), p.dark)
 		text := rg.Text
 		if text == "" {
 			text = fmt.Sprintf("%.0f%%", rg.Percent)

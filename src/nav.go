@@ -53,6 +53,7 @@ func (n navItem) active(path string) bool {
 // narrow one, the phone layout, has a bar of tabs under it.
 func (a *app) view(c *ui.Context) {
 	applySkin(c)
+	a.lastDark = pal(c).dark
 	// The page's own size in DIPs, read first so that the very first frame is
 	// laid out for it. (The root's bounds are not the window's on Android, where
 	// they came out as a landscape rectangle.) Before any size is known, a

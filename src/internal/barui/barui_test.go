@@ -6,12 +6,14 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/colortheme"
 )
 
 func TestColorParsing(t *testing.T) {
@@ -213,5 +215,119 @@ func TestWeatherStyleAndNewPropsRenderCleanly(t *testing.T) {
 	wRes, err := RenderPreview(inst.Snapshot(), PreviewOptions{Dark: true, Vibrancy: true, Scale: 1, Material: sp.Material})
 	if err != nil || len(wRes.PNG) == 0 {
 		t.Fatalf("BuiltinWeatherBar RenderPreview failed: err=%v len=%d", err, len(wRes.PNG))
+	}
+}
+
+func TestDarkModeAutoAdaptsHardcodedLightColors(t *testing.T) {
+	snap := bar.Snapshot{
+		Panel: &bar.Node{
+			Type: "Column",
+			Props: map[string]any{
+				"preferredWidth": float64(300),
+				"background":     "#FFFFFF",
+				"padding":        float64(14),
+				"gap":            float64(10),
+			},
+			Children: []*bar.Node{
+				{
+					Type:  "Column",
+					Props: map[string]any{"background": "#F5F6F9", "borderWidth": float64(1), "borderColor": "#E5E7EB", "padding": float64(10), "gap": float64(6), "radius": float64(10)},
+					Children: []*bar.Node{
+						{Type: "Text", Props: map[string]any{"fontSize": float64(18), "fontWeight": float64(700), "textColor": "#000000"}, Text: "HARDCODED BLACK"},
+						{Type: "Text", Props: map[string]any{"fontSize": float64(13), "textColor": "#111827"}, Text: "Dark Slate Text"},
+						{Type: "Badge", Props: map[string]any{"background": "#EFF6FF", "textColor": "#1D4ED8"}, Text: "Pastel Tag"},
+					},
+				},
+				{
+					Type:  "Button",
+					Props: map[string]any{"variant": "primary", "background": "#2563EB", "textColor": "#FFFFFF"},
+					Text:  "Primary Action",
+				},
+				{
+					Type:  "Row",
+					Props: map[string]any{"rawColor": true, "background": "#FFFFFF", "padding": float64(8), "radius": float64(6)},
+					Children: []*bar.Node{
+						{Type: "Text", Props: map[string]any{"fontSize": float64(12), "textColor": "#000000"}, Text: "RAW WHITE BOX"},
+					},
+				},
+			},
+		},
+	}
+
+	res, err := RenderPreview(snap, PreviewOptions{Dark: true, Scale: 1, Height: 240})
+	if err != nil {
+		t.Fatalf("RenderPreview dark auto-adapt failed: %v", err)
+	}
+	img, err := png.Decode(bytes.NewReader(res.PNG))
+	if err != nil {
+		t.Fatalf("decode preview PNG: %v", err)
+	}
+
+	b := img.Bounds()
+	pxLum := func(c color.Color) float64 {
+		r, g, bl, _ := c.RGBA()
+		return colortheme.RelativeLuminance(ui.RGB(uint8(r>>8), uint8(g>>8), uint8(bl>>8)))
+	}
+
+	// Sample upper-half adapted card interior (adapted #FFFFFF -> dark surface, adapted #000000 -> light ink).
+	var upperSum float64
+	var upperMax float64
+	upperCount := 0
+	for y := b.Min.Y + 28; y < b.Min.Y+90 && y < b.Max.Y; y++ {
+		for x := b.Min.X + 36; x < b.Max.X-36; x++ {
+			l := pxLum(img.At(x, y))
+			upperSum += l
+			upperMax = max(upperMax, l)
+			upperCount++
+		}
+	}
+	if upperCount == 0 {
+		t.Fatal("empty upper sample region")
+	}
+	if avgLum := upperSum / float64(upperCount); avgLum >= 0.25 {
+		t.Fatalf("expected adapted dark card interior avg luminance < 0.25, got %.3f", avgLum)
+	}
+	if upperMax <= 0.45 {
+		t.Fatalf("expected adapted black text in dark card to produce bright readable pixels (max lum > 0.45), got %.3f", upperMax)
+	}
+
+	// Sample lower region where the rawColor: true white box lives; it should keep white pixels (> 0.85).
+	var lowerMax float64
+	for y := b.Min.Y + 130; y < b.Max.Y-20; y++ {
+		for x := b.Min.X + 36; x < b.Max.X-36; x++ {
+			lowerMax = max(lowerMax, pxLum(img.At(x, y)))
+		}
+	}
+	if lowerMax <= 0.85 {
+		t.Fatalf("expected rawColor:true box to retain white pixels (max lum > 0.85), got %.3f", lowerMax)
+	}
+
+	// AuditSnapshot should warn on hardcoded #111827, but ignore nodes marked rawColor: true.
+	auditWarnSnap := bar.Snapshot{
+		Panel: &bar.Node{
+			Type:  "Column",
+			Props: map[string]any{"preferredWidth": float64(300)},
+			Children: []*bar.Node{
+				{Type: "Text", Props: map[string]any{"textColor": "#111827"}, Text: "Hardcoded"},
+			},
+		},
+	}
+	if audit := AuditSnapshot(auditWarnSnap, bar.Spec{ID: "hazard"}); len(audit.Warnings) == 0 {
+		t.Fatalf("expected AuditSnapshot warning for hardcoded #111827")
+	} else if !strings.Contains(audit.Warnings[0], "#111827") {
+		t.Fatalf("unexpected audit warning: %v", audit.Warnings)
+	}
+
+	auditRawSnap := bar.Snapshot{
+		Panel: &bar.Node{
+			Type:  "Column",
+			Props: map[string]any{"preferredWidth": float64(300)},
+			Children: []*bar.Node{
+				{Type: "Text", Props: map[string]any{"rawColor": true, "textColor": "#111827"}, Text: "RawOK"},
+			},
+		},
+	}
+	if audit := AuditSnapshot(auditRawSnap, bar.Spec{ID: "raw-ok"}); len(audit.Warnings) > 0 {
+		t.Fatalf("expected no hardcoded warning when rawColor:true is set, got %v", audit.Warnings)
 	}
 }

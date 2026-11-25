@@ -323,7 +323,7 @@ func matrixContribView(c *ui.Context, spec *engine.ContribSpec, sel *int, full b
 		return ui.Text(c, tr("暂无打卡记录")).FontSize(fsSmall).TextColor(p.muted)
 	}
 	customCol := hexColor.MatchString(spec.Color)
-	baseCol := parseColor(spec.Color, ui.Hex("#22C55E"))
+	baseCol := adaptAccentColor(parseColor(spec.Color, ui.Hex("#22C55E")), true)
 
 	cells := spec.Cells
 	maxWeeks := spec.Weeks
@@ -515,7 +515,7 @@ var matrixFont5x7 = map[rune][7]uint8{
 
 func matrixClockView(c *ui.Context, st engine.ClockSpec, now time.Time, width, h float32, full bool) ui.Element {
 	p := pal(c)
-	col := parseColor(st.Color, ui.Hex("#38BDF8"))
+	col := adaptAccentColor(parseColor(st.Color, ui.Hex("#38BDF8")), true)
 	if !hexColor.MatchString(st.Color) && st.Neon {
 		col = ui.Hex("#00F5D4")
 	}

@@ -369,14 +369,20 @@ func (a *app) editor(c *ui.Context, compact bool) {
 				sectionTitle(c, tr("预览"))
 				ui.Spacer(c)
 			})
+			th := barThemeFor(c, barThemeAuto)
+			themeName := "dark"
+			if !th.dark {
+				themeName = "light"
+			}
 			inst, _, err := a.ensureBarInstance(a.draft)
 			var snap bar.Snapshot
 			if err == nil && inst != nil {
+				inst.SetAppearance(themeName, false)
 				snap = inst.Snapshot()
 			} else if err != nil {
 				snap.Error = err.Error()
 			}
-			renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
+			renderBarPanelInteractive(c, snap, th, 300, "", func(aid string) {
 				a.invokeBarAction(a.draft.ID, aid)
 			}, func(aid string, arg any) {
 				a.invokeBarActionWithArg(a.draft.ID, aid, arg)

@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui/chart"
 
 	"scriptboard/src/internal/caps"
+	"scriptboard/src/internal/colortheme"
 	"scriptboard/src/internal/engine"
 )
 
@@ -99,10 +100,11 @@ var seriesPalette = []ui.Color{
 	ui.Hex("#3B82F6"), ui.Hex("#F97316"), ui.Hex("#10B981"), ui.Hex("#EAB308"),
 }
 
-// parseColor reads a "#RRGGBB" color from a script, or returns fallback.
+// parseColor reads a CSS color literal (#RGB, #RGBA, #RRGGBB, #RRGGBBAA,
+// rgb()/rgba(), or CSS named color) from a script, or returns fallback.
 func parseColor(s string, fallback ui.Color) ui.Color {
-	if hexColor.MatchString(s) {
-		return ui.Hex(s)
+	if col, ok := colortheme.Parse(s); ok {
+		return col
 	}
 	return fallback
 }
@@ -211,12 +213,7 @@ func scale(ch *engine.Chart, fallback ui.Color, dark bool) scaled {
 		if n == 0 {
 			continue
 		}
-		color := parseColor(sr.Color, seriesPalette[i%len(seriesPalette)])
-		if dark {
-			// On a dark card a series color reads darker than it is; lifting it
-			// toward white keeps the line as clear as it is on a light one.
-			color = color.Mix(ui.Hex("#FFFFFF"), 0.28)
-		}
+		color := adaptAccentColor(parseColor(sr.Color, seriesPalette[i%len(seriesPalette)]), dark)
 		ln := seriesLine{name: sr.Name, color: color, vals: sr.Points, dashed: sr.Dashed}
 		ln.xs = fractions(n)
 		if ch.Type == "combo" && sr.Offset >= 0 && sr.Offset+n <= len(s.xs) {

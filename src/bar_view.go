@@ -292,9 +292,15 @@ func (a *app) barImportBox(c *ui.Context, p palette) {
 }
 
 func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bool) {
+	th := barThemeFor(c, a.barPreviewTheme)
+	themeName := "dark"
+	if !th.dark {
+		themeName = "light"
+	}
 	inst, sp, instErr := a.ensureBarInstance(sc)
 	var snap bar.Snapshot
 	if instErr == nil && inst != nil {
+		inst.SetAppearance(themeName, false)
 		snap = inst.Snapshot()
 	} else if instErr != nil {
 		snap.Error = instErr.Error()
@@ -400,14 +406,6 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 			stage = stage.Grow(1).MinHeight(560)
 		}
 		stage.Children(func() {
-			th := barThemeFor(c, a.barPreviewTheme)
-			themeName := "dark"
-			if !th.dark {
-				themeName = "light"
-			}
-			if inst != nil {
-				inst.SetAppearance(themeName, false)
-			}
 			renderBarPanelInteractive(c, snap, th, 300, sp.Material, func(aid string) {
 				a.invokeBarAction(sc.ID, aid)
 			}, func(aid string, arg any) {
@@ -951,7 +949,7 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Text(c, tr("显示位置")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
 			box := ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
-			if isAndroid() {
+			if isMobile() {
 				box.Padding(12).Children(func() {
 					ui.Text(c, tr("移动端在应用内「菜单管理」与首页卡片中显示")).FontSize(fsSmall).TextColor(p.muted)
 				})
@@ -1187,10 +1185,16 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, onClose func()) {
 	title := tr(sc.Name)
 	iconName := "sparkles"
+	th := barThemeFor(c, barThemeAuto)
+	themeName := "dark"
+	if !th.dark {
+		themeName = "light"
+	}
 	var snap bar.Snapshot
 	if sc.IsBar() {
 		inst, sp, err := a.ensureBarInstance(sc)
 		if err == nil && inst != nil {
+			inst.SetAppearance(themeName, false)
 			snap = inst.Snapshot()
 		} else if err != nil {
 			snap.Error = err.Error()
@@ -1220,7 +1224,7 @@ func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, on
 			}
 		})
 		if sc.IsBar() {
-			renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
+			renderBarPanelInteractive(c, snap, th, 300, "", func(aid string) {
 				a.invokeBarAction(sc.ID, aid)
 			}, func(aid string, arg any) {
 				a.invokeBarActionWithArg(sc.ID, aid, arg)
@@ -1232,7 +1236,7 @@ func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, on
 			if metaErr == nil {
 				st = a.ensure(a.runKeyOf(sc.ID, sc, meta, vals), sc, vals)
 			}
-			a.renderScriptMenuCard(c, sc, st, meta, barThemeFor(c, barThemeAuto), false)
+			a.renderScriptMenuCard(c, sc, st, meta, th, false)
 		}
 	})
 }
@@ -1274,14 +1278,20 @@ func (a *app) barShortcutOverlay(c *ui.Context, p palette) {
 				}
 			})
 			if sc.IsBar() {
+				th := barThemeFor(c, barThemeAuto)
+				themeName := "dark"
+				if !th.dark {
+					themeName = "light"
+				}
 				inst, _, err := a.ensureBarInstance(sc)
 				var snap bar.Snapshot
 				if err == nil && inst != nil {
+					inst.SetAppearance(themeName, false)
 					snap = inst.Snapshot()
 				} else if err != nil {
 					snap.Error = err.Error()
 				}
-				renderBarPanelInteractive(c, snap, barThemeFor(c, barThemeAuto), 300, "", func(aid string) {
+				renderBarPanelInteractive(c, snap, th, 300, "", func(aid string) {
 					a.invokeBarAction(sc.ID, aid)
 				}, func(aid string, arg any) {
 					a.invokeBarActionWithArg(sc.ID, aid, arg)

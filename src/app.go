@@ -115,7 +115,8 @@ type app struct {
 	skinIdx     int // the appearance row of the settings: 0 default, 1 Mac OS 9
 	// cardMenus are the open states of the cards' right-click menus, by script.
 	cardMenus map[string]*bool
-	themeIdx  int // the light and dark row of the settings: 0 system, 1 light, 2 dark
+	themeIdx  int  // the light and dark row of the settings: 0 system, 1 light, 2 dark
+	lastDark  bool // resolved dark mode from the most recent rendered frame
 
 	// The home page in edit mode: whether it is on, the card being resized, the
 	// columns and the width of one column, and the cards in the order shown.
@@ -369,6 +370,13 @@ func (a *app) seed() error {
 // starts watching the plugin folder, so that a change shows within a second.
 func (a *app) attach(w *mygo.Window) {
 	a.win = w
+	a.syncAppearance()
+	mygo.Theme.OnUpdated(func() {
+		a.post(func() {
+			a.invalidateAll()
+			a.syncAppearanceState(false)
+		})
+	})
 	go a.watchPlugins()
 	go a.feedLoop()
 	go a.menuBarLoop()
@@ -377,6 +385,54 @@ func (a *app) attach(w *mygo.Window) {
 	a.applyMCP()
 	a.syncMenuBar()
 	a.syncBarMenuBar()
+}
+
+func (a *app) effectiveDark() bool {
+	if curSkin() == skinMac9 {
+		return false
+	}
+	switch curThemeMode() {
+	case themeLight:
+		return false
+	case themeDark:
+		return true
+	}
+	if a.win != nil {
+		return mygo.Theme.IsDark()
+	}
+	return a.lastDark
+}
+
+func (a *app) effectiveThemeName() string {
+	if a.effectiveDark() {
+		return "dark"
+	}
+	return "light"
+}
+
+func (a *app) syncAppearance() {
+	a.syncAppearanceState(true)
+}
+
+func (a *app) syncAppearanceState(updateNative bool) {
+	if updateNative && a.win != nil {
+		applyNativeThemeSource()
+	}
+	themeName := a.effectiveThemeName()
+	for id, inst := range a.barInsts {
+		if inst != nil {
+			inst.SetAppearance(themeName, a.barFlyoutActive[id])
+		}
+	}
+	a.post(func() {})
+	if a.settingsWin != nil {
+		a.settingsWin.Update(func() {})
+	}
+	for _, f := range a.barFlyouts {
+		if f != nil {
+			f.Update(func() {})
+		}
+	}
 }
 
 // post runs fn on the main thread.
@@ -668,6 +724,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 	res, err := s.Run(context.Background(), engine.Input{
 		Now:      now,
 		Lang:     curLang(),
+		Theme:    a.effectiveThemeName(),
 		TZOffset: tz,
 		OS:       caps.OS(),
 		Kind:     caps.Platform(),

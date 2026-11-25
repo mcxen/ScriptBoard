@@ -41,6 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	applyNativeThemeSource()
 	// Looks for a signed release in the background shortly after launch, then
 	// daily, and shows the release notes with Install / Later / Skip. Builds
 	// that cannot update themselves (development builds, a package manager's

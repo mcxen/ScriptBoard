@@ -194,7 +194,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	h := b.Height*s + float32(len(inputs))*44*s
 	accent := p.accent
 	if ready {
-		accent = accentOf(st.res, p.accent)
+		accent = accentFor(st.res, p.accent, p.dark)
 	}
 	title, iconName := tr(sc.Name), meta.Icon
 	if ready {
