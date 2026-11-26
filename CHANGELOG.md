@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.17
+
+- Host command runner & scheduler (`src/internal/cmdrun`, `/commands`): supports macOS/Linux `sh`, `bash`, `zsh`, `pwsh`, `psh`, `exec`, and custom interpreters with login-shell `PATH` discovery, safe environment-passed parameters (`SB_PARAM_<KEY>` / password masking), JSON/regex/line/raw field extraction, manual and interval execution, per-command JSONL history, and built-in/user `AllowExec` permission gating.
+- Customizable return-value presentation & 24fps dot animations: adds `DisplayStyle` (`variant`, `animation`, `color`, `unit`, `prefix`, `suffix`, `format` templates with sibling/param tokens, `valueMap`, `fallback`, `thresholds`, `primaryField`, and per-field `fields` overrides) + unified `ResolveRecord` resolver across `/commands`, script `ctx.commands[id].resolved`, and `.bar` `$metrix.command.resolve()` with reusable `$ui.commandDot`, `$ui.commandValue`, `$ui.commandFieldStrip`, and 24fps animated dot modes (`pulse`, `ripple`, `dots`, `wave`, `orbit`, `blink`, `matrix`).
+- Built-in desktop Network Ping Monitor (`net-ping` + `sb-ping` `.bar`): pings preset or custom hosts directly from Home and Menu Bar with threshold-aware radar ripple / multi-dot animations, latency/jitter/packet-loss metrics, RTT trend chart, and trigger-tagged history.
+- Complete command MCP toolchain (`src/internal/mcpsvc`): adds `cmd_list`, `cmd_get`, `cmd_save`, `cmd_style_set`, `cmd_delete`, `cmd_test`, `cmd_run`, `cmd_history`, and `cmd_history_clear` with `ReadOnly` guards, `mockCommands` / `mockCommandStyles` sandbox support in `bar_run`, `bar_preview`, and `script_run`, live UI/menubar hot reload, and updated guides.
+
 ## 0.1.16
 
 - Unified component refresh progress & completion feedback across Home cards, Cover cards, Hover bars, Full View, Menu Bar flyout cards, and Component Studio: adds animated spinning states, determinate multi-step progress rings/bars, timed green `✓` success and red `!` error/stale-cache indicators, and full English localization.
