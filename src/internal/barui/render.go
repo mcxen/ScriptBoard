@@ -804,11 +804,29 @@ func renderBadge(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 		fs = v
 	}
 	showDot := propBool(props, "dot", false)
+	dotAnim, _ := PropString(props, "dotAnimation")
+	dotPulse := propBool(props, "pulse", false)
+	effDotAnim := NormalizeDotAnimation(dotAnim, dotPulse)
+	dotSpeed := 1.0
+	if sv, ok := PropFloat(props, "dotSpeed"); ok && sv > 0 {
+		dotSpeed = float64(sv)
+	}
+	dotCnt := 0
+	if cv, ok := PropFloat(props, "dotCount"); ok && cv > 0 {
+		dotCnt = int(cv)
+	}
 	b := ui.Row(c).Padding(2, 8).Radius(999).Gap(5).Background(bg).AlignItems(ui.Center).Justify(ui.Center)
 	b = applySizeProps(b, props)
 	b.Children(func() {
 		if showDot {
-			ui.Box(c).Size(5, 5).Radius(2.5).Background(fg)
+			if effDotAnim != "none" {
+				dw, dh := DotAnimationBoxSize(effDotAnim, 5, dotCnt)
+				ui.Box(c).Size(dw, dh).Draw(func(pt *ui.Painter, r ui.Rect) {
+					PaintDotAnimation(pt, r, effDotAnim, fg, 5, dotCnt, dotSpeed, true)
+				})
+			} else {
+				ui.Box(c).Size(5, 5).Radius(2.5).Background(fg)
+			}
 		}
 		ui.Text(c, txt).FontSize(fs).FontWeight(600).TextColor(fg).NoWrap()
 	})
@@ -1115,20 +1133,23 @@ func renderStatusDot(c *ui.Context, n *bar.Node, th Theme, st renderState) {
 	if sv, ok := PropFloat(props, "size"); ok && sv >= 4 {
 		size = sv
 	}
+	animStr, _ := PropString(props, "animation")
 	pulse := propBool(props, "pulse", false)
-	boxSize := size
-	if pulse {
-		boxSize = size + 6
+	effAnim := NormalizeDotAnimation(animStr, pulse)
+	count := 0
+	if cv, ok := PropFloat(props, "count"); ok && cv > 0 {
+		count = int(cv)
 	}
-	ui.Box(c).Size(boxSize, boxSize).Draw(func(pt *ui.Painter, r ui.Rect) {
-		cx := r.X + r.W/2
-		cy := r.Y + r.H/2
-		rad := size / 2
-		if pulse {
-			outerR := rad + 3
-			pt.Fill(ui.Rect{X: cx - outerR, Y: cy - outerR, W: outerR * 2, H: outerR * 2}, col.Alpha(0.24), outerR)
-		}
-		pt.Fill(ui.Rect{X: cx - rad, Y: cy - rad, W: rad * 2, H: rad * 2}, col, rad)
+	speed := 1.0
+	if spv, ok := PropFloat(props, "speed"); ok && spv > 0 {
+		speed = float64(spv)
+	}
+	animate := propBool(props, "animate", true)
+
+	bw, bh := DotAnimationBoxSize(effAnim, size, count)
+	box := applySizeProps(ui.Box(c).Size(bw, bh), props)
+	box.Draw(func(pt *ui.Painter, r ui.Rect) {
+		PaintDotAnimation(pt, r, effAnim, col, size, count, speed, animate)
 	})
 }
 
@@ -1258,6 +1279,16 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st 
 	active := propBool(props, "active", false)
 	disabled := propBool(props, "disabled", false)
 	pulse := propBool(props, "pulse", false)
+	dotAnim, _ := PropString(props, "dotAnimation")
+	effDotAnim := NormalizeDotAnimation(dotAnim, pulse)
+	dotSpeed := 1.0
+	if sv, ok := PropFloat(props, "dotSpeed"); ok && sv > 0 {
+		dotSpeed = float64(sv)
+	}
+	dotCnt := 0
+	if cv, ok := PropFloat(props, "dotCount"); ok && cv > 0 {
+		dotCnt = int(cv)
+	}
 
 	clickable := !disabled && n.OnClickID != ""
 	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(9).Padding(7, 9).Radius(9)
@@ -1291,16 +1322,9 @@ func renderListRow(c *ui.Context, n *bar.Node, th Theme, opts RenderOptions, st 
 	childrenRes = row.Children(func() {
 		if hasDot && dotName != "" {
 			dotCol := th.Resolve(dotName, colortheme.RoleAccent, st.pal, st.rawColor, baseTh.Success)
-			dSize := float32(7)
-			if pulse {
-				dSize = 13
-			}
-			ui.Box(c).Size(dSize, dSize).Draw(func(pt *ui.Painter, r ui.Rect) {
-				cx, cy := r.X+r.W/2, r.Y+r.H/2
-				if pulse {
-					pt.Fill(ui.Rect{X: cx - 6, Y: cy - 6, W: 12, H: 12}, dotCol.Alpha(0.24), 6)
-				}
-				pt.Fill(ui.Rect{X: cx - 3.5, Y: cy - 3.5, W: 7, H: 7}, dotCol, 3.5)
+			dw, dh := DotAnimationBoxSize(effDotAnim, 7, dotCnt)
+			ui.Box(c).Size(dw, dh).Draw(func(pt *ui.Painter, r ui.Rect) {
+				PaintDotAnimation(pt, r, effDotAnim, dotCol, 7, dotCnt, dotSpeed, true)
 			})
 		}
 		if iconSVG != nil {

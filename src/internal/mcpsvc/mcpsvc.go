@@ -304,7 +304,8 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	switch name {
 	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set",
 		"bar_save", "bar_delete", "bar_cookies_set", "bar_cookies_clear",
-		"bar_storage_set", "bar_storage_clear", "feed_save", "feed_delete":
+		"bar_storage_set", "bar_storage_clear", "feed_save", "feed_delete",
+		"cmd_save", "cmd_delete", "cmd_run", "cmd_history_clear", "cmd_style_set":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}

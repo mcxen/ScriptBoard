@@ -1,6 +1,7 @@
 package mcpsvc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/barui"
+	"scriptboard/src/internal/cmdrun"
 	"scriptboard/src/internal/store"
 )
 
@@ -80,6 +82,9 @@ func barTools() []Tool {
 				"storage":       map[string]any{"type": "object", "description": "optional initial KV storage values"},
 				"mockFetch":     map[string]any{"type": "object", "description": "optional map of URL/prefix/'*' -> {status, headers, body, setCookie}"},
 				"allowNetwork":  boolProp("allow real network calls for unmocked URLs (default false)"),
+				"mockCommands":      map[string]any{"type": "object", "description": "optional map of command id/'*' -> mock cmdrun.Record for $metrix.command"},
+				"mockCommandStyles": map[string]any{"type": "object", "description": "optional map of command id/'*' -> DisplayStyle for $metrix.command.style"},
+				"allowCommands":     boolProp("allow executing saved desktop commands when unmocked (default false)"),
 				"waitScheduled": boolProp("wait for async scheduled(env) to settle (default true)"),
 				"timeoutMs":     intProp("execution timeout in ms (500..15000, default 5000)"),
 				"actionID":      str("optional panel/menu action ID (onClick/onChange/onSubmit) to invoke after initial render"),
@@ -120,6 +125,9 @@ func barTools() []Tool {
 				"storage":       map[string]any{"type": "object", "description": "optional initial KV storage values"},
 				"mockFetch":     map[string]any{"type": "object", "description": "optional mockFetch map"},
 				"allowNetwork":  boolProp("allow real network calls (default false)"),
+				"mockCommands":      map[string]any{"type": "object", "description": "optional mockCommands map"},
+				"mockCommandStyles": map[string]any{"type": "object", "description": "optional map of command id/'*' -> DisplayStyle for $metrix.command.style"},
+				"allowCommands":     boolProp("allow executing saved desktop commands (default false)"),
 				"waitScheduled": boolProp("wait for async scheduled(env) (default true)"),
 				"timeoutMs":     intProp("execution timeout in ms (500..15000, default 5000)"),
 				"actionID":      str("optional action ID to invoke before taking preview screenshot"),
@@ -209,6 +217,7 @@ func (s Server) callBar(name string, a map[string]any) (string, bool, error) {
 			Home            bool               `json:"home"`
 			Refresh         string             `json:"refresh,omitempty"`
 			Permissions     []string           `json:"permissions,omitempty"`
+			CommandPerms    []string           `json:"commandPerms,omitempty"`
 			Inputs          []bar.InputSpec    `json:"inputs,omitempty"`
 			Placement       store.BarPlacement `json:"placement"`
 			CookieCount     int                `json:"cookieCount"`
@@ -241,6 +250,7 @@ func (s Server) callBar(name string, a map[string]any) (string, bool, error) {
 				Home:            sc.Home,
 				Refresh:         sp.Refresh,
 				Permissions:     sp.Permissions,
+				CommandPerms:    sp.CommandPerms,
 				Inputs:          sp.Inputs,
 				Placement:       pl,
 				CookieCount:     cc,
@@ -843,6 +853,229 @@ func parseMockFetch(raw map[string]any) map[string]mockFetchSpec {
 	return out
 }
 
+type recordedCommandCall struct {
+	CommandID string            `json:"commandId"`
+	Params    map[string]string `json:"params,omitempty"`
+	Mocked    bool              `json:"mocked"`
+	OK        bool              `json:"ok"`
+	Error     string            `json:"error,omitempty"`
+}
+
+type barSandboxCommandBridge struct {
+	dataDir    string
+	mocks      map[string]cmdrun.Record
+	mockStyles map[string]*cmdrun.DisplayStyle
+	allowLive  bool
+
+	mu      sync.Mutex
+	history map[string][]cmdrun.Record
+	calls   []recordedCommandCall
+}
+
+func (b *barSandboxCommandBridge) seedFromDisk(perms []string) {
+	if b.dataDir == "" || len(perms) == 0 {
+		return
+	}
+	hs := cmdrun.NewHistoryStore(filepath.Join(b.dataDir, "commands"))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.history == nil {
+		b.history = map[string][]cmdrun.Record{}
+	}
+	for _, id := range perms {
+		id = strings.TrimSpace(id)
+		if id == "" || id == "*" {
+			continue
+		}
+		if recs, err := hs.Recent(id, 50); err == nil && len(recs) > 0 {
+			b.history[id] = recs
+		}
+	}
+}
+
+func (b *barSandboxCommandBridge) Run(ctx context.Context, id string, params map[string]string) (cmdrun.Record, error) {
+	call := recordedCommandCall{CommandID: id, Params: params}
+	if rec, ok := b.matchMock(id); ok {
+		call.Mocked = true
+		rec.CommandID = id
+		if rec.ID == "" {
+			rec.ID = fmt.Sprintf("mock-%d", time.Now().UnixMilli())
+		}
+		if rec.T == 0 {
+			rec.T = time.Now().UnixMilli()
+		}
+		if rec.Trigger == "" {
+			rec.Trigger = "bar"
+		}
+		if len(params) > 0 {
+			cp := make(map[string]string, len(params))
+			for k, v := range params {
+				cp[k] = v
+			}
+			rec.Params = cp
+		}
+		call.OK = rec.OK
+		call.Error = rec.Error
+		b.mu.Lock()
+		if b.history == nil {
+			b.history = map[string][]cmdrun.Record{}
+		}
+		b.history[id] = append([]cmdrun.Record{rec}, b.history[id]...)
+		b.calls = append(b.calls, call)
+		b.mu.Unlock()
+		return rec, nil
+	}
+	if !b.allowLive {
+		err := errors.New("commands disabled in bar_run sandbox (provide mockCommands or set allowCommands: true)")
+		call.Error = err.Error()
+		b.mu.Lock()
+		b.calls = append(b.calls, call)
+		b.mu.Unlock()
+		return cmdrun.Record{}, err
+	}
+	st, err := store.Open(b.dataDir)
+	if err != nil {
+		call.Error = err.Error()
+		b.mu.Lock()
+		b.calls = append(b.calls, call)
+		b.mu.Unlock()
+		return cmdrun.Record{}, err
+	}
+	sp, ok := st.Command(id)
+	if !ok {
+		err := fmt.Errorf("command %q not found", id)
+		call.Error = err.Error()
+		b.mu.Lock()
+		b.calls = append(b.calls, call)
+		b.mu.Unlock()
+		return cmdrun.Record{}, err
+	}
+	runner := cmdrun.NewRunner(nil, func(x cmdrun.Spec) bool {
+		return cmdrun.IsTrustedBuiltin(x) || st.Settings().AllowExec
+	})
+	rec, err := runner.Run(ctx, sp, params, "bar")
+	if err != nil {
+		call.Error = err.Error()
+		b.mu.Lock()
+		b.calls = append(b.calls, call)
+		b.mu.Unlock()
+		return cmdrun.Record{}, err
+	}
+	call.OK = rec.OK
+	call.Error = rec.Error
+	b.mu.Lock()
+	if b.history == nil {
+		b.history = map[string][]cmdrun.Record{}
+	}
+	b.history[id] = append([]cmdrun.Record{rec}, b.history[id]...)
+	b.calls = append(b.calls, call)
+	b.mu.Unlock()
+	return rec, nil
+}
+
+func (b *barSandboxCommandBridge) Latest(id string) (cmdrun.Record, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	recs := b.history[id]
+	if len(recs) == 0 {
+		return cmdrun.Record{}, false, nil
+	}
+	return recs[0], true, nil
+}
+
+func (b *barSandboxCommandBridge) History(id string, limit int) ([]cmdrun.Record, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	recs := b.history[id]
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit >= len(recs) {
+		return append([]cmdrun.Record(nil), recs...), nil
+	}
+	return append([]cmdrun.Record(nil), recs[:limit]...), nil
+}
+
+func (b *barSandboxCommandBridge) matchMock(id string) (cmdrun.Record, bool) {
+	if r, ok := b.mocks[id]; ok {
+		return r, true
+	}
+	if r, ok := b.mocks["*"]; ok {
+		return r, true
+	}
+	return cmdrun.Record{}, false
+}
+
+func (b *barSandboxCommandBridge) callsSnapshot() []recordedCommandCall {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]recordedCommandCall(nil), b.calls...)
+}
+
+func (b *barSandboxCommandBridge) Style(id string) (*cmdrun.DisplayStyle, bool) {
+	b.mu.Lock()
+	if b.mockStyles != nil {
+		if ds, ok := b.mockStyles[id]; ok && ds != nil {
+			cp := ds.Clone()
+			b.mu.Unlock()
+			return cp, true
+		}
+		if ds, ok := b.mockStyles["*"]; ok && ds != nil {
+			cp := ds.Clone()
+			b.mu.Unlock()
+			return cp, true
+		}
+	}
+	b.mu.Unlock()
+	if b.dataDir == "" {
+		return nil, false
+	}
+	st, err := store.Open(b.dataDir)
+	if err != nil {
+		return nil, false
+	}
+	sp, ok := st.Command(id)
+	if !ok || sp.Display == nil {
+		return nil, false
+	}
+	return sp.Display.Clone(), true
+}
+
+func parseMockCommands(v any) map[string]cmdrun.Record {
+	rawMap, ok := v.(map[string]any)
+	if !ok || len(rawMap) == 0 {
+		return nil
+	}
+	out := make(map[string]cmdrun.Record, len(rawMap))
+	for k, item := range rawMap {
+		b, err := json.Marshal(item)
+		if err != nil {
+			continue
+		}
+		var rec cmdrun.Record
+		if err := json.Unmarshal(b, &rec); err == nil {
+			out[k] = rec
+		}
+	}
+	return out
+}
+
+func parseMockCommandStyles(v any) map[string]*cmdrun.DisplayStyle {
+	rawMap, ok := v.(map[string]any)
+	if !ok || len(rawMap) == 0 {
+		return nil
+	}
+	out := make(map[string]*cmdrun.DisplayStyle, len(rawMap))
+	for k, item := range rawMap {
+		ds, err := parseDisplayStyleMap(item)
+		if err == nil && ds != nil {
+			_ = ds.NormalizeAndValidate()
+			out[k] = ds
+		}
+	}
+	return out
+}
+
 type barSandboxResult struct {
 	Spec          bar.Spec
 	Warnings      []string
@@ -850,6 +1083,7 @@ type barSandboxResult struct {
 	Jar           *bar.CookieJar
 	KV            *bar.KVStore
 	Transport     *barSandboxTransport
+	Commands      *barSandboxCommandBridge
 	Timeout       time.Duration
 	Settled       bool
 	ActionInvoked bool
@@ -952,7 +1186,10 @@ func (s Server) startBarSandbox(a map[string]any, initialTheme string) (*barSand
 		mocks = parseMockFetch(rawMock)
 	}
 	allowNetwork, _ := a["allowNetwork"].(bool)
-	offline := !allowNetwork && len(mocks) == 0
+	mockCmds := parseMockCommands(a["mockCommands"])
+	mockStyles := parseMockCommandStyles(a["mockCommandStyles"])
+	allowCommands, _ := a["allowCommands"].(bool)
+	offline := !allowNetwork && len(mocks) == 0 && !allowCommands && len(mockCmds) == 0
 
 	waitScheduled := true
 	if ws, ok := a["waitScheduled"].(bool); ok {
@@ -975,18 +1212,28 @@ func (s Server) startBarSandbox(a map[string]any, initialTheme string) (*barSand
 	}
 
 	tr := &barSandboxTransport{mocks: mocks, allowNetwork: allowNetwork}
+	cmdBridge := &barSandboxCommandBridge{
+		dataDir:    s.DataDir,
+		mocks:      mockCmds,
+		mockStyles: mockStyles,
+		allowLive:  allowCommands,
+	}
+	if useSaved {
+		cmdBridge.seedFromDisk(sp.CommandPerms)
+	}
 	var mu sync.Mutex
 	var openedURLs []string
 	var copiedTexts []string
 
 	inst, err := bar.NewInstance(sp, bar.Options{
-		Client:  &http.Client{Timeout: timeout, Transport: tr},
-		Inputs:  inputs,
-		Lang:    lang,
-		Theme:   themeName,
-		Offline: offline,
-		Cookies: jar,
-		Storage: kv,
+		Client:   &http.Client{Timeout: timeout, Transport: tr},
+		Inputs:   inputs,
+		Lang:     lang,
+		Theme:    themeName,
+		Offline:  offline,
+		Cookies:  jar,
+		Storage:  kv,
+		Commands: cmdBridge,
 		OnOpenURL: func(u string) {
 			mu.Lock()
 			openedURLs = append(openedURLs, u)
@@ -1026,6 +1273,7 @@ func (s Server) startBarSandbox(a map[string]any, initialTheme string) (*barSand
 		Jar:           jar,
 		KV:            kv,
 		Transport:     tr,
+		Commands:      cmdBridge,
 		Timeout:       timeout,
 		Settled:       settled,
 		ActionInvoked: actionInvoked,
@@ -1081,6 +1329,7 @@ func (s Server) callBarRun(a map[string]any) (string, bool, error) {
 		"cookies":       cookieSummary,
 		"storage":       sb.KV.All(),
 		"requests":      sb.Transport.snapshot(),
+		"commandCalls":  sb.Commands.callsSnapshot(),
 		"openedURLs":    sb.OpenedURLs(),
 		"copiedTexts":   sb.CopiedTexts(),
 		"warnings":      sb.Warnings,

@@ -93,3 +93,9 @@ func (a *app) openFeeds() {
 	a.router.Push("/feeds")
 	a.showWindow()
 }
+
+// openCommands shows the command tasks page in the main window.
+func (a *app) openCommands() {
+	a.router.Push("/commands")
+	a.showWindow()
+}

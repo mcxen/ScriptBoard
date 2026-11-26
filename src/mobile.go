@@ -126,6 +126,7 @@ func isValidRestorableRoute(path string) bool {
 		strings.HasPrefix(path, "/bar/"),
 		strings.HasPrefix(path, "/full/"),
 		path == "/feeds",
+		path == "/commands",
 		path == "/community",
 		path == "/settings":
 		return true

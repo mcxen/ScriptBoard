@@ -29,6 +29,7 @@ type Spec struct {
 	Refresh         string      `json:"refresh,omitempty"`
 	Material        string      `json:"material,omitempty"`
 	Permissions     []string    `json:"permissions,omitempty"`
+	CommandPerms    []string    `json:"commandPerms,omitempty"`
 	CookieDomains   []string    `json:"cookieDomains,omitempty"`
 	StoragePerm     bool        `json:"storage,omitempty"`
 	ClipboardPerm   bool        `json:"clipboard,omitempty"`
@@ -73,14 +74,19 @@ type xmlBar struct {
 }
 
 type xmlPermissions struct {
-	Networks  []xmlNetwork    `xml:"network"`
-	Cookies   []xmlCookiePerm `xml:"cookies"`
-	Storage   *struct{}       `xml:"storage"`
-	Clipboard *struct{}       `xml:"clipboard"`
+	Networks  []xmlNetwork     `xml:"network"`
+	Commands  []xmlCommandPerm `xml:"command"`
+	Cookies   []xmlCookiePerm  `xml:"cookies"`
+	Storage   *struct{}        `xml:"storage"`
+	Clipboard *struct{}        `xml:"clipboard"`
 }
 
 type xmlNetwork struct {
 	Origin string `xml:"origin,attr"`
+}
+
+type xmlCommandPerm struct {
+	ID string `xml:"id,attr"`
 }
 
 type xmlCookiePerm struct {
@@ -163,6 +169,11 @@ func Parse(source string) (Spec, error) {
 		for _, n := range doc.Permissions.Networks {
 			if orig := strings.TrimSpace(n.Origin); orig != "" {
 				spec.Permissions = append(spec.Permissions, orig)
+			}
+		}
+		for _, cm := range doc.Permissions.Commands {
+			if cid := strings.TrimSpace(cm.ID); cid != "" {
+				spec.CommandPerms = append(spec.CommandPerms, cid)
 			}
 		}
 		for _, ck := range doc.Permissions.Cookies {
@@ -313,6 +324,21 @@ func OriginAllowed(rawURL string, allowed []string) error {
 		}
 	}
 	return fmt.Errorf("network origin %s://%s not permitted", scheme, u.Host)
+}
+
+// CommandAllowed enforces that id is declared in <permissions><command id="..." /></permissions>.
+func CommandAllowed(id string, perms []string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("command id is required")
+	}
+	for _, p := range perms {
+		p = strings.TrimSpace(p)
+		if p == "*" || p == id {
+			return nil
+		}
+	}
+	return fmt.Errorf("command %q is not permitted in <permissions>", id)
 }
 
 func effectivePort(scheme, port string) string {

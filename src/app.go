@@ -18,6 +18,7 @@ import (
 	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/cache"
 	"scriptboard/src/internal/caps"
+	"scriptboard/src/internal/cmdrun"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/store"
@@ -164,6 +165,11 @@ type app struct {
 	runner   *feed.Runner
 	feedForm feedForm
 
+	// Command tasks: shell/CLI specs, runner, and persistent execution history.
+	cmdHistory *cmdrun.HistoryStore
+	cmdRunner  *cmdrun.Runner
+	cmdForm    cmdForm
+
 	// Community: the list, the login form and the upload description.
 	comm       commState
 	authUser   string
@@ -282,6 +288,8 @@ func newApp(dir string, offline bool) (*app, error) {
 		HTTP:      feed.HTTPFetcher{Client: a.client},
 		AllowExec: func() bool { return a.store.Settings().AllowExec },
 	}, a.samples)
+	a.cmdHistory = cmdrun.NewHistoryStore(filepath.Join(a.dataDir, "commands"))
+	a.cmdRunner = cmdrun.NewRunner(a.cmdHistory, a.allowCommandExec)
 	if err := a.seed(); err != nil {
 		return nil, err
 	}
@@ -292,6 +300,9 @@ func newApp(dir string, offline bool) (*app, error) {
 		return nil, err
 	}
 	if err := a.ensureBuiltinBars(); err != nil {
+		return nil, err
+	}
+	if err := a.ensureBuiltinCommands(); err != nil {
 		return nil, err
 	}
 	a.syncPlugins()
@@ -382,6 +393,7 @@ func (a *app) attach(w *mygo.Window) {
 	})
 	go a.watchPlugins()
 	go a.feedLoop()
+	go a.commandLoop()
 	go a.menuBarLoop()
 	go a.barLoop()
 	go a.liveLoop()
@@ -758,6 +770,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		View:     vals,
 		Metrics:  a.store.Metrics(),
 		Feeds:    a.feedInput(s.Meta.Feeds, now),
+		Commands: a.commandInput(s.Meta.Commands),
 		Usage:    a.usageInput(s.Meta.Usage, now),
 		Settings: map[string]any{
 			"weightUnit": set.WeightUnit,
@@ -1051,6 +1064,7 @@ func defaultSizeBuiltin(id string) string {
 func builtinIDs() map[string]bool {
 	ids := map[string]bool{
 		"sb-weather": true,
+		"sb-ping":    true,
 	}
 	for _, b := range engine.Builtins() {
 		ids[b.ID] = true

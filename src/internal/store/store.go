@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"scriptboard/src/internal/cmdrun"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/feed"
 )
@@ -235,6 +236,7 @@ type file struct {
 	Metrics  map[string][]engine.Point `json:"metrics"`
 	Settings Settings                  `json:"settings"`
 	Feeds    []feed.Source             `json:"feeds"`
+	Commands []cmdrun.Spec             `json:"commands,omitempty"`
 }
 
 // Store is the app's data. It is safe for concurrent use.
@@ -399,6 +401,58 @@ func (s *Store) DeleteFeed(id string) error {
 		}
 	}
 	s.f.Feeds = kept
+	return s.saveLocked()
+}
+
+// Commands returns every saved command spec, in order.
+func (s *Store) Commands() []cmdrun.Spec {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]cmdrun.Spec, len(s.f.Commands))
+	for i, c := range s.f.Commands {
+		out[i] = c.Clone()
+	}
+	return out
+}
+
+// Command returns the saved command spec with id.
+func (s *Store) Command(id string) (cmdrun.Spec, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.f.Commands {
+		if c.ID == id {
+			return c.Clone(), true
+		}
+	}
+	return cmdrun.Spec{}, false
+}
+
+// SaveCommand adds sp or replaces the existing command with the same ID.
+func (s *Store) SaveCommand(sp cmdrun.Spec) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sp = sp.Clone()
+	for i := range s.f.Commands {
+		if s.f.Commands[i].ID == sp.ID {
+			s.f.Commands[i] = sp
+			return s.saveLocked()
+		}
+	}
+	s.f.Commands = append(s.f.Commands, sp)
+	return s.saveLocked()
+}
+
+// DeleteCommand removes a command spec by id. History files are managed separately.
+func (s *Store) DeleteCommand(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.f.Commands[:0]
+	for _, c := range s.f.Commands {
+		if c.ID != id {
+			kept = append(kept, c)
+		}
+	}
+	s.f.Commands = kept
 	return s.saveLocked()
 }
 

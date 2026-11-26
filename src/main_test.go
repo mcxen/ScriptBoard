@@ -37,6 +37,7 @@ func newTestApp(t *testing.T) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(a.closeBarInstances)
 	return a
 }
 

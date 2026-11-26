@@ -475,7 +475,9 @@ func (a *app) reloadFromMCP() {
 		}
 	}
 	a.invalidateAll()
+	a.syncBarMenuBar()
 	a.syncMenuBar()
+	a.redrawFlyouts()
 }
 
 func collectBarNodeTexts(n *bar.Node) []string {

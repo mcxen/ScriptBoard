@@ -89,11 +89,39 @@ const barUIKitJS = `(function () {
     return h("Badge", Object.assign({ tone: tone || "accent" }, props || {}), String(text == null ? "" : text));
   }
 
-  function dot(color, pulse, size) {
-    return h("StatusDot", {
+  function dot(color, pulseOrOpts, size) {
+    var props = {
       color: color || "success",
-      pulse: !!pulse,
+      pulse: false,
       size: size || 7
+    };
+    if (typeof pulseOrOpts === "string") {
+      props.animation = pulseOrOpts;
+      props.pulse = pulseOrOpts !== "none" && pulseOrOpts !== "";
+    } else if (pulseOrOpts && typeof pulseOrOpts === "object") {
+      if (pulseOrOpts.animation != null) props.animation = String(pulseOrOpts.animation);
+      if (pulseOrOpts.pulse != null) props.pulse = !!pulseOrOpts.pulse;
+      if (pulseOrOpts.size != null) props.size = Number(pulseOrOpts.size);
+      if (pulseOrOpts.count != null) props.count = Number(pulseOrOpts.count);
+      if (pulseOrOpts.speed != null) props.speed = Number(pulseOrOpts.speed);
+      if (pulseOrOpts.animate != null) props.animate = !!pulseOrOpts.animate;
+    } else {
+      props.pulse = !!pulseOrOpts;
+    }
+    return h("StatusDot", props);
+  }
+
+  function dotAnim(opts) {
+    opts = opts || {};
+    var anim = opts.animation != null ? String(opts.animation) : (opts.pulse === false ? "none" : "pulse");
+    return h("StatusDot", {
+      color: opts.color || opts.tone || "accent",
+      animation: anim,
+      pulse: opts.pulse != null ? !!opts.pulse : (anim !== "none" && anim !== ""),
+      size: opts.size || 8,
+      count: opts.count || 0,
+      speed: opts.speed || 1,
+      animate: opts.animate !== false
     });
   }
 
@@ -248,7 +276,12 @@ const barUIKitJS = `(function () {
         singleLine: true
       }, String(opts.unit)) : null
     );
-    var subRow = (opts.label || opts.secondary) ? h("Row", { gap: 8, alignItems: "center" },
+    var heroDot = null;
+    if (opts.dot) {
+      heroDot = opts.dot.type ? opts.dot : dotAnim(opts.dot);
+    }
+    var subRow = (heroDot || opts.label || opts.secondary) ? h("Row", { gap: 6, alignItems: "center", wrap: true },
+      heroDot,
       opts.label ? h("Text", { fontSize: 13, fontWeight: 500, singleLine: true }, String(opts.label)) : null,
       opts.secondary ? h("Text", { fontSize: 12, textColor: "textMuted", fontFeatures: "tnum", singleLine: true }, String(opts.secondary)) : null
     ) : null;
@@ -674,6 +707,116 @@ const barUIKitJS = `(function () {
     );
   }
 
+  function commandDot(fieldRes, opts) {
+    opts = opts || {};
+    var pending = !!opts.pending;
+    var r = fieldRes || {};
+    var color = opts.color || r.color || opts.fallbackColor || "accent";
+    if (pending && !opts.color) color = "accent";
+    var anim = pending ? "dots" : (opts.animation != null ? String(opts.animation) : (r.animation || "none"));
+    var variant = r.variant || "default";
+    var size = opts.size || r.dotSize || 8;
+    var count = opts.count || r.dotCount || 4;
+    var speed = opts.speed || r.speed || 1;
+    var animate = opts.animate !== false;
+
+    if (!pending && variant === "badge") {
+      var lbl = opts.label != null ? String(opts.label) : (r.statusLabel || r.formattedValue || r.label || "");
+      return badge(lbl, color, {
+        dot: true,
+        dotAnimation: anim,
+        dotCount: count,
+        dotSpeed: speed
+      });
+    }
+    return dotAnim({
+      color: color,
+      animation: anim,
+      size: size,
+      count: count,
+      speed: speed,
+      animate: animate
+    });
+  }
+
+  function commandValue(fieldRes, opts) {
+    opts = opts || {};
+    if (!fieldRes) return null;
+    var lbl = opts.label != null ? String(opts.label) : String(fieldRes.label || fieldRes.field || "");
+    var tone = fieldRes.color || opts.fallbackColor || "text";
+    var valText = String(fieldRes.formattedValue != null ? fieldRes.formattedValue : (fieldRes.value != null ? fieldRes.value : "--"));
+    var variant = fieldRes.variant || "default";
+    var anim = fieldRes.animation || "none";
+    var statusChip = fieldRes.statusLabel ? badge(String(fieldRes.statusLabel), tone) : null;
+
+    if (variant === "badge") {
+      return h("Row", { alignItems: "center", gap: 6 },
+        lbl && !opts.hideLabel ? h("Text", { fontSize: 11, textColor: "textMuted", singleLine: true }, lbl) : null,
+        badge(valText, tone, {
+          dot: anim !== "none" && anim !== "",
+          dotAnimation: anim,
+          dotCount: fieldRes.dotCount || 4,
+          dotSpeed: fieldRes.speed || 1
+        }),
+        statusChip
+      );
+    }
+
+    if (variant === "matrix" || variant === "bar") {
+      var pct = fieldRes.hasFill ? Math.max(0, Math.min(100, (fieldRes.fillFrac || 0) * 100)) : 65;
+      return h("Column", { fillWidth: true, gap: 4 },
+        h("Row", { fillWidth: true, alignItems: "center", gap: 6 },
+          lbl && !opts.hideLabel ? h("Text", { fontSize: 11, textColor: "textMuted", singleLine: true }, lbl) : null,
+          h("Spacer"),
+          statusChip,
+          h("Text", { fontSize: opts.fontSize || 15, fontWeight: 700, fontFeatures: "tnum", textColor: tone, singleLine: true }, valText)
+        ),
+        h("Progress", {
+          value: pct,
+          max: 100,
+          style: variant === "matrix" ? "matrix" : "gradient",
+          color: fieldRes.color || opts.fallbackColor || "accent",
+          animate: anim !== "none" && anim !== "",
+          height: variant === "matrix" ? 10 : 5
+        })
+      );
+    }
+
+    var inlineDot = (anim && anim !== "none") ? commandDot(fieldRes, { size: opts.dotSize || fieldRes.dotSize || 7 }) : null;
+    return h("Row", { alignItems: "center", gap: 6 },
+      inlineDot,
+      lbl && !opts.hideLabel ? h("Text", { fontSize: 11, textColor: "textMuted", singleLine: true }, lbl) : null,
+      h("Text", { fontSize: opts.fontSize || 14, fontWeight: 600, fontFeatures: "tnum", textColor: tone, singleLine: true }, valText),
+      statusChip
+    );
+  }
+
+  function commandFieldStrip(resolvedCmd, opts) {
+    opts = opts || {};
+    if (!resolvedCmd || !resolvedCmd.fields) return null;
+    var order = Array.isArray(resolvedCmd.order) ? resolvedCmd.order : Object.keys(resolvedCmd.fields);
+    var excludePrimary = opts.excludePrimary !== false;
+    var primaryKey = resolvedCmd.primaryField || "";
+    var maxItems = opts.maxItems || 6;
+    var cells = [];
+    for (var i = 0; i < order.length; i++) {
+      var key = order[i];
+      if (excludePrimary && key === primaryKey) continue;
+      var f = resolvedCmd.fields[key];
+      if (!f || f.hidden) continue;
+      var lbl = typeof opts.translateLabel === "function" ? opts.translateLabel(f.label || key) : (f.label || key);
+      var fVal = String(f.formattedValue != null ? f.formattedValue : (f.value != null ? f.value : "--"));
+      cells.push(h("Row", { key: key, alignItems: "center", gap: 5 },
+        (f.animation && f.animation !== "none") ? commandDot(f, { size: 6 }) : null,
+        h("Text", { fontSize: 11, textColor: "textMuted", singleLine: true }, lbl),
+        h("Text", { fontSize: 12, fontWeight: 600, fontFeatures: "tnum", textColor: f.color || "text", singleLine: true }, fVal)
+      ));
+      if (cells.length >= maxItems) break;
+    }
+    if (cells.length === 0) return null;
+    return h("Row", { fillWidth: true, gap: 12, wrap: true }, cells);
+  }
+
   globalThis.h = h;
   globalThis.$ui = {
     h: h,
@@ -691,6 +834,10 @@ const barUIKitJS = `(function () {
     kv: kv,
     badge: badge,
     dot: dot,
+    dotAnim: dotAnim,
+    commandDot: commandDot,
+    commandValue: commandValue,
+    commandFieldStrip: commandFieldStrip,
     empty: empty,
     skeleton: skeleton,
     footer: footer,

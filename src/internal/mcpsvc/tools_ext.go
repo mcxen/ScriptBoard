@@ -10,6 +10,7 @@ import (
 
 	"scriptboard/src/internal/bar"
 	"scriptboard/src/internal/caps"
+	"scriptboard/src/internal/cmdrun"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/iconcat"
 	"scriptboard/src/internal/plugins"
@@ -39,11 +40,12 @@ func extraTools() []Tool {
 			Description: "Compile and execute a script in a sandbox with optional mockSources, vars, dims and lang, " +
 				"returning its rendered Result, extracted tabular view, swappable component types, and validation warnings.",
 			InputSchema: obj(map[string]any{
-				"source":      str("the ES module script source"),
-				"lang":        str("zh or en (default zh)"),
-				"vars":        map[string]any{"type": "object", "description": "optional map of variable key -> string value"},
-				"dims":        map[string]any{"type": "object", "description": "optional map of dim key -> number value"},
-				"mockSources": map[string]any{"type": "object", "description": "optional map of source name -> JSON value for ctx.sources"},
+				"source":       str("the ES module script source"),
+				"lang":         str("zh or en (default zh)"),
+				"vars":         map[string]any{"type": "object", "description": "optional map of variable key -> string value"},
+				"dims":         map[string]any{"type": "object", "description": "optional map of dim key -> number value"},
+				"mockSources":  map[string]any{"type": "object", "description": "optional map of source name -> JSON value for ctx.sources"},
+				"mockCommands": map[string]any{"type": "object", "description": "optional map of command id -> CommandData object for ctx.commands"},
 			}, "source"),
 		},
 		{
@@ -137,6 +139,7 @@ func extraTools() []Tool {
 	}
 	base = append(base, barTools()...)
 	base = append(base, feedTools()...)
+	base = append(base, commandTools()...)
 	return base
 }
 
@@ -208,14 +211,22 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 				}
 			}
 		}
+		mockCmds := map[string]engine.CommandData{}
+		if rawCmdMock, ok := a["mockCommands"].(map[string]any); ok {
+			b, err := json.Marshal(rawCmdMock)
+			if err == nil {
+				_ = json.Unmarshal(b, &mockCmds)
+			}
+		}
 		res, err := sc.Run(context.Background(), engine.Input{
-			Now:     time.Now(),
-			Lang:    lang,
-			OS:      caps.OS(),
-			Kind:    caps.Platform(),
-			Vars:    engine.ResolveVars(sc.Meta.Vars, vars),
-			View:    dims,
-			Sources: mockSrc,
+			Now:      time.Now(),
+			Lang:     lang,
+			OS:       caps.OS(),
+			Kind:     caps.Platform(),
+			Vars:     engine.ResolveVars(sc.Meta.Vars, vars),
+			View:     dims,
+			Sources:  mockSrc,
+			Commands: mockCmds,
 		})
 		if err != nil {
 			return "", true, err
@@ -730,9 +741,11 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 	case "app_info":
 		st, _ := store.Open(s.DataDir)
 		plist, _ := plugins.List(s.DataDir)
-		tables, scripts, bars, feeds, pinned := 0, 0, 0, 0, 0
+		tables, scripts, bars, feeds, commands, pinned := 0, 0, 0, 0, 0, 0
+		allowExec := false
 		if st != nil {
 			set := st.Settings()
+			allowExec = set.AllowExec
 			for _, sc := range st.Scripts() {
 				switch {
 				case sc.IsTable():
@@ -747,6 +760,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 				}
 			}
 			feeds = len(st.Feeds())
+			commands = len(st.Commands())
 			pinned += len(set.MenuBar)
 		}
 		var displays []DisplayInfo
@@ -757,13 +771,17 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			"name":            "ScriptBoard",
 			"protocolVersion": protocolVersion,
 			"readOnly":        s.readOnly(),
+			"allowExec":       allowExec,
 			"platform":        map[string]string{"os": caps.OS(), "kind": caps.Platform()},
 			"widgetTypes":     engine.ChartTypes,
 			"barVDOMNodes":    []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Badge", "Progress", "Ring", "Chart", "StatusDot", "Segmented", "Switch", "ListRow", "Image", "Input", "Spacer", "Divider"},
-			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "h", "$ui", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies"},
-			"cookieSupport":   true,
-			"storageSupport":  true,
-			"toolsCount":      len(AllTools()),
+			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "h", "$ui", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies", "$metrix.command"},
+			"cookieSupport":            true,
+			"storageSupport":           true,
+			"commandSupport":           true,
+			"commandDisplayVariants":   cmdrun.ValidDisplayVariants(),
+			"commandDisplayAnimations": cmdrun.ValidDisplayAnimations(),
+			"toolsCount":               len(AllTools()),
 			"trayActions":     append(append([]string(nil), engine.MenuActions...), "set_var:<k>=<v>", "set_dim:<k>=<v>"),
 			"trayIcons":       engine.MenuBarIcons,
 			"displayModes":    []string{"cursor", "internal", "external"},
@@ -777,6 +795,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 				"barTemplates": len(bar.Templates()),
 				"plugins":      len(plist),
 				"feeds":        feeds,
+				"commands":     commands,
 				"trayPinned":   pinned,
 				"widgetTypes":  len(engine.WidgetSpecs),
 			},
@@ -788,6 +807,9 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		return out, true, err
 	}
 	if out, handled, err := s.callFeed(name, a); handled {
+		return out, true, err
+	}
+	if out, handled, err := s.callCommand(name, a); handled {
 		return out, true, err
 	}
 	return "", false, nil

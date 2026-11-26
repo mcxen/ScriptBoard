@@ -1,6 +1,7 @@
 package bar
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,17 @@ import (
 	"github.com/MoeForge/moejs/engine"
 	"github.com/MoeForge/moejs/eventloop"
 	"github.com/MoeForge/moejs/webapi"
+
+	"scriptboard/src/internal/cmdrun"
 )
+
+// CommandBridge connects .bar components to host-managed CLI/shell commands and history.
+type CommandBridge interface {
+	Run(ctx context.Context, id string, params map[string]string) (cmdrun.Record, error)
+	Latest(id string) (cmdrun.Record, bool, error)
+	History(id string, limit int) ([]cmdrun.Record, error)
+	Style(id string) (*cmdrun.DisplayStyle, bool)
+}
 
 // Options configures a running .bar Instance.
 type Options struct {
@@ -31,6 +42,7 @@ type Options struct {
 	DataDir    string
 	Cookies    *CookieJar
 	Storage    *KVStore
+	Commands   CommandBridge
 	OnUpdate   func(Snapshot)
 	OnOpenURL  func(string)
 	OnCopyText func(string)
@@ -46,6 +58,9 @@ type Instance struct {
 	web        *webapi.API
 	cookies    *CookieJar
 	storage    *KVStore
+	commands   CommandBridge
+	ctx        context.Context
+	cancel     context.CancelFunc
 	remove     func()
 	onUpdate   func(Snapshot)
 	onOpenURL  func(string)
@@ -121,12 +136,16 @@ func NewInstance(spec Spec, opts Options) (*Instance, error) {
 	clientCopy := *baseClient
 	clientCopy.Jar = cookies
 
+	instCtx, cancel := context.WithCancel(context.Background())
 	inst := &Instance{
 		spec:       spec,
 		mod:        mod,
 		rt:         rt,
 		cookies:    cookies,
 		storage:    storage,
+		commands:   opts.Commands,
+		ctx:        instCtx,
+		cancel:     cancel,
 		onUpdate:   opts.OnUpdate,
 		onOpenURL:  opts.OnOpenURL,
 		onCopyText: opts.OnCopyText,
@@ -228,6 +247,9 @@ func (inst *Instance) installGlobals() error {
 		inst.spec,
 		inst.cookies,
 		inst.storage,
+		inst.loop,
+		inst.ctx,
+		inst.commands,
 		func(raw string) {
 			if inst.onCopyText != nil {
 				inst.onCopyText(raw)
@@ -261,6 +283,9 @@ func installBarGlobals(
 	spec Spec,
 	cookies *CookieJar,
 	storage *KVStore,
+	loop *eventloop.Loop,
+	ctx context.Context,
+	commands CommandBridge,
 	onCopy func(string),
 	onOpen func(string),
 	onInvalidate func(),
@@ -487,6 +512,157 @@ func installBarGlobals(
 		}),
 	}
 
+	commandAPI := map[string]any{
+		"run": rt.Function("run", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			cmdID := strings.TrimSpace(s.GoString())
+			if err := CommandAllowed(cmdID, spec.CommandPerms); err != nil {
+				return moejs.Undefined(), err
+			}
+			if commands == nil || loop == nil {
+				return moejs.Undefined(), errors.New("command bridge unavailable")
+			}
+			var params map[string]string
+			if len(args) >= 2 && !moejs.Arg(args, 1).IsUndefined() && !moejs.Arg(args, 1).IsNull() {
+				rawParams, err := rt.ToGo(moejs.Arg(args, 1))
+				if err != nil {
+					return moejs.Undefined(), err
+				}
+				if pm, ok := rawParams.(map[string]any); ok {
+					params = make(map[string]string, len(pm))
+					for k, v := range pm {
+						if v != nil {
+							params[k] = fmt.Sprint(v)
+						}
+					}
+				}
+			}
+			runCtx := ctx
+			if runCtx == nil {
+				runCtx = context.Background()
+			}
+			p, settle := loop.NewPromise()
+			go func() {
+				rec, runErr := commands.Run(runCtx, cmdID, params)
+				settle(func(rt2 *moejs.Runtime) (moejs.Value, error) {
+					if runErr != nil {
+						return moejs.Undefined(), runErr
+					}
+					return rt2.FromGo(rec)
+				})
+			}()
+			return p, nil
+		}),
+		"latest": rt.Function("latest", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			cmdID := strings.TrimSpace(s.GoString())
+			if err := CommandAllowed(cmdID, spec.CommandPerms); err != nil {
+				return moejs.Undefined(), err
+			}
+			if commands == nil {
+				return moejs.Null(), nil
+			}
+			rec, ok, err := commands.Latest(cmdID)
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			if !ok {
+				return moejs.Null(), nil
+			}
+			return rt.FromGo(rec)
+		}),
+		"history": rt.Function("history", 2, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			cmdID := strings.TrimSpace(s.GoString())
+			if err := CommandAllowed(cmdID, spec.CommandPerms); err != nil {
+				return moejs.Undefined(), err
+			}
+			if commands == nil {
+				return rt.FromGo([]cmdrun.Record{})
+			}
+			limit := 30
+			if len(args) >= 2 && !moejs.Arg(args, 1).IsUndefined() && !moejs.Arg(args, 1).IsNull() {
+				if n, nerr := r.ToNumber(moejs.Arg(args, 1)); nerr == nil && n > 0 {
+					limit = int(n)
+				}
+			}
+			if limit > 200 {
+				limit = 200
+			}
+			recs, err := commands.History(cmdID, limit)
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			if recs == nil {
+				recs = []cmdrun.Record{}
+			}
+			return rt.FromGo(recs)
+		}),
+		"style": rt.Function("style", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			cmdID := strings.TrimSpace(s.GoString())
+			if err := CommandAllowed(cmdID, spec.CommandPerms); err != nil {
+				return moejs.Undefined(), err
+			}
+			if commands == nil {
+				return moejs.Null(), nil
+			}
+			st, ok := commands.Style(cmdID)
+			if !ok || st == nil {
+				return moejs.Null(), nil
+			}
+			return rt.FromGo(st)
+		}),
+		"resolve": rt.Function("resolve", 2, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			cmdID := strings.TrimSpace(s.GoString())
+			if err := CommandAllowed(cmdID, spec.CommandPerms); err != nil {
+				return moejs.Undefined(), err
+			}
+			var style *cmdrun.DisplayStyle
+			if commands != nil {
+				style, _ = commands.Style(cmdID)
+			}
+			rec := cmdrun.Record{CommandID: cmdID, OK: true}
+			if len(args) >= 2 && !moejs.Arg(args, 1).IsUndefined() && !moejs.Arg(args, 1).IsNull() {
+				rawRec, err := rt.ToGo(moejs.Arg(args, 1))
+				if err != nil {
+					return moejs.Undefined(), err
+				}
+				b, err := json.Marshal(rawRec)
+				if err != nil {
+					return moejs.Undefined(), err
+				}
+				if err := json.Unmarshal(b, &rec); err != nil {
+					return moejs.Undefined(), err
+				}
+				if rec.CommandID == "" {
+					rec.CommandID = cmdID
+				}
+			} else if commands != nil {
+				if latest, ok, err := commands.Latest(cmdID); err == nil && ok {
+					rec = latest
+				}
+			}
+			return rt.FromGo(style.ResolveRecord(rec))
+		}),
+	}
+
 	metrix := map[string]any{
 		"invalidate": rt.Function("invalidate", 0, func(_ *moejs.Realm, _ moejs.Value, _ []moejs.Value) (moejs.Value, error) {
 			if onInvalidate != nil {
@@ -521,6 +697,7 @@ func installBarGlobals(
 		"log":     rt.Function("log", 0, logFn),
 		"storage": storageAPI,
 		"cookies": cookiesAPI,
+		"command": commandAPI,
 	}
 	if err := rt.SetGlobal("$metrix", metrix); err != nil {
 		return err
@@ -663,6 +840,23 @@ func (inst *Instance) Snapshot() Snapshot {
 	inst.mu.RLock()
 	defer inst.mu.RUnlock()
 	return inst.snap
+}
+
+// RefreshRender re-renders the current snapshot on the event loop without invoking scheduled(env).
+func (inst *Instance) RefreshRender() {
+	if inst == nil || inst.loop == nil {
+		return
+	}
+	inst.mu.RLock()
+	closed := inst.closed
+	inst.mu.RUnlock()
+	if closed {
+		return
+	}
+	inst.loop.RunOnLoop(func(r *moejs.Runtime) {
+		inst.renderNow(r)
+		inst.notifyUpdate()
+	})
 }
 
 // Refresh asks scheduled(env) to fetch fresh data on the event loop.
@@ -930,6 +1124,9 @@ func (inst *Instance) Close() {
 	for _, ch := range waiters {
 		close(ch)
 	}
+	if inst.cancel != nil {
+		inst.cancel()
+	}
 
 	if inst.web != nil {
 		inst.web.Close()
@@ -973,10 +1170,10 @@ func (inst *Instance) finishScheduled(r *moejs.Runtime, asyncErr string) {
 }
 
 func envJSONValue(r *moejs.Runtime, spec Spec, inputs map[string]string, lang string) (moejs.Value, error) {
-	return envJSONValueWithAppearance(r, spec, inputs, lang, "dark", false, false)
+	return envJSONValueWithAppearance(r, spec, inputs, lang, "dark", false, false, false)
 }
 
-func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]string, lang, theme string, vibrancy, refreshing bool) (moejs.Value, error) {
+func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]string, lang, theme string, vibrancy, refreshing, offline bool) (moejs.Value, error) {
 	if lang == "" {
 		lang = "en"
 	}
@@ -1006,6 +1203,7 @@ func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]s
 		"theme":      normalizeBarTheme(theme),
 		"vibrancy":   vibrancy,
 		"refreshing": refreshing,
+		"offline":    offline,
 		"platform":   runtime.GOOS,
 	})
 	if err != nil {
@@ -1024,8 +1222,9 @@ func (inst *Instance) envValue(r *moejs.Runtime) (moejs.Value, error) {
 	theme := inst.theme
 	vibrancy := inst.vibrancy
 	refreshing := inst.schedRunning
+	offline := inst.offline
 	inst.mu.RUnlock()
-	return envJSONValueWithAppearance(r, inst.spec, rawInputs, lang, theme, vibrancy, refreshing)
+	return envJSONValueWithAppearance(r, inst.spec, rawInputs, lang, theme, vibrancy, refreshing, offline)
 }
 
 func (inst *Instance) renderNow(r *moejs.Runtime) {
@@ -1203,6 +1402,12 @@ func CheckRender(source, lang string) (Spec, Snapshot, []string, error) {
 			warnings = append(warnings, fmt.Sprintf("invalid network permission origin %q: must be http:// or https:// with host", orig))
 		}
 	}
+	for _, cid := range sp.CommandPerms {
+		cid = strings.TrimSpace(cid)
+		if cid == "" || (cid != "*" && !cmdrun.ValidID(cid)) {
+			warnings = append(warnings, fmt.Sprintf("invalid command permission id %q", cid))
+		}
+	}
 	seenInputs := map[string]bool{}
 	for _, in := range sp.Inputs {
 		if seenInputs[in.Name] {
@@ -1228,7 +1433,7 @@ func CheckRender(source, lang string) (Spec, Snapshot, []string, error) {
 	cookies, _ := NewCookieJar("")
 	storage, _ := NewKVStore("")
 	var logs []string
-	if err := installBarGlobals(rt, sp, cookies, storage, nil, nil, nil, func(line string) {
+	if err := installBarGlobals(rt, sp, cookies, storage, nil, nil, nil, nil, nil, nil, func(line string) {
 		logs = append(logs, line)
 	}); err != nil {
 		return sp, Snapshot{}, warnings, err

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/MoeForge/moejs"
+
+	"scriptboard/src/internal/cmdrun"
 )
 
 const (
@@ -57,6 +59,8 @@ type Meta struct {
 	// Feeds names the data sources the script reads, as ctx.feeds[name]. The
 	// host polls them and aggregates their samples by hour and by day.
 	Feeds []string `json:"feeds"`
+	// Commands names the command tasks the script reads, as ctx.commands[id].
+	Commands []string `json:"commands,omitempty"`
 	// Sources maps a name to where its data comes from: an address, or a
 	// request of its own (request.go). {start} and {end} expand to the dates of
 	// the last 30 days, as yyyy-mm-dd.
@@ -739,6 +743,34 @@ type FeedData struct {
 	Fails int `json:"fails"`
 }
 
+// CommandRun holds one execution record exposed to scripts via ctx.commands[id].
+type CommandRun struct {
+	ID         string            `json:"id"`
+	T          int64             `json:"t"`
+	Trigger    string            `json:"trigger"`
+	Params     map[string]string `json:"params,omitempty"`
+	OK         bool              `json:"ok"`
+	ExitCode   int               `json:"exitCode"`
+	DurationMs int64             `json:"durationMs"`
+	Extracted  map[string]any    `json:"extracted,omitempty"`
+	JSON       any               `json:"json,omitempty"`
+	Stdout     string            `json:"stdout,omitempty"`
+	Stderr     string            `json:"stderr,omitempty"`
+	Error      string            `json:"error,omitempty"`
+}
+
+// CommandData holds the latest run and history for one command named in meta().commands.
+type CommandData struct {
+	ID       string                  `json:"id"`
+	Name     string                  `json:"name"`
+	Display  *cmdrun.DisplayStyle    `json:"display,omitempty"`
+	Resolved *cmdrun.ResolvedCommand `json:"resolved,omitempty"`
+	Latest   *CommandRun             `json:"latest,omitempty"`
+	History  []CommandRun            `json:"history"`
+	OK       bool                    `json:"ok"`
+	Error    string                  `json:"error,omitempty"`
+}
+
 // Input is what a run gets besides the script.
 type Input struct {
 	Now time.Time
@@ -760,7 +792,9 @@ type Input struct {
 	// meta().usage, or {"error": "..."} for one that could not be read.
 	Usage map[string]any
 	// Feeds holds the data of each source the script names in meta().feeds.
-	Feeds    map[string]FeedData
+	Feeds map[string]FeedData
+	// Commands holds the latest run and history of each command named in meta().commands.
+	Commands map[string]CommandData
 	Metrics  map[string][]Point
 	Settings map[string]any
 	Sources  map[string]json.RawMessage
@@ -831,6 +865,7 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 		"tzOffset":   in.TZOffset,
 		"view":       nonNilView(in.View),
 		"feeds":      nonNilFeeds(in.Feeds),
+		"commands":   nonNilCommands(in.Commands),
 		"usage":      nonNilUsage(in.Usage),
 		"metrics":    nonNilMetrics(in.Metrics),
 		"settings":   nonNilSettings(in.Settings),
@@ -927,6 +962,13 @@ func nonNilUsage(m map[string]any) map[string]any {
 func nonNilFeeds(m map[string]FeedData) map[string]FeedData {
 	if m == nil {
 		return map[string]FeedData{}
+	}
+	return m
+}
+
+func nonNilCommands(m map[string]CommandData) map[string]CommandData {
+	if m == nil {
+		return map[string]CommandData{}
 	}
 	return m
 }

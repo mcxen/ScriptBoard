@@ -276,6 +276,11 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 					a.openFeeds()
 				}
 			}},
+			row{title: tr("命令任务"), note: tr("配置 macOS / Linux Shell 或 PSH 命令，提取字段并支持手动或定时运行"), control: func() {
+				if btn(c, tr("管理")).Clicked() {
+					a.openCommands()
+				}
+			}},
 		)
 
 	case "mcp":

@@ -15,29 +15,54 @@ import (
 )
 
 func (a *app) ensureBuiltinBars() error {
-	spec, err := bar.Parse(bar.BuiltinWeatherBar)
-	if err != nil {
-		return fmt.Errorf("builtin bar %s: %w", "sb-weather", err)
+	type builtinDef struct {
+		src  string
+		home bool
 	}
-	sc, ok := a.store.Script(spec.ID)
-	if ok {
-		if sc.Kind != store.KindBar || sc.Origin == "" {
-			sc.Kind = store.KindBar
-			if sc.Origin == "" {
-				sc.Origin = store.OriginBuiltin
-			}
-			return a.store.SaveScript(sc)
+	defs := []builtinDef{
+		{src: bar.BuiltinWeatherBar, home: false},
+		{src: bar.BuiltinPingBar, home: !isMobile()},
+	}
+	for _, d := range defs {
+		spec, err := bar.Parse(d.src)
+		if err != nil {
+			return fmt.Errorf("builtin bar: %w", err)
 		}
-		return nil
+		sc, ok := a.store.Script(spec.ID)
+		if ok {
+			changed := false
+			if sc.Kind != store.KindBar || sc.Origin == "" {
+				sc.Kind = store.KindBar
+				if sc.Origin == "" {
+					sc.Origin = store.OriginBuiltin
+				}
+				changed = true
+			}
+			// Auto-upgrade unmodified shipped sb-ping to latest v1.2.0 ($metrix.command.resolve support).
+			if sc.ID == "sb-ping" && sc.Origin == store.OriginBuiltin && !strings.Contains(sc.Source, "$metrix.command.resolve") && strings.Contains(sc.Source, `const CMD_ID = "net-ping";`) {
+				sc.Source = d.src
+				sc.Name = spec.Title
+				changed = true
+			}
+			if changed {
+				if err := a.store.SaveScript(sc); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if err := a.store.SaveScript(store.Script{
+			ID:     spec.ID,
+			Name:   spec.Title,
+			Source: d.src,
+			Home:   d.home,
+			Origin: store.OriginBuiltin,
+			Kind:   store.KindBar,
+		}); err != nil {
+			return err
+		}
 	}
-	return a.store.SaveScript(store.Script{
-		ID:     spec.ID,
-		Name:   spec.Title,
-		Source: bar.BuiltinWeatherBar,
-		Home:   false,
-		Origin: store.OriginBuiltin,
-		Kind:   store.KindBar,
-	})
+	return nil
 }
 
 func (a *app) barScripts() []store.Script {
@@ -242,6 +267,7 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 		Theme:      themeName,
 		Offline:    a.set.Offline,
 		DataDir:    bar.ComponentDataDir(a.dataDir, id),
+		Commands:   appCommandBridge{a},
 		OnCopyText: func(s string) { a.post(func() { copyText(s) }) },
 		OnUpdate: func(snap bar.Snapshot) {
 			a.post(func() {
@@ -285,6 +311,10 @@ func (a *app) refreshBar(id string) {
 	}
 	inst.SetOffline(a.set.Offline)
 	inst.Refresh()
+	if a.win == nil && a.set.Offline {
+		inst.WaitIdle(5 * time.Second)
+		a.onBarUpdate(id, inst.Snapshot())
+	}
 }
 
 func (a *app) invokeBarAction(id, actionID string) {

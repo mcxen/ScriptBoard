@@ -9,6 +9,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"scriptboard/src/internal/barui"
+	"scriptboard/src/internal/cmdrun"
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/store"
 )
@@ -277,26 +278,50 @@ func (a *app) refreshScript(sc store.Script) {
 			}
 		}
 	}
+	var matchedCmds []cmdrun.Spec
+	for _, cid := range meta.Commands {
+		if csp, ok := a.store.Command(cid); ok {
+			matchedCmds = append(matchedCmds, csp)
+		}
+	}
 	offline := a.store.Settings().Offline
-	total := len(matched) + 1
+	total := len(matched) + len(matchedCmds) + 1
 	a.beginRefresh(sc.ID, total)
 
 	run := func() {
 		var feedErr string
+		step := 0
 		if !offline {
-			for i, src := range matched {
+			for _, src := range matched {
 				if _, err := a.runner.Poll(context.Background(), src); err != nil && feedErr == "" {
 					feedErr = err.Error()
 				}
-				step := i + 1
-				fe := feedErr
-				a.post(func() { a.advanceRefresh(sc.ID, step, fe) })
+				step++
+				curStep, fe := step, feedErr
+				a.post(func() { a.advanceRefresh(sc.ID, curStep, fe) })
+			}
+			for _, csp := range matchedCmds {
+				rec, err := a.cmdRunner.Run(context.Background(), csp, nil, "script")
+				if err != nil && feedErr == "" {
+					feedErr = err.Error()
+				} else if err == nil && !rec.OK && feedErr == "" {
+					feedErr = rec.Error
+					if feedErr == "" {
+						feedErr = fmt.Sprintf("command %s exited %d", csp.ID, rec.ExitCode)
+					}
+				}
+				step++
+				curStep, fe := step, feedErr
+				a.post(func() { a.advanceRefresh(sc.ID, curStep, fe) })
 			}
 		}
 		a.post(func() {
 			if st, ok := a.refreshStates[sc.ID]; ok && feedErr != "" && st.feedErr == "" {
 				st.feedErr = feedErr
 				a.refreshStates[sc.ID] = st
+			}
+			for _, csp := range matchedCmds {
+				a.refreshCommandConsumers(csp.ID)
 			}
 			a.forced[sc.ID] = true
 			if len(meta.Usage) > 0 {

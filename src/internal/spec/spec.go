@@ -49,6 +49,9 @@ func Resolve(m engine.Meta) Resolved {
 	if len(m.Sources) > 0 || len(m.Feeds) > 0 || m.NetProbe != nil {
 		inferred[caps.Network] = true
 	}
+	if len(m.Commands) > 0 {
+		inferred[caps.Exec] = true
+	}
 	allowed := map[string]bool{}
 	for _, sys := range caps.Systems {
 		allowed[sys] = true

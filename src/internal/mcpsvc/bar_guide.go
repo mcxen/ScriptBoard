@@ -52,6 +52,7 @@ ScriptBoard's flagship visual aesthetic follows the built-in Weather Bar (§Buil
   <permissions>
     <network origin="https://api.example.com" />
     <network origin="https://*.example.com" />
+    <command id="net-ping" />
   </permissions>
   <inputs>
     <input name="endpoint" type="string" label="Endpoint" default="https://api.example.com/me" required="true" />
@@ -113,7 +114,8 @@ Export default object:
 - §$ui.metric({ label, value, unit, delta, deltaTone, tone, mono, fontSize, fontWeight, down, sub })§ — tabular-numerals (§tnum§) KPI display with §contentTransition: { numeric: true }§ (auto-light 300 weight at §fontSize >= 36§).
 - §$ui.statGrid(items, cols = 2, { bordered })§ — frameless §surfaceSubtle§ multi-column Bento grid (pass §{ bordered: true }§ to restore card borders); each item supports §{ label, value, unit, sub, tone, dot, pulse, icon, mono }§.
 - §$ui.kv(label, value, { valueColor, badge, badgeTone, mono })§ — aligned key-value row with §tnum§ right value.
-- §$ui.badge(text, tone, props)§ & §$ui.dot(color, pulse, size)§
+- §$ui.badge(text, tone, props)§ (supports §dot: true, dotAnimation: "pulse"|"ripple"|"dots"|"wave"|"orbit"|"blink"|"matrix"§) & §$ui.dot(color, pulseOrAnimOrOpts, size)§ & §$ui.dotAnim({ color, animation, count, size, speed })§
+- §$ui.commandDot(resolvedField, opts?)§, §$ui.commandValue(resolvedField, opts?)§ & §$ui.commandFieldStrip(resolvedCmd, opts?)§ — generic host-styled return value & dot animation renderers driven by §$metrix.command.resolve(id, record?)§
 - §$ui.empty({ icon, title, subtitle, actionLabel, onAction })§ & §$ui.skeleton(linesOrPreset)§ (supports §"hero"§ silhouette or numeric line count)
 - §$ui.footer(leftText, ...actions)§, §$ui.divider()§, §$ui.spacer()§
 
@@ -141,16 +143,16 @@ Always prefer semantic tokens over hardcoded §#000000§ / §#FFFFFF§:
 - **Text & Media**:
   - §Text§, §Icon§ (§name§ from §icon_catalog§ or inline §svg§, optional spin §keyframes§), §Image§ (§src: "data:image/png;base64,..."§, §width§, §height§, §radius§, §fit: "contain" | "cover"§).
 - **Status & Visualization**:
-  - §Badge§: §tone§ (§"accent"§|§"success"§|§"warning"§|§"danger"§|§"purple"§|§"cyan"§|§"neutral"§) auto-selects matched soft background + high-contrast text, §dot: true§, optional §background§/§textColor§.
-  - §StatusDot§: §color§, §size§, §pulse: true§ (halo status indicator).
+  - §Badge§: §tone§ (§"accent"§|§"success"§|§"warning"§|§"danger"§|§"purple"§|§"cyan"§|§"neutral"§) auto-selects matched soft background + high-contrast text, §dot: true§, §dotAnimation§, §pulse§, optional §background§/§textColor§.
+  - §StatusDot§: §color§, §size§ (4..16), §pulse: true§, §animation§ (§"none"§ | §"pulse"§ | §"ripple"§ | §"dots"§ | §"wave"§ | §"orbit"§ | §"blink"§ | §"matrix"§), §count§ (dots/wave/orbit/matrix count), §speed§ (0.25..4.0), §animate§ (default true).
   - §Progress§: §value§, §max§ (100), §height§, §style§ (§"solid"§ | §"gradient"§ | §"segmented"§ | §"matrix"§), §color§, §toColor§, §segments§, §animate§ (matrix shimmer).
-  - §Ring§: circular progress ring — §value§, §max§, §size§ (default 74), §thickness§, §style§ (§"solid"§ | §"gradient"§ | §"matrix"§), §color§, §toColor§, §label§, §sublabel§.
+  - §Ring§: circular progress ring — §value§, §max§ (100), §size§ (default 74), §thickness§, §style§ (§"solid"§ | §"gradient"§ | §"matrix"§), §color§, §toColor§, §label§, §sublabel§.
   - §Chart§: §type§ (§"line"§ | §"area"§ | §"bar"§ | §"sparkline"§), §height§, §curve: "monotone"§, §strokeWidth§, §xDomain§, §referenceLine§ (§number§ or §{ value, color }§), §series: [{ name, color, fill: { from, to }, points: [{ x, y }] }]§.
 - **Interactive Controls** (testable via MCP §bar_run§ / §bar_preview§ with §actionID§ + §actionArg§):
   - §Button§: §variant§ (§"primary"§ | §"danger"§ | §"soft"§ | §"ghost"§), §icon§, §disabled§, §onClick: () => ...§.
   - §Segmented§: §value§, §options: [{ value, label }]§, §onChange: val => ...§.
   - §Switch§: §checked§, §color§, §disabled§, §onChange: nextBool => ...§.
-  - §ListRow§: native clickable menu row — §icon§, §iconPlain: true§ (omit tinted box), §iconColor§, §iconBg§, §dot§, §pulse§, §title§, §subtitle§, §value§, §valueColor§, §badge§, §badgeTone§, §shortcut§, §chevron§, §active§, §disabled§, §onClick: () => ...§.
+  - §ListRow§: native clickable menu row — §icon§, §iconPlain: true§ (omit tinted box), §iconColor§, §iconBg§, §dot§, §dotAnimation§, §pulse§, §title§, §subtitle§, §value§, §valueColor§, §badge§, §badgeTone§, §shortcut§, §chevron§, §active§, §disabled§, §onClick: () => ...§.
   - §Input§: inline single-line filter/input — §value§, §placeholder§, §onChange: txt => ...§, §onSubmit: txt => ...§.
 
 ---
@@ -163,4 +165,5 @@ Always prefer semantic tokens over hardcoded §#000000§ / §#FFFFFF§:
   - §$metrix.invalidate()§, §$metrix.openURL(url)§, §$metrix.copy(text)§, §$metrix.log(...args)§
   - §$metrix.storage§: §get(k)§, §set(k, v)§, §delete(k)§, §clear()§, §keys()§
   - §$metrix.cookies§ (permission-checked): §get(url)§, §header(url)§, §set(url, name, value, opts?)§, §delete(url, name)§, §clear(url?)§
+  - §$metrix.command§ (requires §<command id="..."/>§ permission): §async run(id, params?)§ -> §Record§ (§{id, commandId, t, trigger, params, ok, exitCode, durationMs, stdout, stderr, json, extracted, error}§), §latest(id)§, §history(id, limit?)§, §style(id)§ -> custom §DisplayStyle§, §resolve(id, record?)§ -> §ResolvedCommand§ (resolves §format§ templates, §valueMap§, §fallback§, §thresholds§ & dot animations configurable via §cmd_style_set§ / §cmd_save§)
 `

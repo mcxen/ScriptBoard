@@ -122,6 +122,12 @@ func TestAllCustomNodesPreviewAndAuditWarnings(t *testing.T) {
 				{Type: "Progress", Props: map[string]any{"value": float64(70), "style": "matrix"}},
 				{Type: "Badge", Props: map[string]any{"tone": "purple", "dot": true}, Text: "PurpleTag"},
 				{Type: "StatusDot", Props: map[string]any{"color": "warning", "pulse": true}},
+				{Type: "StatusDot", Props: map[string]any{"color": "accent", "animation": "ripple", "size": float64(8)}},
+				{Type: "StatusDot", Props: map[string]any{"color": "success", "animation": "dots", "count": float64(5), "size": float64(6)}},
+				{Type: "StatusDot", Props: map[string]any{"color": "cyan", "animation": "wave", "count": float64(4), "size": float64(6)}},
+				{Type: "StatusDot", Props: map[string]any{"color": "purple", "animation": "orbit", "count": float64(3), "size": float64(7)}},
+				{Type: "StatusDot", Props: map[string]any{"color": "danger", "animation": "blink", "size": float64(8)}},
+				{Type: "StatusDot", Props: map[string]any{"color": "success", "animation": "matrix", "count": float64(5), "size": float64(5)}},
 				{Type: "Switch", Props: map[string]any{"checked": true}},
 				{Type: "Segmented", Props: map[string]any{"value": "a", "options": []any{"a", "b"}}},
 				{Type: "ListRow", Props: map[string]any{"icon": "key", "title": "RowItem", "shortcut": "Cmd+K", "chevron": true}},
@@ -215,6 +221,72 @@ func TestWeatherStyleAndNewPropsRenderCleanly(t *testing.T) {
 	wRes, err := RenderPreview(inst.Snapshot(), PreviewOptions{Dark: true, Vibrancy: true, Scale: 1, Material: sp.Material})
 	if err != nil || len(wRes.PNG) == 0 {
 		t.Fatalf("BuiltinWeatherBar RenderPreview failed: err=%v len=%d", err, len(wRes.PNG))
+	}
+
+	pingSpec, err := bar.Parse(bar.BuiltinPingBar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{"zh", "en"} {
+		for _, dark := range []bool{false, true} {
+			themeName := "light"
+			if dark {
+				themeName = "dark"
+			}
+			pInst, err := bar.NewInstance(pingSpec, bar.Options{DataDir: t.TempDir(), Offline: true, Lang: lang, Theme: themeName})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !pInst.WaitIdle(3 * time.Second) {
+				pInst.Close()
+				t.Fatalf("BuiltinPingBar WaitIdle timed out (%s/%s)", lang, themeName)
+			}
+			snap := pInst.Snapshot()
+			pInst.Close()
+			audit := AuditSnapshot(snap, pingSpec)
+			if !audit.OK {
+				t.Fatalf("BuiltinPingBar audit failed (%s/%s): %v", lang, themeName, audit.Warnings)
+			}
+			prev, err := RenderPreview(snap, PreviewOptions{Dark: dark, Vibrancy: true, Scale: 1, Material: pingSpec.Material})
+			if err != nil || len(prev.PNG) == 0 {
+				t.Fatalf("BuiltinPingBar RenderPreview failed (%s/%s): err=%v len=%d", lang, themeName, err, len(prev.PNG))
+			}
+		}
+	}
+
+	// Render animated StatusDot modes explicitly in both Light and Dark themes.
+	dotAnims := []string{"pulse", "ripple", "dots", "wave", "orbit", "blink", "matrix"}
+	dotChildren := make([]*bar.Node, 0, len(dotAnims))
+	for _, anim := range dotAnims {
+		dotChildren = append(dotChildren, &bar.Node{
+			Type:  "Row",
+			Props: map[string]any{"gap": float64(8), "alignItems": "center"},
+			Children: []*bar.Node{
+				{Type: "StatusDot", Props: map[string]any{"color": "accent", "animation": anim, "count": float64(5), "size": float64(7)}},
+				{Type: "Text", Props: map[string]any{"fontSize": float64(12)}, Text: anim},
+			},
+		})
+	}
+	animSnap := bar.Snapshot{
+		Panel: &bar.Node{
+			Type: "Column",
+			Props: map[string]any{
+				"preferredWidth": float64(300),
+				"padding":        float64(14),
+				"gap":            float64(8),
+			},
+			Children: dotChildren,
+		},
+	}
+	auditAnim := AuditSnapshot(animSnap, bar.Spec{ID: "dot-anims"})
+	if !auditAnim.OK || len(auditAnim.Warnings) > 0 {
+		t.Fatalf("dot animations visual audit failed: %+v", auditAnim)
+	}
+	for _, dark := range []bool{false, true} {
+		res, err := RenderPreview(animSnap, PreviewOptions{Dark: dark, Vibrancy: true, Scale: 1, Material: "glass"})
+		if err != nil || len(res.PNG) == 0 {
+			t.Fatalf("RenderPreview dot animations (dark=%v) failed: err=%v len=%d", dark, err, len(res.PNG))
+		}
 	}
 }
 

@@ -22,7 +22,7 @@ var navItems = []navItem{
 	{path: "/edit", icon: "pencil-line", label: "组件管理", also: []string{"/edit/"}},
 	{path: "/bar", icon: "sparkles", label: "菜单管理", also: []string{"/bar/"}},
 	{path: "/community", icon: "users", label: "社区"},
-	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds"}},
+	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds", "/commands"}},
 }
 
 // mainNavItems are the pages that live inside the main window; settings opens
@@ -136,6 +136,9 @@ func (a *app) view(c *ui.Context) {
 					case r.Match("/feeds"):
 						r.Title(tr("数据源"))
 						a.feedsPage(c, compact)
+					case r.Match("/commands"):
+						r.Title(tr("命令任务"))
+						a.commandsPage(c, compact)
 					case r.Match("/community"):
 						r.Title(tr("社区"))
 						a.community(c, compact)

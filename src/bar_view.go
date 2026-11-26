@@ -787,6 +787,9 @@ func (a *app) barSourceSection(c *ui.Context, p palette, sc store.Script, sp bar
 				}
 				ui.Text(c, tr("联网权限：")+strings.Join(hosts, ", ")).FontSize(fsTiny).TextColor(p.faint)
 			}
+			if len(sp.CommandPerms) > 0 {
+				ui.Text(c, tr("命令权限：")+strings.Join(sp.CommandPerms, ", ")).FontSize(fsTiny).TextColor(p.faint)
+			}
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Padding(2, 0, 0, 0).Children(func() {
 				ui.Spacer(c)
 				if safeURL(sp.Homepage) {
