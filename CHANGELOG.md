@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+- Unified component refresh progress & completion feedback across Home cards, Cover cards, Hover bars, Full View, Menu Bar flyout cards, and Component Studio: adds animated spinning states, determinate multi-step progress rings/bars, timed green `✓` success and red `!` error/stale-cache indicators, and full English localization.
+- `.bar` runtime & UIKit refresh lifecycle: exposes `Snapshot.Refreshing` and `env.refreshing` across `scheduled()` runs, adds `status` (`"loading"` / `"ok"` / `"error"`) rendering to `$ui.iconButton`, `topBar`, and `header`, and tracks manual refresh outcomes in the built-in Weather `.bar`.
+- Zero-layout-shift refresh polish: stabilizes refresh button geometry across Modern and Mac OS 9 skins in Chinese and English, adds `shrink: 0` guards on `.bar` icon buttons, removes the transient `"更新中…"` row during in-place Home card refreshes, and adds automated layout-invariance tests (`TestRefreshZeroLayoutShift`).
+
 ## 0.1.15
 
 - Role-aware dark mode color & contrast adaptation engine (`src/internal/colortheme`): adds WCAG 2.1 contrast enforcement across semantic roles (`RoleText`, `RoleMuted`, `RoleSurface`, `RoleBorder`, `RoleAccent`), automatic neutral light/dark inversion, pastel badge surface tinting, nested surface polarity tracking (`WithSurface`), `OnColor` ink selection, and unified CSS hex / `rgb()` / `rgba()` / named color parsing.
