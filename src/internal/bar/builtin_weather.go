@@ -44,6 +44,7 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
       humidity: mkSvg(p("M7 16.3c2.2 0 4-1.83 4-4.05c0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05") + p("M12.56 6.6A11 11 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97")),
       rainChance: mkSvg(p("M12 13v7a2 2 0 0 0 4 0M12 2v2") + p("M20.992 13a1 1 0 0 0 .97-1.274a10.284 10.284 0 0 0-19.923 0A1 1 0 0 0 3 13z")),
       refresh: mkSvg(p("M3 12a9 9 0 0 1 9-9a9.75 9.75 0 0 1 6.74 2.74L21 8") + p("M21 3v5h-5m5 4a9 9 0 0 1-9 9a9.75 9.75 0 0 1-6.74-2.74L3 16") + p("M8 16H3v5")),
+      check: mkSvg(p("M20 6 9 17l-5-5")),
       pin: mkSvg(p("M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0") + '<circle cx="12" cy="10" r="3"/>'),
       alert: mkSvg('<circle cx="12" cy="12" r="10"/>' + p("M12 8v4m0 4h.01")),
       external: mkSvg(p("M7 7h10v10M7 17L17 7")),
@@ -85,6 +86,8 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
     let state = null;
     let lastError = null;
     let pending = null;
+    let refreshStatus = "";
+    let refreshTimer = null;
     const geoCache = new Map();
 
     function mustNum(v) {
@@ -196,20 +199,37 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
       };
     }
 
-    function triggerLoad(env) {
+    function triggerLoad(env, manual) {
       if (pending) return pending;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+      refreshStatus = "";
+      const trackOutcome = !!manual;
       pending = fetchWeather(env)
         .then(next => {
           state = next;
           lastError = null;
+          if (trackOutcome) refreshStatus = "ok";
         })
         .catch(err => {
           lastError = String((err && err.message) || err);
+          if (trackOutcome) refreshStatus = "error";
         })
         .finally(() => {
           pending = null;
           $metrix.invalidate();
+          if (refreshStatus) {
+            refreshTimer = setTimeout(() => {
+              refreshTimer = null;
+              refreshStatus = "";
+              $metrix.invalidate();
+            }, 2500);
+            if (refreshTimer && refreshTimer.unref) refreshTimer.unref();
+          }
         });
+      $metrix.invalidate();
       return pending;
     }
 
@@ -220,19 +240,21 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
     const skelBox = (w, hgt, extra) =>
       h("Box", { width: w, height: hgt, radius: 4, background: "surfaceHover", ...extra });
 
-    function actionBtn(svgStr, tip, onClick, spin) {
+    function actionBtn(svgStr, tip, onClick, spin, tint, bg) {
       return h(
         "Column",
         {
           width: 26,
           height: 26,
+          shrink: 0,
           radius: 7,
           alignItems: "center",
           justify: "center",
+          ...(bg ? { background: bg } : {}),
           hover: { background: "surfaceHover" },
           pressed: { background: "surfacePressed" },
           tooltip: tip,
-          onClick,
+          ...(onClick ? { onClick } : {}),
         },
         h("Icon", {
           svg: svgStr,
@@ -240,10 +262,23 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
           width: 14,
           height: 14,
           shrink: 0,
-          textColor: "textMuted",
-          ...(spin ? { keyframes: { duration: 900, repeat: -1, ease: "linear", frames: [{ at: 0, rotate: 0 }, { at: 1, rotate: 360 }] } } : {}),
+          textColor: tint || "textMuted",
+          ...(spin ? { keyframes: { duration: 850, repeat: -1, ease: "linear", frames: [{ at: 0, rotate: 0 }, { at: 1, rotate: 360 }] } } : {}),
         })
       );
+    }
+
+    function refreshActionBtn(onRefresh) {
+      if (pending) {
+        return actionBtn(GLYPHS.refresh, "Refreshing...", null, true, "accent", "accentSurface");
+      }
+      if (refreshStatus === "ok") {
+        return actionBtn(GLYPHS.check, "Updated", onRefresh, false, "success", "successSurface");
+      }
+      if (refreshStatus === "error") {
+        return actionBtn(GLYPHS.alert, lastError ? "Refresh failed: " + lastError : "Refresh failed", onRefresh, false, "danger", "dangerSurface");
+      }
+      return actionBtn(GLYPHS.refresh, "Refresh", onRefresh, false);
     }
 
     function headerRow(place, fallbackName, onRefresh) {
@@ -255,7 +290,7 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
         place && place.region ? mutedText(place.region, { singleLine: true, shrink: 1 }) : null,
         h("Spacer"),
         actionBtn(GLYPHS.external, "Weather data by Open-Meteo.com", () => $metrix.openURL("https://open-meteo.com/")),
-        actionBtn(GLYPHS.refresh, "Refresh", onRefresh, !!pending)
+        refreshActionBtn(onRefresh)
       );
     }
 
@@ -399,7 +434,7 @@ const BuiltinWeatherBar = `<bar protocol-version="0" version="1.0.0" id="sb-weat
         await triggerLoad(env);
       },
       render(env) {
-        const refresh = () => { void triggerLoad(env); };
+        const refresh = () => { void triggerLoad(env, true); };
         const cond = state ? conditionFor(state.code, state.day) : null;
         const tray = {
           title: state ? fmtDeg(state.temp) : "",

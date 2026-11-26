@@ -292,7 +292,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// The buttons show while the pointer is on the card. A touch screen has no
 	// pointer; a refresh under way and the edit layout show them too, and so does
 	// a script that asks for them (layout actions: "always").
-	showActions := box.Hovered() || lay.Actions == "always" || a.touchUI() || a.editing || a.refreshing[sc.ID]
+	showActions := box.Hovered() || lay.Actions == "always" || a.touchUI() || a.editing || a.refreshActive(sc.ID)
 	// A card is its content: its name is in a row of its own only when the layout
 	// asks (title: "show"), and shows over it, with the buttons, on hover. The
 	// height the row would take goes to the chart.

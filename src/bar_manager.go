@@ -243,8 +243,9 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 		Offline:    a.set.Offline,
 		DataDir:    bar.ComponentDataDir(a.dataDir, id),
 		OnCopyText: func(s string) { a.post(func() { copyText(s) }) },
-		OnUpdate: func(_ bar.Snapshot) {
+		OnUpdate: func(snap bar.Snapshot) {
 			a.post(func() {
+				a.onBarUpdate(id, snap)
 				a.syncBarMenuBar()
 			})
 		},
@@ -261,13 +262,25 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 	return inst, sp, nil
 }
 
+func (a *app) onBarUpdate(id string, snap bar.Snapshot) {
+	if !snap.Refreshing && a.refreshing[id] {
+		a.finishRefresh(id, snap.Error == "", snap.Error)
+	}
+}
+
 func (a *app) refreshBar(id string) {
+	if a.isRefreshing(id) {
+		return
+	}
+	a.beginRefresh(id, 1)
 	sc, ok := a.store.Script(id)
 	if !ok || !sc.IsBar() {
+		a.finishRefresh(id, false, tr("找不到组件"))
 		return
 	}
 	inst, _, err := a.ensureBarInstance(sc)
 	if err != nil {
+		a.finishRefresh(id, false, err.Error())
 		return
 	}
 	inst.SetOffline(a.set.Offline)

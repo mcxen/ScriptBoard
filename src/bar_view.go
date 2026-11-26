@@ -320,7 +320,16 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 		subParts = append(subParts, cat)
 	}
 	subParts = append(subParts, "v"+ver)
-	subParts = append(subParts, fmt.Sprintf(tr("更新于 %s"), barRelativeTime(snap.UpdatedAt, a.now())))
+	switch st := a.refreshStateOf(sc.ID); st.phase {
+	case refreshRunning:
+		subParts = append(subParts, tr("刷新中…"))
+	case refreshOK:
+		subParts = append(subParts, tr("已刷新"))
+	case refreshError:
+		subParts = append(subParts, tr("刷新失败"))
+	default:
+		subParts = append(subParts, fmt.Sprintf(tr("更新于 %s"), barRelativeTime(snap.UpdatedAt, a.now())))
+	}
 	subtitle := strings.Join(subParts, " · ")
 
 	// Top header bar
@@ -343,9 +352,9 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 					pl.Enabled = enabled
 					a.setBarPlacement(sc.ID, pl)
 				}
-				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
+				a.refreshGhostButton(c, "bar-ws-ref:"+sc.ID, sc.ID, func() {
 					a.refreshBar(sc.ID)
-				}
+				})
 				if ghostIconBtn(c, barMoreSVG, tr("更多操作"), barMoreOpen).Clicked() {
 					barMoreOpen = !barMoreOpen
 				}
@@ -785,9 +794,9 @@ func (a *app) barSourceSection(c *ui.Context, p palette, sc store.Script, sp bar
 						_ = mygo.Shell.OpenExternal(sp.Homepage)
 					}
 				}
-				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
+				a.refreshGhostButton(c, "bar-src-ref:"+sc.ID, sc.ID, func() {
 					a.refreshBar(sc.ID)
-				}
+				})
 			})
 		})
 	})
@@ -883,11 +892,10 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 				if sw(c, &enabled).Changed() {
 					a.toggleMenuBar(sc.ID)
 				}
-				if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
-					a.forced[sc.ID] = true
-					a.invalidate(sc.ID)
+				a.refreshGhostButton(c, "sc-ws-ref:"+sc.ID, sc.ID, func() {
+					a.refreshScript(sc)
 					a.syncMenuBar()
-				}
+				})
 				if ghostIconBtn(c, barMoreSVG, tr("更多操作"), barMoreOpen).Clicked() {
 					barMoreOpen = !barMoreOpen
 				}
@@ -1052,11 +1060,10 @@ func (a *app) scriptMenuWorkspace(c *ui.Context, p palette, sc store.Script, com
 						a.router.Push("/edit/" + sc.ID)
 					}
 					ui.Spacer(c)
-					if ghostIconBtn(c, icon("refresh-cw"), tr("刷新"), false).Clicked() {
-						a.forced[sc.ID] = true
-						a.invalidate(sc.ID)
+					a.refreshGhostButton(c, "sc-src-ref:"+sc.ID, sc.ID, func() {
+						a.refreshScript(sc)
 						a.syncMenuBar()
-					}
+					})
 				})
 			})
 		})
@@ -1103,15 +1110,9 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 			if st.res.MenuBar != nil && st.res.MenuBar.Title != "" {
 				chip(c, st.res.MenuBar.Title, th.accent, th.accent.Alpha(0.14))
 			}
-			refBtn := ui.ButtonBase(c.Key("sc-ref:"+sc.ID)).Size(26, 26).Radius(7).AlignItems(ui.Center).Justify(ui.Center).Cursor(ui.CursorPointer).Tooltip(tr("刷新"))
-			if refBtn.Hovered() {
-				refBtn = refBtn.Background(th.surfaceHover)
-			}
-			if refBtn.Children(func() {
-				ui.Icon(c, icon("refresh-cw")).FontSize(13).TextColor(th.textMuted)
-			}).Clicked() {
+			a.refreshIconButton(c, "sc-ref:"+sc.ID, sc.ID, tr("刷新"), 26, 13, true, th.surfaceHover, th.textMuted, th.accent, th.success, th.danger, func() {
 				a.refreshScript(sc)
-			}
+			})
 		})
 		switch {
 		case st.loading:

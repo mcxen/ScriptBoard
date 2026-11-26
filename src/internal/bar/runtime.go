@@ -648,6 +648,16 @@ func (inst *Instance) ReloadState() error {
 	return errors.Join(err1, err2)
 }
 
+// Refreshing reports whether scheduled(env) is currently in flight.
+func (inst *Instance) Refreshing() bool {
+	if inst == nil {
+		return false
+	}
+	inst.mu.RLock()
+	defer inst.mu.RUnlock()
+	return inst.schedRunning
+}
+
 // Snapshot returns the latest UI + tray snapshot.
 func (inst *Instance) Snapshot() Snapshot {
 	inst.mu.RLock()
@@ -932,28 +942,41 @@ func (inst *Instance) Close() {
 	}
 }
 
-func (inst *Instance) startScheduled() {
+func (inst *Instance) startScheduled(r *moejs.Runtime) {
 	inst.mu.Lock()
 	inst.schedRunning = true
+	inst.snap.Refreshing = true
 	inst.mu.Unlock()
+	if r != nil {
+		inst.renderNow(r)
+	}
+	inst.notifyUpdate()
 }
 
-func (inst *Instance) finishScheduled() {
+func (inst *Instance) finishScheduled(r *moejs.Runtime, asyncErr string) {
 	inst.mu.Lock()
+	if asyncErr != "" {
+		inst.asyncErr = asyncErr
+	}
 	inst.schedRunning = false
+	inst.snap.Refreshing = false
 	waiters := inst.schedWaiters
 	inst.schedWaiters = nil
 	inst.mu.Unlock()
+	if r != nil {
+		inst.renderNow(r)
+	}
+	inst.notifyUpdate()
 	for _, ch := range waiters {
 		close(ch)
 	}
 }
 
 func envJSONValue(r *moejs.Runtime, spec Spec, inputs map[string]string, lang string) (moejs.Value, error) {
-	return envJSONValueWithAppearance(r, spec, inputs, lang, "dark", false)
+	return envJSONValueWithAppearance(r, spec, inputs, lang, "dark", false, false)
 }
 
-func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]string, lang, theme string, vibrancy bool) (moejs.Value, error) {
+func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]string, lang, theme string, vibrancy, refreshing bool) (moejs.Value, error) {
 	if lang == "" {
 		lang = "en"
 	}
@@ -978,11 +1001,12 @@ func envJSONValueWithAppearance(r *moejs.Runtime, spec Spec, inputs map[string]s
 		}
 	}
 	b, err := json.Marshal(map[string]any{
-		"inputs":   typedInputs,
-		"lang":     lang,
-		"theme":    normalizeBarTheme(theme),
-		"vibrancy": vibrancy,
-		"platform": runtime.GOOS,
+		"inputs":     typedInputs,
+		"lang":       lang,
+		"theme":      normalizeBarTheme(theme),
+		"vibrancy":   vibrancy,
+		"refreshing": refreshing,
+		"platform":   runtime.GOOS,
 	})
 	if err != nil {
 		return moejs.Undefined(), err
@@ -999,8 +1023,9 @@ func (inst *Instance) envValue(r *moejs.Runtime) (moejs.Value, error) {
 	lang := inst.lang
 	theme := inst.theme
 	vibrancy := inst.vibrancy
+	refreshing := inst.schedRunning
 	inst.mu.RUnlock()
-	return envJSONValueWithAppearance(r, inst.spec, rawInputs, lang, theme, vibrancy)
+	return envJSONValueWithAppearance(r, inst.spec, rawInputs, lang, theme, vibrancy, refreshing)
 }
 
 func (inst *Instance) renderNow(r *moejs.Runtime) {
@@ -1039,6 +1064,7 @@ func (inst *Instance) renderNow(r *moejs.Runtime) {
 	}
 	inst.mu.Lock()
 	snap.UpdatedAt = time.Now()
+	snap.Refreshing = inst.schedRunning
 	if snap.Error == "" && snap.Tray != nil && snap.Tray.Error != "" {
 		snap.Error = snap.Tray.Error
 	}
@@ -1062,50 +1088,43 @@ func (inst *Instance) runScheduled(r *moejs.Runtime) {
 	}
 	schedFn, err := r.Get(defVal, "scheduled")
 	if err != nil || !engine.IsCallable(schedFn) {
-		inst.renderNow(r)
-		inst.notifyUpdate()
-		return
-	}
-	envVal, err := inst.envValue(r)
-	if err != nil {
-		inst.recordError(err.Error())
+		inst.startScheduled(nil)
+		inst.finishScheduled(r, "")
 		return
 	}
 	inst.mu.Lock()
 	inst.asyncErr = ""
 	inst.mu.Unlock()
 
-	inst.startScheduled()
+	inst.startScheduled(r)
+	envVal, err := inst.envValue(r)
+	if err != nil {
+		inst.finishScheduled(r, err.Error())
+		return
+	}
 	ret, err := r.CallFunction(schedFn, defVal, envVal)
 	if err != nil {
-		inst.recordError(err.Error())
-		inst.finishScheduled()
+		inst.finishScheduled(r, err.Error())
 		return
 	}
 	if ret.IsObject() {
 		thenFn, err := r.Get(ret, "then")
 		if err == nil && engine.IsCallable(thenFn) {
 			onResolve := r.Function("onResolve", 0, func(_ *moejs.Realm, _ moejs.Value, _ []moejs.Value) (moejs.Value, error) {
-				inst.renderNow(r)
-				inst.notifyUpdate()
-				inst.finishScheduled()
+				inst.finishScheduled(r, "")
 				return moejs.Undefined(), nil
 			})
 			onReject := r.Function("onReject", 1, func(realm *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
-				inst.recordError(extractJSError(r, realm, args))
-				inst.finishScheduled()
+				inst.finishScheduled(r, extractJSError(r, realm, args))
 				return moejs.Undefined(), nil
 			})
 			if _, callErr := r.CallFunction(thenFn, ret, onResolve, onReject); callErr != nil {
-				inst.recordError(callErr.Error())
-				inst.finishScheduled()
+				inst.finishScheduled(r, callErr.Error())
 			}
 			return
 		}
 	}
-	inst.renderNow(r)
-	inst.notifyUpdate()
-	inst.finishScheduled()
+	inst.finishScheduled(r, "")
 }
 
 func extractJSError(r *moejs.Runtime, realm *moejs.Realm, args []moejs.Value) string {

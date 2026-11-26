@@ -12,11 +12,12 @@ import (
 
 // Snapshot is the immutable UI + tray tree produced by a render(env) call.
 type Snapshot struct {
-	Tray      *TraySpec `json:"tray,omitempty"`
-	Panel     *Node     `json:"panel,omitempty"`
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	Logs      []string  `json:"logs,omitempty"`
+	Tray       *TraySpec `json:"tray,omitempty"`
+	Panel      *Node     `json:"panel,omitempty"`
+	Refreshing bool      `json:"refreshing,omitempty"`
+	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	Logs       []string  `json:"logs,omitempty"`
 }
 
 // TraySpec describes the menu bar / tray icon, title, tooltip and menu.

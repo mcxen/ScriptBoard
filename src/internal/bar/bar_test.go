@@ -231,6 +231,90 @@ func TestInstanceLiveCycleAndActions(t *testing.T) {
 	if !hasText(snapImp.Panel, "52°") {
 		t.Fatalf("expected 52° in imperial panel")
 	}
+
+	// Clicking Refresh on Weather bar shows Updated check state after completion.
+	refBtnID := findTooltipAction(snapImp.Panel, "Refresh")
+	if refBtnID == "" {
+		t.Fatal("expected Refresh action after UpdateInputs")
+	}
+	inst.InvokeAction(refBtnID)
+	snapUpdated := waitSnapshot(t, updates, func(s Snapshot) bool {
+		return findTooltipAction(s.Panel, "Updated") != ""
+	})
+	if snapUpdated.Panel == nil {
+		t.Fatal("expected updated weather panel")
+	}
+}
+
+func TestRefreshLifecycleFlagAndEnv(t *testing.T) {
+	gate := make(chan struct{})
+	raw := `<bar protocol-version="0" id="ref-life" title="RefLife" version="1.0.0">
+  <permissions>
+    <network origin="https://example.com" />
+  </permissions>
+  <script><![CDATA[
+    export default {
+      async scheduled() {
+        const resp = await fetch("https://example.com/data");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+      },
+      render(env) {
+        return { panel: h("Text", {}, env.refreshing ? "loading" : "idle") };
+      }
+    };
+  ]]></script>
+</bar>`
+	spec, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failReq atomic.Bool
+	updates := make(chan Snapshot, 16)
+	inst, err := NewInstance(spec, Options{
+		Client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			<-gate
+			if failReq.Load() {
+				return jsonResponse(500, `{}`), nil
+			}
+			return jsonResponse(200, `{}`), nil
+		})},
+		OnUpdate: func(s Snapshot) {
+			select {
+			case updates <- s:
+			default:
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+
+	// Initial scheduled run is gated; Refreshing should be true and panel text "loading".
+	snapLoading := waitSnapshot(t, updates, func(s Snapshot) bool {
+		return s.Refreshing && s.Panel != nil && s.Panel.Text == "loading"
+	})
+	if !snapLoading.Refreshing {
+		t.Fatal("expected Refreshing=true while scheduled is gated")
+	}
+
+	close(gate)
+	snapDone := waitSnapshot(t, updates, func(s Snapshot) bool {
+		return !s.Refreshing && s.Panel != nil && s.Panel.Text == "idle"
+	})
+	if snapDone.Error != "" {
+		t.Fatalf("unexpected error on success refresh: %q", snapDone.Error)
+	}
+
+	// Next Refresh() fails and should report Error with Refreshing=false.
+	failReq.Store(true)
+	inst.Refresh()
+	snapErr := waitSnapshot(t, updates, func(s Snapshot) bool {
+		return !s.Refreshing && strings.Contains(s.Error, "HTTP 500")
+	})
+	if snapErr.Error == "" {
+		t.Fatal("expected Error after failed scheduled()")
+	}
 }
 
 func TestInstanceBlocksUnauthorizedOrigin(t *testing.T) {

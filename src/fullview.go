@@ -112,9 +112,7 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 					sw(c, &a.big)
 				})
 			}
-			if btn(c, tr("刷新")).Clicked() {
-				a.refreshScript(sc)
-			}
+			a.refreshTextButton(c, sc.ID, func() { a.refreshScript(sc) })
 			a.resetButton(c, sc)
 			if btn(c, tr("编辑")).Clicked() {
 				a.router.Push("/edit/" + sc.ID)
@@ -355,12 +353,12 @@ func (a *app) fullView(c *ui.Context, id string, compact bool) {
 		}
 		a.infoBlock(c, sc, meta, compact)
 	})
-	if a.fullRefresh.Refreshing && !a.refreshing[sc.ID] {
+	if a.fullRefresh.Refreshing && !a.isRefreshing(sc.ID) {
 		a.fullRefresh.Refreshing = false
 	}
 	if pageEl.PullToRefresh(&a.fullRefresh) {
 		a.refreshScript(sc)
-		if !a.refreshing[sc.ID] {
+		if !a.isRefreshing(sc.ID) {
 			a.fullRefresh.Refreshing = false
 		}
 	}

@@ -183,10 +183,7 @@ func ageText(ms int64, now time.Time) string {
 // request that failed or was not made offline.
 func (a *app) freshness(c *ui.Context, st *runState, size int) {
 	p := pal(c)
-	switch {
-	case st.updating:
-		ui.Text(c, tr("更新中…")).FontSize(fsTiny).TextColor(p.muted).NoWrap()
-	case st.old || st.res.Stale:
+	if st.res.Stale || (st.old && !st.updating) {
 		if age := ageText(st.res.DataAt, a.now()); age != "" {
 			ui.Text(c, fmt.Sprintf(tr("缓存 · %s"), age)).FontSize(fsTiny).TextColor(p.muted).NoWrap()
 		}

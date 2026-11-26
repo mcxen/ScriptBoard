@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -147,4 +149,431 @@ func TestFeedHealthOnThePage(t *testing.T) {
 	requireText(t, tt, "Data sources")
 	onlyEnglish(t, tt, "feeds")
 	savePNG(t, tt, "15-feeds-health-en")
+}
+
+func TestRefreshProgressAndSuccessFeedback(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"n": %d}`, hits.Add(1))
+	}))
+	defer srv.Close()
+
+	a := newTestApp(t)
+	now := time.Date(2026, 11, 26, 15, 0, 0, 0, time.UTC)
+	a.now = func() time.Time { return now }
+	st := a.store.Settings()
+	st.Offline = false
+	_ = a.store.SetSettings(st)
+	a.set = st
+
+	sc := store.Script{
+		ID: "ref-ok", Name: "刷新成功测试", Home: true,
+		Source: `export function meta() { return { name: "刷新成功测试", sources: { api: "` + srv.URL + `/n" } }; }
+export function render(ctx) { return { title: "刷新成功测试", big: String(ctx.sources.api.n) }; }`,
+	}
+	_ = a.store.SaveScript(sc)
+	showOnly(a, sc.ID)
+
+	tt := ui.NewTester(a.view, 1100, 900)
+	settle(tt)
+	requireText(t, tt, "1")
+
+	hover(t, tt, "刷新数据")
+	click(t, tt, "刷新数据")
+
+	if got := a.refreshStateOf(sc.ID); got.phase != refreshOK {
+		t.Fatalf("expected refreshOK, got %+v", got)
+	}
+	if !a.refreshActive(sc.ID) || a.isRefreshing(sc.ID) {
+		t.Fatalf("unexpected active=%v running=%v", a.refreshActive(sc.ID), a.isRefreshing(sc.ID))
+	}
+	if tip := refreshTooltip(tr("刷新数据"), a.refreshStateOf(sc.ID)); tip != tr("已刷新") {
+		t.Fatalf("tooltip = %q, want %q", tip, tr("已刷新"))
+	}
+
+	a.router.Push("/full/" + sc.ID)
+	settle(tt)
+	requireText(t, tt, "已刷新")
+
+	// Advancing past refreshOKDuration clears completion state back to idle.
+	now = now.Add(refreshOKDuration + time.Millisecond)
+	if got := a.refreshStateOf(sc.ID); got.phase != refreshIdle {
+		t.Fatalf("expected refreshIdle after expiry, got %+v", got)
+	}
+	if a.refreshActive(sc.ID) {
+		t.Fatal("expected refreshActive false after expiry")
+	}
+	settle(tt)
+	requireText(t, tt, "刷新")
+}
+
+func TestRefreshErrorAndStaleFeedback(t *testing.T) {
+	var fail atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			http.Error(w, "upstream down", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprint(w, `{"n": 42}`)
+	}))
+	defer srv.Close()
+
+	a := newTestApp(t)
+	now := time.Date(2026, 11, 26, 15, 0, 0, 0, time.UTC)
+	a.now = func() time.Time { return now }
+	st := a.store.Settings()
+	st.Offline = false
+	_ = a.store.SetSettings(st)
+	a.set = st
+
+	sc := store.Script{
+		ID: "ref-err", Name: "刷新失败测试", Home: true,
+		Source: `export function meta() { return { name: "刷新失败测试", sources: { api: "` + srv.URL + `/n" } }; }
+export function render(ctx) { return { title: "刷新失败测试", big: ctx.sources.api && ctx.sources.api.n ? String(ctx.sources.api.n) : "" }; }`,
+	}
+	_ = a.store.SaveScript(sc)
+	showOnly(a, sc.ID)
+
+	tt := ui.NewTester(a.view, 1100, 900)
+	settle(tt)
+	requireText(t, tt, "42")
+
+	fail.Store(true)
+	hover(t, tt, "刷新数据")
+	click(t, tt, "刷新数据")
+
+	got := a.refreshStateOf(sc.ID)
+	if got.phase != refreshError {
+		t.Fatalf("expected refreshError on failed HTTP refresh, got %+v", got)
+	}
+	if tip := refreshTooltip(tr("刷新数据"), got); !strings.Contains(tip, tr("刷新失败")) {
+		t.Fatalf("expected failure tooltip, got %q", tip)
+	}
+
+	a.router.Push("/full/" + sc.ID)
+	settle(tt)
+	requireText(t, tt, "刷新失败")
+
+	now = now.Add(refreshErrorDuration + time.Millisecond)
+	if a.refreshStateOf(sc.ID).phase != refreshIdle {
+		t.Fatal("expected refreshIdle after error expiry")
+	}
+}
+
+func TestRefreshDeterminateStepProgress(t *testing.T) {
+	a := newTestApp(t)
+	a.beginRefresh("multi", 3)
+	a.advanceRefresh("multi", 1, "")
+
+	st := a.refreshStateOf("multi")
+	if st.phase != refreshRunning || st.step != 1 || st.total != 3 {
+		t.Fatalf("unexpected step state: %+v", st)
+	}
+	if tip := refreshTooltip(tr("刷新数据"), st); tip != "刷新中 1/3…" {
+		t.Fatalf("step tooltip = %q, want %q", tip, "刷新中 1/3…")
+	}
+
+	for _, dark := range []bool{false, true} {
+		dark := dark
+		tt := ui.NewTester(func(c *ui.Context) {
+			if dark {
+				setThemeMode(themeDark)
+			} else {
+				setThemeMode(themeLight)
+			}
+			applySkin(c)
+			ui.Row(c).Gap(8).Padding(12).Children(func() {
+				a.refreshButton(c, store.Script{ID: "multi"}, true)
+				a.refreshTextButton(c, "multi", func() {})
+			})
+		}, 280, 80)
+		tt.Frame()
+		tt.Advance(80 * time.Millisecond)
+		tt.Frame()
+		requireText(t, tt, "1/3")
+	}
+	setThemeMode(themeSystem)
+}
+
+func TestRefreshBarTracksLifecycleAndOutcome(t *testing.T) {
+	a := newTestApp(t)
+	t.Cleanup(a.closeBarInstances)
+	st := a.store.Settings()
+	st.Offline = false
+	_ = a.store.SetSettings(st)
+	a.set = st
+
+	var fail atomic.Bool
+	a.client = &http.Client{
+		Transport: testRoundTrip(func(req *http.Request) (*http.Response, error) {
+			if fail.Load() {
+				return &http.Response{StatusCode: 503, Header: make(http.Header), Body: http.NoBody}, nil
+			}
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       http.NoBody,
+			}, nil
+		}),
+	}
+
+	raw := `<bar protocol-version="0" id="bar-ref-test" title="BarRefTest" version="1.0.0">
+  <permissions><network origin="https://example.com" /></permissions>
+  <script><![CDATA[
+    export default {
+      async scheduled() {
+        const resp = await fetch("https://example.com/ping");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+      },
+      render(env) {
+        return { panel: h("Column", { preferredWidth: 260 }, h("Text", {}, env.refreshing ? "loading" : "ready")) };
+      }
+    };
+  ]]></script>
+</bar>`
+	sc := store.Script{ID: "bar-ref-test", Name: "BarRefTest", Source: raw, Kind: store.KindBar}
+	_ = a.store.SaveScript(sc)
+
+	inst, _, err := a.ensureBarInstance(sc)
+	if err != nil {
+		t.Fatalf("ensureBarInstance: %v", err)
+	}
+	if !inst.WaitIdle(3 * time.Second) {
+		t.Fatal("initial WaitIdle timed out")
+	}
+
+	a.refreshBar(sc.ID)
+	if !inst.WaitIdle(3 * time.Second) {
+		t.Fatal("ok refresh WaitIdle timed out")
+	}
+	a.onBarUpdate(sc.ID, inst.Snapshot())
+	if got := a.refreshStateOf(sc.ID); got.phase != refreshOK {
+		t.Fatalf("expected bar refreshOK, got %+v", got)
+	}
+
+	// Clear state and test failed refresh.
+	delete(a.refreshStates, sc.ID)
+	fail.Store(true)
+	a.refreshBar(sc.ID)
+	if !inst.WaitIdle(3 * time.Second) {
+		t.Fatal("err refresh WaitIdle timed out")
+	}
+	a.onBarUpdate(sc.ID, inst.Snapshot())
+	if got := a.refreshStateOf(sc.ID); got.phase != refreshError || !strings.Contains(got.errMsg, "HTTP 503") {
+		t.Fatalf("expected bar refreshError with HTTP 503, got %+v", got)
+	}
+}
+
+func TestRefreshFeedbackEnglishI18N(t *testing.T) {
+	a := newTestApp(t)
+	setLang(langEN)
+	defer setLang(langZH)
+	tt := ui.NewTester(func(c *ui.Context) {
+		applySkin(c)
+		ui.Column(c).Gap(8).Padding(12).Children(func() {
+			a.refreshTextButton(c, "idle", func() {})
+			a.refreshTextButton(c, "run-single", func() {})
+			a.refreshTextButton(c, "run", func() {})
+			a.refreshTextButton(c, "ok", func() {})
+			a.refreshTextButton(c, "err", func() {})
+		})
+	}, 300, 240)
+
+	a.beginRefresh("run-single", 1)
+	a.beginRefresh("run", 2)
+	a.advanceRefresh("run", 1, "")
+	a.beginRefresh("ok", 1)
+	a.finishRefresh("ok", true, "")
+	a.beginRefresh("err", 1)
+	a.finishRefresh("err", false, "boom")
+
+	if tip := refreshTooltip(tr("刷新数据"), a.refreshStateOf("run")); tip != "Refreshing 1/2…" {
+		t.Fatalf("multi-step tooltip = %q, want %q", tip, "Refreshing 1/2…")
+	}
+
+	tt.Frame()
+	tt.Advance(40 * time.Millisecond)
+	tt.Frame()
+	requireText(t, tt, "Refresh")
+	requireText(t, tt, "Refreshing…")
+	requireText(t, tt, "1/2")
+	requireText(t, tt, "Refreshed")
+	requireText(t, tt, "Refresh failed")
+	onlyEnglish(t, tt, "refresh-feedback")
+}
+
+func TestRefreshZeroLayoutShift(t *testing.T) {
+	approx := func(a, b float32) bool {
+		d := a - b
+		if d < 0 {
+			d = -d
+		}
+		return d <= 0.01
+	}
+	assertSameBounds := func(t *testing.T, label string, base, got ui.Rect) {
+		t.Helper()
+		if !approx(base.X, got.X) || !approx(base.Y, got.Y) || !approx(base.W, got.W) || !approx(base.H, got.H) {
+			t.Fatalf("%s layout shifted: want %+v, got %+v", label, base, got)
+		}
+	}
+
+	// 1. Full-view action bar invariance across all phases, languages, and skins.
+	defer setLang(langZH)
+	defer setSkin(skinDefault)
+	for _, lang := range []string{langZH, langEN} {
+		for _, sk := range []string{skinDefault, skinMac9} {
+			lang, sk := lang, sk
+			a := newTestApp(t)
+			setLang(lang)
+			setSkin(sk)
+			tt := ui.NewTester(func(c *ui.Context) {
+				applySkin(c)
+				ui.Row(c).Padding(12).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, tr("大图")).FontSize(fsCaption).NoWrap()
+					a.refreshTextButton(c, "btn", func() {})
+					btn(c, tr("编辑"))
+				})
+			}, 420, 80)
+
+			tt.Frame()
+			bigInfo, ok := tt.Find(tr("大图"))
+			if !ok {
+				t.Fatalf("%s/%s: missing 大图", lang, sk)
+			}
+			refInfo, ok := tt.Access(tr("刷新数据"))
+			if !ok {
+				t.Fatalf("%s/%s: missing 刷新数据 button", lang, sk)
+			}
+			editInfo, ok := tt.Find(tr("编辑"))
+			if !ok {
+				t.Fatalf("%s/%s: missing 编辑", lang, sk)
+			}
+
+			applyPhase := func(step int) {
+				switch step {
+				case 0: // running (1 step)
+					a.beginRefresh("btn", 1)
+				case 1: // running (1/3)
+					a.beginRefresh("btn", 3)
+					a.advanceRefresh("btn", 1, "")
+				case 2: // ok
+					a.finishRefresh("btn", true, "")
+				case 3: // error
+					a.finishRefresh("btn", false, "network down")
+				case 4: // back to idle
+					delete(a.refreshStates, "btn")
+				}
+				tt.Frame()
+				tt.Advance(40 * time.Millisecond)
+				tt.Frame()
+			}
+
+			for step := 0; step < 5; step++ {
+				applyPhase(step)
+				gBig, ok := tt.Find(tr("大图"))
+				if !ok {
+					t.Fatalf("%s/%s step %d: missing 大图", lang, sk, step)
+				}
+				gRef, ok := tt.Access(tr("刷新数据"))
+				if !ok {
+					t.Fatalf("%s/%s step %d: missing 刷新数据", lang, sk, step)
+				}
+				gEdit, ok := tt.Find(tr("编辑"))
+				if !ok {
+					t.Fatalf("%s/%s step %d: missing 编辑", lang, sk, step)
+				}
+				assertSameBounds(t, fmt.Sprintf("%s/%s/step%d 大图", lang, sk, step), bigInfo, gBig)
+				assertSameBounds(t, fmt.Sprintf("%s/%s/step%d 刷新数据", lang, sk, step), refInfo.Bounds, gRef.Bounds)
+				assertSameBounds(t, fmt.Sprintf("%s/%s/step%d 编辑", lang, sk, step), editInfo, gEdit)
+			}
+		}
+	}
+
+	// 2. Home card internal stability: no transient "更新中…" row pushing content down.
+	setLang(langZH)
+	setSkin(skinDefault)
+	a := newTestApp(t)
+	sc := store.Script{
+		ID: "zero-shift-home", Name: "稳定性", Home: true, Origin: store.OriginUser,
+		Source: `export function meta() { return { name: "稳定性", sources: {} }; }
+export function render() {
+  return {
+    title: "稳定性",
+    big: "98.6%",
+    sub: "副标题行",
+    stats: [{ label: "延迟", value: "14ms" }]
+  };
+}`,
+	}
+	if err := a.store.SaveScript(sc); err != nil {
+		t.Fatal(err)
+	}
+	showOnly(a, sc.ID)
+
+	tt := ui.NewTester(a.view, 1100, 900)
+	settle(tt)
+
+	refBase, ok := tt.Access("刷新数据")
+	if !ok {
+		t.Fatal("home card missing 刷新数据")
+	}
+	statBase, ok := tt.Find("延迟")
+	if !ok {
+		t.Fatal("home card missing stat 延迟")
+	}
+
+	meta, _ := a.metaOf(sc)
+	_, vals := a.viewOf(sc.ID, meta.Dims)
+	runKey := a.runKeyOf(sc.ID, sc, meta, vals)
+
+	// Enter refreshing + updating state.
+	a.beginRefresh(sc.ID, 2)
+	a.advanceRefresh(sc.ID, 1, "")
+	if rs := a.runs[runKey]; rs != nil {
+		rs.old = true
+		rs.updating = true
+	}
+	tt.Frame()
+	tt.Advance(40 * time.Millisecond)
+	tt.Frame()
+
+	refRun, ok1 := tt.Access("刷新数据")
+	statRun, ok2 := tt.Find("延迟")
+	if !ok1 || !ok2 {
+		t.Fatalf("home running missing elements: ref=%v stat=%v", ok1, ok2)
+	}
+	assertSameBounds(t, "home running ref", refBase.Bounds, refRun.Bounds)
+	assertSameBounds(t, "home running stat", statBase, statRun)
+
+	// Finish OK.
+	if rs := a.runs[runKey]; rs != nil {
+		rs.old = false
+		rs.updating = false
+	}
+	a.finishRefresh(sc.ID, true, "")
+	tt.Frame()
+	tt.Advance(40 * time.Millisecond)
+	tt.Frame()
+
+	refOK, ok1 := tt.Access("刷新数据")
+	statOK, ok2 := tt.Find("延迟")
+	if !ok1 || !ok2 {
+		t.Fatalf("home ok missing elements: ref=%v stat=%v", ok1, ok2)
+	}
+	assertSameBounds(t, "home ok ref", refBase.Bounds, refOK.Bounds)
+	assertSameBounds(t, "home ok stat", statBase, statOK)
+
+	// Finish Error.
+	a.finishRefresh(sc.ID, false, "timeout")
+	tt.Frame()
+	tt.Advance(40 * time.Millisecond)
+	tt.Frame()
+
+	refErr, ok1 := tt.Access("刷新数据")
+	statErr, ok2 := tt.Find("延迟")
+	if !ok1 || !ok2 {
+		t.Fatalf("home error missing elements: ref=%v stat=%v", ok1, ok2)
+	}
+	assertSameBounds(t, "home error ref", refBase.Bounds, refErr.Bounds)
+	assertSameBounds(t, "home error stat", statBase, statErr)
 }

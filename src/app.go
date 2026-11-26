@@ -97,9 +97,11 @@ type app struct {
 
 	// Quick entry on the home cards: the value typed for each input, and the
 	// last line of feedback.
-	quick      map[string]*float64
-	refreshing map[string]bool // scripts whose refresh is running
-	quickNote  string
+	quick         map[string]*float64
+	refreshing    map[string]bool // scripts whose refresh is running
+	refreshStates map[string]refreshState
+	refreshGen    uint64
+	quickNote     string
 
 	// Import and export of scripts, shown under the draft: panel is "",
 	// "import" or "export".
@@ -258,6 +260,7 @@ func newApp(dir string, offline bool) (*app, error) {
 		styles:          map[string]string{},
 		quick:           map[string]*float64{},
 		refreshing:      map[string]bool{},
+		refreshStates:   map[string]refreshState{},
 		usageForms:      map[string]*usageForm{},
 		sels:            map[string]*int{},
 		cardSize:        1, // medium cards to start with
@@ -553,8 +556,18 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 				return // superseded by a newer run
 			}
 			st.loading, st.updating = false, false
+			refreshingNow := a.isRefreshing(sc.ID)
+			var failMsg string
 			if (err != nil || ((len(meta.Sources) > 0 || meta.NetProbe != nil) && !hasResult(res))) && st.old && hasResult(saved) {
 				st.res, st.res.Stale = saved, true
+				if err != nil {
+					failMsg = err.Error()
+				} else {
+					failMsg = tr("请求失败，已保留缓存")
+				}
+				if refreshingNow {
+					a.finishRefresh(sc.ID, false, failMsg)
+				}
 				return
 			}
 			if !hasResult(res) {
@@ -563,6 +576,19 @@ func (a *app) ensure(key string, sc store.Script, vals map[string]float64) *runS
 			st.old = false
 			st.res = res
 			st.err = err
+			if refreshingNow {
+				switch {
+				case err != nil:
+					failMsg = err.Error()
+				case res.Stale && !a.store.Settings().Offline:
+					failMsg = tr("部分数据源刷新失败")
+				default:
+					if rst, ok := a.refreshStates[sc.ID]; ok && rst.feedErr != "" {
+						failMsg = rst.feedErr
+					}
+				}
+				a.finishRefresh(sc.ID, failMsg == "", failMsg)
+			}
 			a.menuBarRan(sc.ID)
 		})
 	}

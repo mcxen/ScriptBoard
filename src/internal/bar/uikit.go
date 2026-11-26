@@ -101,21 +101,40 @@ const barUIKitJS = `(function () {
     opts = opts || {};
     var boxSize = opts.boxSize || 26;
     var icSize = opts.size || 14;
+    var status = opts.status || (opts.spin ? "loading" : "");
+    var iconName = opts.icon ? String(opts.icon) : "";
+    var svgStr = opts.svg ? String(opts.svg) : "";
+    var fg = opts.color || "textMuted";
+    var bg = opts.background || "";
+    if (status === "loading") {
+      if (!opts.color) fg = "accent";
+      if (!opts.background) bg = "accentSurface";
+    } else if (status === "ok") {
+      svgStr = "";
+      iconName = "check";
+      if (!opts.color) fg = "success";
+      if (!opts.background) bg = "successSurface";
+    } else if (status === "error") {
+      svgStr = "";
+      iconName = "alert-circle";
+      if (!opts.color) fg = "danger";
+      if (!opts.background) bg = "dangerSurface";
+    }
     var iconProps = {
       fontSize: icSize,
       width: icSize,
       height: icSize,
       shrink: 0,
-      textColor: opts.color || "textMuted"
+      textColor: fg
     };
-    if (opts.svg) {
-      iconProps.svg = String(opts.svg);
-    } else if (opts.icon) {
-      iconProps.name = String(opts.icon);
+    if (svgStr) {
+      iconProps.svg = svgStr;
+    } else if (iconName) {
+      iconProps.name = iconName;
     }
-    if (opts.spin) {
+    if (status === "loading" || opts.spin) {
       iconProps.keyframes = {
-        duration: 900,
+        duration: 850,
         repeat: -1,
         ease: "linear",
         frames: [{ at: 0, rotate: 0 }, { at: 1, rotate: 360 }]
@@ -124,12 +143,16 @@ const barUIKitJS = `(function () {
     var boxProps = {
       width: boxSize,
       height: boxSize,
+      shrink: 0,
       radius: 7,
       alignItems: "center",
       justify: "center",
       hover: { background: "surfaceHover" },
       pressed: { background: "surfacePressed" }
     };
+    if (bg) {
+      boxProps.background = bg;
+    }
     if (opts.tooltip) {
       boxProps.tooltip = String(opts.tooltip);
     }
@@ -177,10 +200,19 @@ const barUIKitJS = `(function () {
       }));
     }
     if (opts.onRefresh) {
+      var rStatus = opts.refreshStatus || (opts.loading ? "loading" : "");
+      var rTip = opts.refreshTip;
+      if (!rTip) {
+        if (rStatus === "loading") rTip = "Refreshing...";
+        else if (rStatus === "ok") rTip = "Updated";
+        else if (rStatus === "error") rTip = "Refresh failed";
+        else rTip = "Refresh";
+      }
       rightItems.push(iconButton({
         icon: "refresh-cw",
-        tooltip: opts.refreshTip || "Refresh",
+        tooltip: rTip,
         onClick: opts.onRefresh,
+        status: rStatus,
         spin: !!opts.loading
       }));
     }
@@ -449,10 +481,19 @@ const barUIKitJS = `(function () {
       }
     }
     if (opts.onRefresh) {
+      var rStatus = opts.refreshStatus || (opts.loading ? "loading" : "");
+      var rTip = opts.refreshTip;
+      if (!rTip) {
+        if (rStatus === "loading") rTip = "Refreshing...";
+        else if (rStatus === "ok") rTip = "Updated";
+        else if (rStatus === "error") rTip = "Refresh failed";
+        else rTip = "Refresh";
+      }
       rightItems.push(iconButton({
         icon: "refresh-cw",
-        tooltip: "Refresh",
+        tooltip: rTip,
         onClick: opts.onRefresh,
+        status: rStatus,
         spin: !!opts.loading
       }));
     }
