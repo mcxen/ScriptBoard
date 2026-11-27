@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.19
+
+- Developer-Empowered Credential Provider (`src/internal/cred`, `src/internal/engine`, `src/internal/bar`, `src/internal/mcpsvc`, `/credentials`):
+  - **Flexible `Spec` & Full `RuntimeData` Exposure**: Adds `cookies` (optional cookie allowlist; empty keeps all), `cookieKey` (map one cookie into a custom request header), and `domains` (`<credential domains="..." cookies="..." cookie-key="..."/>`), makes `origin` optional, allows safe custom credential IDs and any `100`–`599` `refreshOn` status code (such as `302`), and exposes full `cred.RuntimeData` (`cookies`, `cookieHeader`, `token`, `username`, `headerName`, `headerValue`, `status`) to JS scripts via `ctx.credentials[id]` plus `{cred.<id>.cookie.<name>}`, `{cred.<id>.cookieHeader}`, `{cred.<id>.token}`, and `{cred.<id>.header}` template expansion in `meta().sources` and `sourceHeaders`.
+  - **Expanded `.bar` `$metrix.credentials` API**: Keeps `status(id?)`, updates `await $metrix.credentials.login(id)` to settle with `cred.RuntimeData`, and adds `get(id?)`, `cookies(id)`, `cookie(id, name)`, `header(id)`, and `set(id, payload)` with `CookieJar` synchronization.
+  - **Isolated Per-Credential WebView & Multi-Domain Imports**: Uses an isolated `cred-<id>` session with SSO popup window support (`SetWindowOpenHandler`), removes over-defensive domain rejections across manual Cookie / Netscape / curl imports and WebView capture (`SelectCookies(..., false)`), reduces login cooldown to `3s`, clears session data when clearing or deleting credentials, lets any credential card be deleted cleanly in `/credentials`, and exposes domain/cookie fields in the editor form with full English parity.
+  - **MCP & Documentation Updates**: Supports `domains`, `cookies`, `cookieKey`, and optional `origin` in `cred_save`, adds opt-in `includeSecrets` (default `false` remains redacted) to `cred_get`, and updates `plugin_guide` / `bar_guide`.
+
 ## 0.1.18
 
 - Unified Credential Provider (`src/internal/cred`, `/credentials`):
