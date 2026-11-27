@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.20
+
+- Ego Browser Cookie Sync & End-to-End Cancellation (`src/internal/cred`, `src/internal/mcpsvc`, `/credentials`, `.bar` inspector):
+  - **Reliable Ego Browser Cookie Extraction**: Rewrites the `ego-browser nodejs` script to create an isolated `taskSpace`, call `page.cdp("Network.getCookies" / "Network.getAllCookies")`, embed target URLs and cookie allowlists directly via JSON literals instead of uninherited `process.env` variables, parse stdout via `__SB_EGO_COOKIES__:` markers cleanly, clean up via `task.finish({ keep: [] })` in `finally`, use a 30s default timeout (`timeoutSec` up to `120` in `cred_sync_cdp`), preserve real Ego error diagnostics (removing silent `127.0.0.1:9222` masking and unexpected `WebView` fallbacks), and match explicitly requested SSO cookies across sibling auth domains.
+  - **Full Cancellation & UI Stop Controls**: Adds `Manager.Cancel(id)`, `Manager.CancelAll()`, `Manager.IsAuthenticating(id)`, and tracked `Manager.SyncCookies`; propagates HTTP `/mcp` request cancellation (`Server.HandleContext`) cleanly into CDP WebSockets (`context.AfterFunc`) and Ego subprocesses (`WaitDelay`); adds the `cred_cancel` MCP tool with `ReadOnly` guards; adds **"终止"** / **Stop** controls on `/credentials` cards, handoff banners, and `.bar` inspector rows (for both UI- and MCP-initiated syncs); and guards `onCredentialUpdated` against triggering 401 refresh loops before credentials become ready.
+- Multi-View Home, Fused macOS Title Bar & Per-Size Layout Memory (`src/home.go`, `src/home_views.go`, `src/chrome.go`, `src/nav.go`, `src/layout.go`, `src/internal/store/store.go`):
+  - **Fused Titlebar & Custom Home Views**: Integrates macOS traffic-light titlebar chrome cleanly into the top bar, adds customizable multi-view Home pages with a built-in Network Diagnostics (`网络排查`) view featuring `sb-ping` and `ip-dashboard`, and remembers independent card grid layouts per S/M/L size preset with full English localization parity.
+
 ## 0.1.19
 
 - Developer-Empowered Credential Provider (`src/internal/cred`, `src/internal/engine`, `src/internal/bar`, `src/internal/mcpsvc`, `/credentials`):
