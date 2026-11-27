@@ -29,6 +29,8 @@ type credForm struct {
 	name         string
 	typeIdx      int
 	origin       string
+	domains      string
+	pickCookies  string
 	providerIdx  int
 	loginURL     string
 	readyURL     string
@@ -199,10 +201,7 @@ func (a *app) openWebViewLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 		return cred.SecretPayload{}, errors.New(tr("无效的登录地址（仅支持 http/https）"))
 	}
 
-	sess := mygo.NewEphemeralSession()
-	defer func() {
-		_ = sess.ClearData(mygo.SiteDataAll)
-	}()
+	sess := mygo.NewSession("cred-" + sp.ID)
 
 	type outcome struct {
 		payload cred.SecretPayload
@@ -222,48 +221,34 @@ func (a *app) openWebViewLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 	var w *mygo.Window
 
 	collectOriginCookies := func() []cred.StoredCookie {
-		var all []cred.StoredCookie
+		list, err := sess.Cookies.List(mygo.CookieFilter{})
+		if err != nil {
+			return nil
+		}
 		seen := map[string]bool{}
-		addURL := func(u string) {
-			list, err := sess.Cookies.List(mygo.CookieFilter{URL: u})
-			if err != nil {
-				return
+		var all []cred.StoredCookie
+		for _, c := range list {
+			var exp int64
+			if !c.Expires.IsZero() {
+				exp = c.Expires.Unix()
 			}
-			for _, c := range list {
-				var exp int64
-				if !c.Expires.IsZero() {
-					exp = c.Expires.Unix()
-				}
-				sc := cred.StoredCookie{
-					Name:     c.Name,
-					Value:    c.Value,
-					Domain:   c.Domain,
-					Path:     c.Path,
-					Expires:  exp,
-					Secure:   c.Secure,
-					HTTPOnly: c.HTTPOnly,
-					SameSite: fmt.Sprint(c.SameSite),
-				}
-				filtered := sp.FilterAuthorizedCookies([]cred.StoredCookie{sc})
-				if len(filtered) == 0 {
-					continue
-				}
-				fc := filtered[0]
-				key := fc.Domain + "\x00" + fc.Path + "\x00" + fc.Name
-				if !seen[key] {
-					seen[key] = true
-					all = append(all, fc)
-				}
+			sc := cred.StoredCookie{
+				Name:     c.Name,
+				Value:    c.Value,
+				Domain:   c.Domain,
+				Path:     c.Path,
+				Expires:  exp,
+				Secure:   c.Secure,
+				HTTPOnly: c.HTTPOnly,
+				SameSite: fmt.Sprint(c.SameSite),
+			}
+			key := sc.Domain + "\x00" + sc.Path + "\x00" + sc.Name
+			if !seen[key] {
+				seen[key] = true
+				all = append(all, sc)
 			}
 		}
-		addURL(sp.Origin)
-		if sp.LoginURL != "" && sp.MatchesURL(sp.LoginURL) {
-			addURL(sp.LoginURL)
-		}
-		for _, dom := range sp.AllowedDomains {
-			addURL("https://" + strings.TrimPrefix(dom, "."))
-		}
-		return all
+		return sp.SelectCookies(all, false)
 	}
 
 	checkReady := func() {
@@ -277,7 +262,7 @@ func (a *app) openWebViewLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 		if sp.Ready != nil {
 			ready = sp.Ready.Satisfied(u, ttl, cookies)
 		} else {
-			ready = sp.MatchesURL(u) && len(cookies) > 0
+			ready = len(cookies) > 0 && (sp.Origin == "" || sp.MatchesURL(u))
 		}
 		if !ready {
 			return
@@ -303,7 +288,6 @@ func (a *app) openWebViewLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 			Hidden: true,
 			Page: mygo.PageOptions{
 				Session:         sess,
-				Untrusted:       true,
 				UserAgentSuffix: "Version/17.0 Safari/605.1.15",
 			},
 		})
@@ -325,7 +309,15 @@ func (a *app) openWebViewLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 			pg.SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
 				ru, rerr := url.Parse(strings.TrimSpace(req.URL))
 				if rerr == nil && (strings.ToLower(ru.Scheme) == "http" || strings.ToLower(ru.Scheme) == "https") {
-					_ = pg.LoadURL(req.URL)
+					return &mygo.WindowOptions{
+						Title:  tr("登录凭据 · ") + credDisplayName(sp),
+						Width:  920,
+						Height: 680,
+						Page: mygo.PageOptions{
+							Session:         sess,
+							UserAgentSuffix: "Version/17.0 Safari/605.1.15",
+						},
+					}
 				}
 				return nil
 			})
@@ -457,6 +449,16 @@ func (a *app) saveCredForm() {
 		HeaderPrefix: f.headerPrefix,
 		CDPURL:       strings.TrimSpace(f.cdpURL),
 	}
+	for _, dom := range strings.Split(f.domains, ",") {
+		if dom = strings.TrimSpace(dom); dom != "" {
+			sp.Domains = append(sp.Domains, dom)
+		}
+	}
+	for _, ck := range strings.Split(f.pickCookies, ",") {
+		if ck = strings.TrimSpace(ck); ck != "" {
+			sp.Cookies = append(sp.Cookies, ck)
+		}
+	}
 	if strings.TrimSpace(f.readyURL) != "" || strings.TrimSpace(f.readyCookies) != "" {
 		rc := &cred.ReadyCondition{URLIncludes: strings.TrimSpace(f.readyURL)}
 		for _, ck := range strings.Split(f.readyCookies, ",") {
@@ -468,7 +470,7 @@ func (a *app) saveCredForm() {
 	}
 	if strings.TrimSpace(f.refreshOn) != "" {
 		for _, part := range strings.Split(f.refreshOn, ",") {
-			if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n >= 400 && n <= 599 {
+			if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n >= 100 && n <= 599 {
 				sp.RefreshOn = append(sp.RefreshOn, n)
 			}
 		}
@@ -491,6 +493,12 @@ func (a *app) editCredRecord(rec cred.Record) {
 	f.id = rec.Spec.ID
 	f.name = rec.Spec.Name
 	f.origin = rec.Spec.Origin
+	doms := append([]string(nil), rec.Spec.Domains...)
+	if len(doms) == 0 {
+		doms = rec.Spec.AllowedDomains
+	}
+	f.domains = strings.Join(doms, ", ")
+	f.pickCookies = strings.Join(rec.Spec.Cookies, ", ")
 	f.loginURL = rec.Spec.LoginURL
 	f.headerName = rec.Spec.HeaderName
 	f.headerPrefix = rec.Spec.HeaderPrefix
@@ -557,6 +565,8 @@ func (a *app) credentialsPage(c *ui.Context, compact bool) {
 					a.credForm.id = ""
 					a.credForm.name = ""
 					a.credForm.origin = ""
+					a.credForm.domains = ""
+					a.credForm.pickCookies = ""
 					a.credForm.loginURL = ""
 					a.credForm.readyURL = ""
 					a.credForm.readyCookies = ""
@@ -570,7 +580,7 @@ func (a *app) credentialsPage(c *ui.Context, compact bool) {
 			}
 		})
 
-		hint(c, tr("仅提取并注入目标源站（Origin）授权凭据，内置登录窗仅检测页面 URL 与目标 Cookie 写入状态，不记录表单输入。"))
+		hint(c, tr("内置登录窗为每个凭据提供独立隔离会话，支持多步骤单点登录与弹窗跳转；保存后凭据通过系统钥匙串 AES-256-GCM 加密持久化。"))
 
 		var recs []cred.Record
 		backendName := "keychain"
@@ -713,23 +723,27 @@ func (a *app) credCard(c *ui.Context, p palette, rec cred.Record, compact bool) 
 					if err := a.credMgr.ClearSecret(sp.ID); err != nil {
 						a.credForm.note = err.Error()
 					} else {
+						if a.win != nil {
+							_ = mygo.NewSession("cred-" + sp.ID).ClearData(mygo.SiteDataAll)
+						}
 						a.credForm.note = tr("已清空凭据 ") + sp.ID
 					}
 				}
 			}
-			if sp.SourcePlugin == "" {
-				delLbl := tr("删除")
+			delLbl := tr("删除")
+			if a.credForm.confirm == sp.ID {
+				delLbl = tr("确认删除")
+			}
+			if btn(c, delLbl).Clicked() && a.credMgr != nil {
 				if a.credForm.confirm == sp.ID {
-					delLbl = tr("确认删除")
-				}
-				if btn(c, delLbl).Clicked() && a.credMgr != nil {
-					if a.credForm.confirm == sp.ID {
-						_ = a.credMgr.Delete(sp.ID)
-						a.credForm.confirm = ""
-						a.credForm.note = tr("已删除凭据 ") + sp.ID
-					} else {
-						a.credForm.confirm = sp.ID
+					_ = a.credMgr.Delete(sp.ID)
+					if a.win != nil {
+						_ = mygo.NewSession("cred-" + sp.ID).ClearData(mygo.SiteDataAll)
 					}
+					a.credForm.confirm = ""
+					a.credForm.note = tr("已删除凭据 ") + sp.ID
+				} else {
+					a.credForm.confirm = sp.ID
 				}
 			}
 		})
@@ -826,9 +840,17 @@ func (a *app) credEditFormCard(c *ui.Context, compact bool) {
 		field(c, tr("凭据类型"), "", func() {
 			segmented(c, &f.typeIdx, credTypeLabels...)
 		})
-		field(c, tr("授权源站 Origin"), tr("仅该源站（及授权子域）会读取或注入此凭据"), func() {
+		field(c, tr("目标源站 Origin（可选）"), tr("用于自动附加请求凭据、默认登录页及模板插值；支持留空并配合下方域名匹配"), func() {
 			textInput(c, &f.origin, "https://token-hub.alibaba-inc.com").Width(w).
 				Keyboard(ui.KeyboardURL).Capitalize(ui.CapitalizeNone).Autocorrect(false)
+		})
+		field(c, tr("匹配域名（可选，逗号分隔）"), tr("除 Origin 外允许匹配附加凭据的域名或子域，如 .alibaba-inc.com"), func() {
+			textInput(c, &f.domains, ".example.com").Width(w).
+				Keyboard(ui.KeyboardURL).Capitalize(ui.CapitalizeNone).Autocorrect(false)
+		})
+		field(c, tr("提取 Cookie 名（可选，逗号分隔）"), tr("留空保留登录会话中的全部 Cookie，也可指定需要的 Cookie 名"), func() {
+			textInput(c, &f.pickCookies, "SSO_TOKEN, csrf_token").Width(w).
+				Capitalize(ui.CapitalizeNone).Autocorrect(false)
 		})
 		field(c, tr("认证提供器"), "", func() {
 			dropdown(c, &f.providerIdx, provLabels...)

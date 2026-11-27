@@ -8,9 +8,10 @@ package cred
 import (
 	"fmt"
 	"net/url"
-	"regexp"
 	"slices"
+	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -33,18 +34,16 @@ const (
 	StatusError          = "error"
 )
 
-var validCredID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-
 // ReadyCondition defines when an interactive login (WebView or CDP) has
 // succeeded. URLIncludes and TitleIncludes match substrings; HasCookies
-// requires every listed cookie name to exist on the authorized origin.
+// requires every listed cookie name to exist in the session.
 type ReadyCondition struct {
 	URLIncludes   string   `json:"urlIncludes,omitempty"`
 	HasCookies    []string `json:"hasCookies,omitempty"`
 	TitleIncludes string   `json:"titleIncludes,omitempty"`
 }
 
-// Satisfied reports whether the current navigation state and authorized cookies
+// Satisfied reports whether the current navigation state and captured cookies
 // satisfy the readiness rule.
 func (rc *ReadyCondition) Satisfied(currentURL, title string, cookies []StoredCookie) bool {
 	if rc == nil || (strings.TrimSpace(rc.URLIncludes) == "" &&
@@ -88,15 +87,18 @@ type Spec struct {
 	ID             string          `json:"id"`
 	Name           string          `json:"name,omitempty"`
 	Type           string          `json:"type"`                     // cookie | bearer | token | basic | header
-	Origin         string          `json:"origin"`                   // https://host[:port]
+	Origin         string          `json:"origin,omitempty"`         // https://host[:port] (optional for manual/template usage)
 	Provider       string          `json:"provider,omitempty"`       // webview | browser | manual | ego | cdp
 	LoginURL       string          `json:"loginUrl,omitempty"`       // interactive sign-in URL
 	Ready          *ReadyCondition `json:"ready,omitempty"`          // completion criteria
 	RefreshOn      []int           `json:"refreshOn,omitempty"`      // HTTP status codes triggering refresh (default [401, 403])
-	HeaderName     string          `json:"headerName,omitempty"`     // header name for type=token|header
-	HeaderPrefix   string          `json:"headerPrefix,omitempty"`   // prefix before token (e.g. "Bearer ")
+	Cookies        []string        `json:"cookies,omitempty"`        // optional cookie names developer picks (empty keeps all)
+	CookieKey      string          `json:"cookieKey,omitempty"`      // optional cookie name to map into HeaderName
+	HeaderName     string          `json:"headerName,omitempty"`     // header name for type=token|header or CookieKey
+	HeaderPrefix   string          `json:"headerPrefix,omitempty"`   // prefix before token/cookie value (e.g. "Bearer ")
 	CDPURL         string          `json:"cdpUrl,omitempty"`         // optional CDP HTTP endpoint (default http://127.0.0.1:9222)
-	AllowedDomains []string        `json:"allowedDomains,omitempty"` // extra domains authorized for cookie extraction
+	Domains        []string        `json:"domains,omitempty"`        // extra domains for URL/CDP matching
+	AllowedDomains []string        `json:"allowedDomains,omitempty"` // legacy alias of Domains
 	SourcePlugin   string          `json:"sourcePlugin,omitempty"`   // plugin or .bar ID that declared it
 }
 
@@ -142,8 +144,7 @@ type Record struct {
 	LastStatusCode int      `json:"lastStatusCode,omitempty"`
 }
 
-// Status is the redacted runtime status summary passed into script ctx.credentials
-// and .bar $metrix.credentials.status(id).
+// Status is the redacted runtime status summary.
 type Status struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name,omitempty"`
@@ -156,6 +157,29 @@ type Status struct {
 	CookieNames []string `json:"cookieNames,omitempty"`
 	UpdatedAt   int64    `json:"updatedAt,omitempty"`
 	LastError   string   `json:"lastError,omitempty"`
+}
+
+// RuntimeData is the complete developer-facing runtime object passed into
+// script ctx.credentials[id] and .bar $metrix.credentials.get(id), letting
+// plugin authors read whichever cookie or token fields they need directly.
+type RuntimeData struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name,omitempty"`
+	Type         string            `json:"type"`
+	Origin       string            `json:"origin,omitempty"`
+	Provider     string            `json:"provider"`
+	Status       string            `json:"status"`
+	HasSecret    bool              `json:"hasSecret"`
+	CookieCount  int               `json:"cookieCount,omitempty"`
+	CookieNames  []string          `json:"cookieNames,omitempty"`
+	Cookies      map[string]string `json:"cookies,omitempty"`
+	CookieHeader string            `json:"cookieHeader,omitempty"`
+	Token        string            `json:"token,omitempty"`
+	Username     string            `json:"username,omitempty"`
+	HeaderName   string            `json:"headerName,omitempty"`
+	HeaderValue  string            `json:"headerValue,omitempty"`
+	UpdatedAt    int64             `json:"updatedAt,omitempty"`
+	LastError    string            `json:"lastError,omitempty"`
 }
 
 // Normalized returns a copy of s with canonical defaults and trimmed fields.
@@ -176,6 +200,7 @@ func (s Spec) Normalized() Spec {
 		out.Provider = ProviderWebView
 	}
 	out.LoginURL = strings.TrimSpace(out.LoginURL)
+	out.CookieKey = strings.TrimSpace(out.CookieKey)
 	out.HeaderName = strings.TrimSpace(out.HeaderName)
 	out.CDPURL = strings.TrimRight(strings.TrimSpace(out.CDPURL), "/")
 	out.SourcePlugin = strings.TrimSpace(out.SourcePlugin)
@@ -185,7 +210,7 @@ func (s Spec) Normalized() Spec {
 	} else {
 		cp := make([]int, 0, len(out.RefreshOn))
 		for _, code := range out.RefreshOn {
-			if code >= 400 && code <= 599 && !slices.Contains(cp, code) {
+			if code >= 100 && code <= 599 && !slices.Contains(cp, code) {
 				cp = append(cp, code)
 			}
 		}
@@ -209,24 +234,39 @@ func (s Spec) Normalized() Spec {
 		out.Ready = &rc
 	}
 
-	if len(out.AllowedDomains) > 0 {
-		var doms []string
-		for _, d := range out.AllowedDomains {
+	if len(out.Cookies) > 0 {
+		var pick []string
+		for _, n := range out.Cookies {
+			if n = strings.TrimSpace(n); n != "" && !slices.Contains(pick, n) {
+				pick = append(pick, n)
+			}
+		}
+		out.Cookies = pick
+	}
+
+	var doms []string
+	for _, rawList := range [][]string{out.Domains, out.AllowedDomains} {
+		for _, d := range rawList {
 			d = strings.ToLower(strings.TrimSpace(d))
 			if d != "" && !slices.Contains(doms, d) {
 				doms = append(doms, d)
 			}
 		}
-		out.AllowedDomains = doms
+	}
+	if len(out.Domains) > 0 || len(doms) > 0 {
+		out.Domains = doms
+	}
+	if len(out.AllowedDomains) > 0 {
+		out.AllowedDomains = append([]string(nil), doms...)
 	}
 
 	return out
 }
 
-// Validate verifies that s has valid identifiers, URL schemes, type, and provider.
+// Validate verifies that s has a safe id, valid type/provider, and valid http/https URLs when provided.
 func (s Spec) Validate() error {
 	s = s.Normalized()
-	if !validCredID.MatchString(s.ID) {
+	if s.ID == "" || utf8.RuneCountInString(s.ID) > 64 || strings.ContainsAny(s.ID, `/\`) || strings.Contains(s.ID, "..") {
 		return fmt.Errorf("cred: invalid credential id %q", s.ID)
 	}
 	switch s.Type {
@@ -239,9 +279,11 @@ func (s Spec) Validate() error {
 	default:
 		return fmt.Errorf("cred: unsupported provider %q", s.Provider)
 	}
-	u, err := url.Parse(s.Origin)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-		return fmt.Errorf("cred: invalid origin %q (must be http/https)", s.Origin)
+	if s.Origin != "" {
+		u, err := url.Parse(s.Origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+			return fmt.Errorf("cred: invalid origin %q (must be http/https)", s.Origin)
+		}
 	}
 	if s.LoginURL != "" {
 		lu, err := url.Parse(s.LoginURL)
@@ -250,6 +292,19 @@ func (s Spec) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (s Spec) effectiveDomains() []string {
+	var doms []string
+	for _, list := range [][]string{s.Domains, s.AllowedDomains} {
+		for _, d := range list {
+			d = strings.ToLower(strings.TrimSpace(d))
+			if d != "" && !slices.Contains(doms, d) {
+				doms = append(doms, d)
+			}
+		}
+	}
+	return doms
 }
 
 // ShouldRefreshStatus reports whether statusCode should trigger credential refresh.
@@ -294,7 +349,7 @@ func (s Spec) MatchesURL(rawURL string) bool {
 			return true
 		}
 	}
-	for _, dom := range s.AllowedDomains {
+	for _, dom := range s.effectiveDomains() {
 		if domainAppliesToHost(reqHost, dom) {
 			return true
 		}
@@ -302,18 +357,34 @@ func (s Spec) MatchesURL(rawURL string) bool {
 	return false
 }
 
-// FilterAuthorizedCookies returns only cookies whose domain is authorized for
-// s.Origin (plus any explicit s.AllowedDomains). Unrelated third-party cookies
-// are strictly dropped.
+// FilterAuthorizedCookies selects cookies matching s.Origin / s.Domains (and
+// optional developer-chosen cookie names in s.Cookies).
 func (s Spec) FilterAuthorizedCookies(in []StoredCookie) []StoredCookie {
+	return s.SelectCookies(in, true)
+}
+
+// SelectCookies normalizes cookies, optionally filters by s.Origin / s.Domains
+// when filterDomain is true (e.g. from shared CDP/Ego browser stores), and picks
+// only names in s.Cookies if the developer configured an explicit list.
+func (s Spec) SelectCookies(in []StoredCookie, filterDomain bool) []StoredCookie {
 	if len(in) == 0 {
 		return nil
 	}
-	ou, err := url.Parse(s.Origin)
-	if err != nil || ou.Hostname() == "" {
-		return nil
+	var origHost string
+	if ou, err := url.Parse(s.Origin); err == nil && ou.Hostname() != "" {
+		origHost = strings.ToLower(ou.Hostname())
 	}
-	origHost := strings.ToLower(ou.Hostname())
+	doms := s.effectiveDomains()
+
+	var pick map[string]bool
+	if len(s.Cookies) > 0 {
+		pick = make(map[string]bool, len(s.Cookies))
+		for _, n := range s.Cookies {
+			if n = strings.TrimSpace(n); n != "" {
+				pick[n] = true
+			}
+		}
+	}
 
 	var out []StoredCookie
 	for _, c := range in {
@@ -321,12 +392,17 @@ func (s Spec) FilterAuthorizedCookies(in []StoredCookie) []StoredCookie {
 		if c.Name == "" {
 			continue
 		}
-		dom := strings.ToLower(strings.TrimSpace(c.Domain))
-		if dom == "" {
+		if len(pick) > 0 && !pick[c.Name] {
 			continue
 		}
-		if !isCookieDomainAuthorized(dom, origHost, s.AllowedDomains) {
-			continue
+		dom := strings.ToLower(strings.TrimSpace(c.Domain))
+		if dom == "" {
+			dom = origHost
+		}
+		if filterDomain && (origHost != "" || len(doms) > 0) {
+			if dom == "" || !isCookieDomainAuthorized(dom, origHost, doms) {
+				continue
+			}
 		}
 		if c.Path == "" || !strings.HasPrefix(c.Path, "/") {
 			c.Path = "/"
@@ -335,6 +411,30 @@ func (s Spec) FilterAuthorizedCookies(in []StoredCookie) []StoredCookie {
 		out = append(out, c)
 	}
 	return out
+}
+
+// CookieMap builds a name -> value map and canonical Cookie header string.
+func CookieMap(cookies []StoredCookie) (map[string]string, string) {
+	if len(cookies) == 0 {
+		return nil, ""
+	}
+	m := make(map[string]string, len(cookies))
+	names := make([]string, 0, len(cookies))
+	for _, c := range cookies {
+		if c.Name == "" {
+			continue
+		}
+		if _, exists := m[c.Name]; !exists {
+			names = append(names, c.Name)
+		}
+		m[c.Name] = c.Value
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, name+"="+m[name])
+	}
+	return m, strings.Join(parts, "; ")
 }
 
 func isCookieDomainAuthorized(cookieDom, originHost string, allowedDomains []string) bool {

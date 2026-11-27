@@ -127,13 +127,21 @@ func ParseManualImport(spec Spec, format, input, username, password, headerName,
 		if err != nil {
 			return SecretPayload{}, err
 		}
-		filtered := spec.FilterAuthorizedCookies(parsed)
-		if len(filtered) == 0 {
-			return SecretPayload{}, fmt.Errorf("cred: no cookies in Netscape file match authorized origin %s", spec.Origin)
+		var selected []StoredCookie
+		if len(spec.Cookies) > 0 {
+			selected = spec.SelectCookies(parsed, false)
+		} else {
+			selected = spec.SelectCookies(parsed, true)
+			if len(selected) == 0 {
+				selected = spec.SelectCookies(parsed, false)
+			}
+		}
+		if len(selected) == 0 {
+			return SecretPayload{}, errors.New("cred: no matching cookies found in Netscape file")
 		}
 		return SecretPayload{
 			Type:      TypeCookie,
-			Cookies:   filtered,
+			Cookies:   selected,
 			Provider:  ProviderManual,
 			UpdatedAt: now,
 		}, nil
@@ -152,13 +160,13 @@ func ParseManualImport(spec Spec, format, input, username, password, headerName,
 		if err != nil {
 			return SecretPayload{}, err
 		}
-		filtered := spec.FilterAuthorizedCookies(cookies)
-		if len(filtered) == 0 {
-			return SecretPayload{}, fmt.Errorf("cred: no valid cookies for authorized origin %s", spec.Origin)
+		selected := spec.SelectCookies(cookies, false)
+		if len(selected) == 0 {
+			return SecretPayload{}, errors.New("cred: no matching cookies found in input")
 		}
 		return SecretPayload{
 			Type:      TypeCookie,
-			Cookies:   filtered,
+			Cookies:   selected,
 			Provider:  ProviderManual,
 			UpdatedAt: now,
 		}, nil
@@ -262,18 +270,20 @@ func ParseNetscapeCookies(text string) ([]StoredCookie, error) {
 }
 
 // ParseCookieHeader parses a Cookie header string ("Cookie: a=1; b=2" or "a=1; b=2")
-// bound to the host of origin.
+// optionally associating cookies with origin's host when origin is provided.
 func ParseCookieHeader(text, origin string) ([]StoredCookie, error) {
 	s := strings.TrimSpace(text)
 	if len(s) >= 7 && strings.EqualFold(s[:7], "cookie:") {
 		s = strings.TrimSpace(s[7:])
 	}
-	ou, err := url.Parse(strings.TrimSpace(origin))
-	if err != nil || ou.Hostname() == "" {
-		return nil, fmt.Errorf("cred: invalid origin %q for cookie import", origin)
+	var host string
+	var secure bool
+	if strings.TrimSpace(origin) != "" {
+		if ou, err := url.Parse(strings.TrimSpace(origin)); err == nil && ou.Hostname() != "" {
+			host = strings.ToLower(ou.Hostname())
+			secure = strings.EqualFold(ou.Scheme, "https")
+		}
 	}
-	host := strings.ToLower(ou.Hostname())
-	secure := strings.EqualFold(ou.Scheme, "https")
 
 	var out []StoredCookie
 	for _, part := range strings.Split(s, ";") {
@@ -381,11 +391,11 @@ func ParseCurlAuth(cmd string, spec Spec) (SecretPayload, error) {
 		if err != nil {
 			return SecretPayload{}, err
 		}
-		filtered := spec.FilterAuthorizedCookies(cookies)
-		if len(filtered) == 0 {
-			return SecretPayload{}, fmt.Errorf("cred: curl cookies do not match authorized origin %s", spec.Origin)
+		selected := spec.SelectCookies(cookies, false)
+		if len(selected) == 0 {
+			return SecretPayload{}, errors.New("cred: no matching cookies found in curl command")
 		}
-		return SecretPayload{Type: TypeCookie, Cookies: filtered}, nil
+		return SecretPayload{Type: TypeCookie, Cookies: selected}, nil
 	}
 
 	for k, v := range headers {
@@ -425,9 +435,9 @@ func ParseCurlAuth(cmd string, spec Spec) (SecretPayload, error) {
 		if err != nil {
 			return SecretPayload{}, err
 		}
-		filtered := spec.FilterAuthorizedCookies(cookies)
-		if len(filtered) > 0 {
-			return SecretPayload{Type: TypeCookie, Cookies: filtered}, nil
+		selected := spec.SelectCookies(cookies, false)
+		if len(selected) > 0 {
+			return SecretPayload{Type: TypeCookie, Cookies: selected}, nil
 		}
 	}
 

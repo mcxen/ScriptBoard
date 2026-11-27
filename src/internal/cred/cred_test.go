@@ -413,3 +413,131 @@ func TestFetchCDPCookiesOriginFiltered(t *testing.T) {
 		t.Fatalf("expected only authorized origin cookie, got %+v", p.Cookies)
 	}
 }
+
+func TestSelectCookiesAndDeveloperEmpowerment(t *testing.T) {
+	// Origin is optional; safe IDs and explicit cookie allowlists pass validation.
+	sp := Spec{
+		ID:      "dev-flexible_1",
+		Type:    TypeCookie,
+		Cookies: []string{"SSO", "csrf"},
+	}.Normalized()
+	if err := sp.Validate(); err != nil {
+		t.Fatalf("expected optional-origin spec to validate cleanly, got %v", err)
+	}
+
+	raw := []StoredCookie{
+		{Name: "SSO", Value: "tok_sso", Domain: ".sso.other.com", Path: "/"},
+		{Name: "csrf", Value: "tok_csrf", Domain: ".app.example.com", Path: "/"},
+		{Name: "noise", Value: "drop_me", Domain: ".sso.other.com", Path: "/"},
+	}
+
+	// filterDomain=false keeps developer-requested cookie names across SSO/redirect domains.
+	picked := sp.SelectCookies(raw, false)
+	if len(picked) != 2 || picked[0].Name != "SSO" || picked[1].Name != "csrf" {
+		t.Fatalf("expected SSO & csrf without domain rejection, got %+v", picked)
+	}
+
+	// Empty Cookies keeps all cookies.
+	allSpec := Spec{ID: "keep-all", Type: TypeCookie}.Normalized()
+	allPicked := allSpec.SelectCookies(raw, false)
+	if len(allPicked) != 3 {
+		t.Fatalf("expected empty Cookies allowlist to keep all 3 cookies, got %d", len(allPicked))
+	}
+
+	// filterDomain=true applies Origin / Domains matching on top of Cookies.
+	domSpec := Spec{
+		ID:      "dom-scoped",
+		Type:    TypeCookie,
+		Origin:  "https://app.example.com",
+		Domains: []string{".example.com"},
+		Cookies: []string{"SSO", "csrf"},
+	}.Normalized()
+	domPicked := domSpec.SelectCookies(raw, true)
+	if len(domPicked) != 1 || domPicked[0].Name != "csrf" {
+		t.Fatalf("expected domain-filtered SelectCookies to keep csrf only, got %+v", domPicked)
+	}
+}
+
+func TestManualImportAllowsMultiDomainWithoutOverDefense(t *testing.T) {
+	sp := Spec{
+		ID:      "multi-domain",
+		Type:    TypeCookie,
+		Origin:  "https://app.example.com",
+		Cookies: []string{"SSO_LOGIN", "session"},
+	}.Normalized()
+
+	netscape := strings.Join([]string{
+		"# Netscape HTTP Cookie File",
+		"#HttpOnly_.login.vendor-sso.com\tTRUE\t/\tTRUE\t0\tSSO_LOGIN\tsso_val_1",
+		".app.example.com\tFALSE\t/\tTRUE\t0\tsession\tsess_val_2",
+		".tracking.example.com\tFALSE\t/\tFALSE\t0\tutm\tad_noise",
+	}, "\n")
+
+	p, err := ParseManualImport(sp, ImportNetscape, netscape, "", "", "", "")
+	if err != nil {
+		t.Fatalf("expected multi-domain Netscape import without domain error, got %v", err)
+	}
+	if len(p.Cookies) != 2 {
+		t.Fatalf("expected 2 developer-selected cookies (SSO_LOGIN & session), got %+v", p.Cookies)
+	}
+}
+
+func TestCookieKeyTemplateExpansionAnd302Refresh(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-SSO") != "Bearer sso_302_ok" {
+			// Return 302 without Location so Go http.Client surfaces 302 directly to AuthTransport.
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	mgr, err := NewManager(t.TempDir(), NewMemoryBackend(), LoginHandlers{
+		WebView: func(ctx context.Context, sp Spec) (SecretPayload, error) {
+			return SecretPayload{
+				Type: TypeCookie,
+				Cookies: []StoredCookie{
+					{Name: "SSO", Value: "sso_302_ok", Path: "/"},
+					{Name: "csrf", Value: "csrf_99", Path: "/"},
+				},
+				Provider: ProviderWebView,
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sp := Spec{
+		ID:           "sso-302",
+		Type:         TypeCookie,
+		Origin:       srv.URL,
+		Provider:     ProviderWebView,
+		Cookies:      []string{"SSO", "csrf"},
+		CookieKey:    "SSO",
+		HeaderName:   "X-SSO",
+		HeaderPrefix: "Bearer ",
+		RefreshOn:    []int{http.StatusFound, http.StatusUnauthorized},
+	}.Normalized()
+	if err := sp.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	client := mgr.WrapClient(&http.Client{}, []Spec{sp}, nil)
+	resp, err := client.Get(srv.URL + "/api/me")
+	if err != nil {
+		t.Fatalf("client.Get failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 after 302 refresh + CookieKey header injection, got %d", resp.StatusCode)
+	}
+
+	expanded := mgr.ExpandTemplate("token={cred.sso-302.cookie.SSO};csrf={cred.sso-302.cookie.csrf};hdr={cred.sso-302.header}", []Spec{sp})
+	want := "token=sso_302_ok;csrf=csrf_99;hdr=Bearer sso_302_ok"
+	if expanded != want {
+		t.Fatalf("ExpandTemplate mismatch:\n got: %q\nwant: %q", expanded, want)
+	}
+}

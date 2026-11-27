@@ -30,9 +30,10 @@ func credTools() []Tool {
 		},
 		{
 			Name:        "cred_get",
-			Description: "Read one credential's specification, status, cookie names, redacted preview, and storage backend (secrets are strictly redacted).",
+			Description: "Read one credential's specification, status, cookie names, redacted preview, and storage backend. Set includeSecrets=true to return decrypted runtime values (cookies/token/header) when authorized.",
 			InputSchema: obj(map[string]any{
-				"id": str("credential id"),
+				"id":             str("credential id"),
+				"includeSecrets": map[string]any{"type": "boolean", "description": "if true, include decrypted runtime cookies/token/header data (default false)"},
 			}, "id"),
 		},
 		{
@@ -50,8 +51,11 @@ func credTools() []Tool {
 				"headerName":     str("header name for type=token/header (default Authorization)"),
 				"headerPrefix":   str("optional header prefix (e.g. 'Bearer ')"),
 				"cdpUrl":         str("optional Chromium CDP HTTP endpoint (default http://127.0.0.1:9222)"),
-				"allowedDomains": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "optional extra authorized cookie domains"},
-			}, "id", "origin"),
+				"domains":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "optional cookie/request matching domains"},
+				"allowedDomains": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "optional extra authorized cookie domains (alias of domains)"},
+				"cookies":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "optional cookie names to retain (empty keeps all cookies)"},
+				"cookieKey":      str("optional single cookie name mapped into headerName"),
+			}, "id"),
 		},
 		{
 			Name:        "cred_import",
@@ -152,6 +156,7 @@ func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
 		if id == "" {
 			return "", true, errors.New("id 不能为空")
 		}
+		includeSecrets, _ := a["includeSecrets"].(bool)
 		mgr, err := s.openCredManager()
 		if err != nil {
 			return "", true, err
@@ -159,6 +164,18 @@ func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
 		rec, ok := mgr.Get(id)
 		if !ok {
 			return "", true, fmt.Errorf("没有凭据 %q", id)
+		}
+		if includeSecrets {
+			rtData, _ := mgr.RuntimeDataOf(id)
+			out := struct {
+				cred.Record
+				Runtime cred.RuntimeData `json:"runtime"`
+			}{
+				Record:  rec,
+				Runtime: rtData,
+			}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return string(b), true, nil
 		}
 		b, _ := json.MarshalIndent(rec, "", "  ")
 		return string(b), true, nil
@@ -373,6 +390,11 @@ func parseCredSpecArgs(a map[string]any) (cred.Spec, error) {
 			}
 		}
 	}
+	sp.Cookies = toStringSlice(a["cookies"])
+	if ck, ok := a["cookieKey"].(string); ok {
+		sp.CookieKey = strings.TrimSpace(ck)
+	}
+	sp.Domains = toStringSlice(a["domains"])
 	sp.AllowedDomains = toStringSlice(a["allowedDomains"])
 	sp = sp.Normalized()
 	return sp, sp.Validate()

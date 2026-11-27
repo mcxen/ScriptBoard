@@ -678,6 +678,29 @@ func installBarGlobals(
 		}),
 	}
 
+	findCredTarget := func(r *moejs.Realm, arg moejs.Value) (cred.Spec, error) {
+		s, err := r.ToString(arg)
+		if err != nil {
+			return cred.Spec{}, err
+		}
+		credID := strings.TrimSpace(s.GoString())
+		for _, cs := range spec.Credentials {
+			if cs.ID == credID {
+				return cs, nil
+			}
+		}
+		return cred.Spec{}, fmt.Errorf("credential %q is not declared in <credentials>", credID)
+	}
+
+	runtimeDataFor := func(target cred.Spec) cred.RuntimeData {
+		if creds != nil {
+			if data, ok := creds.RuntimeDataOf(target.ID); ok {
+				return data
+			}
+		}
+		return cred.BuildRuntimeData(cred.Record{Spec: target, Status: cred.StatusMissing}, cred.SecretPayload{}, false)
+	}
+
 	credentialsAPI := map[string]any{
 		"status": rt.Function("status", 0, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			if creds == nil {
@@ -697,26 +720,187 @@ func installBarGlobals(
 			}
 			return rt.FromGo(statuses)
 		}),
+		"get": rt.Function("get", 0, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			if len(args) == 0 || moejs.Arg(args, 0).IsUndefined() || moejs.Arg(args, 0).IsNull() {
+				if creds == nil {
+					return rt.FromGo(map[string]cred.RuntimeData{})
+				}
+				return rt.FromGo(creds.RuntimeDataMap(spec.Credentials))
+			}
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			return rt.FromGo(runtimeDataFor(target))
+		}),
+		"cookies": rt.Function("cookies", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			data := runtimeDataFor(target)
+			if data.Cookies == nil {
+				return rt.FromGo(map[string]string{})
+			}
+			return rt.FromGo(data.Cookies)
+		}),
+		"cookie": rt.Function("cookie", 2, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			ns, err := r.ToString(moejs.Arg(args, 1))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			name := strings.TrimSpace(ns.GoString())
+			if name == "" {
+				return moejs.Null(), nil
+			}
+			data := runtimeDataFor(target)
+			if v, ok := data.Cookies[name]; ok {
+				return moejs.String(v), nil
+			}
+			return moejs.Null(), nil
+		}),
+		"header": rt.Function("header", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			hdrs := map[string]string{}
+			data := runtimeDataFor(target)
+			if data.HeaderName != "" && data.HeaderValue != "" {
+				hdrs[data.HeaderName] = data.HeaderValue
+			} else if data.CookieHeader != "" {
+				hdrs["Cookie"] = data.CookieHeader
+			}
+			return rt.FromGo(hdrs)
+		}),
+		"set": rt.Function("set", 2, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			if creds == nil {
+				return moejs.Undefined(), errors.New("credential provider unavailable")
+			}
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			rawVal, err := rt.ToGo(moejs.Arg(args, 1))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			p := cred.SecretPayload{
+				Type:     target.Type,
+				Provider: cred.ProviderManual,
+			}
+			if p.Type == "" {
+				p.Type = cred.TypeCookie
+			}
+			defaultDomain := ""
+			if u, perr := url.Parse(target.Origin); perr == nil {
+				defaultDomain = strings.ToLower(u.Hostname())
+			}
+			appendCookiePair := func(k, v, dom, path string, sec, httpOnly bool) {
+				k = strings.TrimSpace(k)
+				if k == "" {
+					return
+				}
+				if dom == "" {
+					dom = defaultDomain
+				}
+				if path == "" {
+					path = "/"
+				}
+				p.Cookies = append(p.Cookies, cred.StoredCookie{
+					Name:     k,
+					Value:    v,
+					Domain:   dom,
+					Path:     path,
+					Secure:   sec,
+					HTTPOnly: httpOnly,
+				})
+			}
+			switch v := rawVal.(type) {
+			case string:
+				parsed, perr := cred.ParseManualImport(target, cred.ImportAuto, v, "", "", "", "")
+				if perr != nil {
+					return moejs.Undefined(), perr
+				}
+				p = parsed
+			case map[string]any:
+				if t, ok := v["type"].(string); ok && strings.TrimSpace(t) != "" {
+					p.Type = strings.ToLower(strings.TrimSpace(t))
+				}
+				if tok, ok := v["token"].(string); ok {
+					p.Token = tok
+				}
+				if hv, ok := v["headerValue"].(string); ok && hv != "" && p.Token == "" {
+					p.Token = hv
+				}
+				if hp, ok := v["headerPrefix"].(string); ok {
+					p.HeaderPrefix = hp
+				}
+				if hn, ok := v["headerName"].(string); ok {
+					p.HeaderName = hn
+				}
+				if u, ok := v["username"].(string); ok {
+					p.Username = u
+				}
+				if pw, ok := v["password"].(string); ok {
+					p.Password = pw
+				}
+				for _, key := range []string{"cookieHeader", "cookie"} {
+					if cs, ok := v[key].(string); ok && strings.TrimSpace(cs) != "" {
+						for _, part := range strings.Split(cs, ";") {
+							kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+							if len(kv) == 2 {
+								appendCookiePair(kv[0], strings.TrimSpace(kv[1]), "", "/", true, false)
+							}
+						}
+					}
+				}
+				switch cm := v["cookies"].(type) {
+				case map[string]any:
+					for name, val := range cm {
+						if val != nil {
+							appendCookiePair(name, fmt.Sprint(val), "", "/", true, false)
+						}
+					}
+				case []any:
+					for _, item := range cm {
+						if row, ok := item.(map[string]any); ok {
+							name, _ := row["name"].(string)
+							val := ""
+							if row["value"] != nil {
+								val = fmt.Sprint(row["value"])
+							}
+							dom, _ := row["domain"].(string)
+							path, _ := row["path"].(string)
+							sec, _ := row["secure"].(bool)
+							ho, _ := row["httpOnly"].(bool)
+							appendCookiePair(name, val, dom, path, sec, ho)
+						}
+					}
+				}
+			default:
+				return moejs.Undefined(), errors.New("payload must be a string or object")
+			}
+			if _, err := creds.SaveSecret(target.ID, p); err != nil {
+				return moejs.Undefined(), err
+			}
+			syncCredCookiesToJar(cookies, p.Cookies)
+			if onInvalidate != nil {
+				onInvalidate()
+			}
+			return rt.FromGo(runtimeDataFor(target))
+		}),
 		"login": rt.Function("login", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			if creds == nil || loop == nil {
 				return moejs.Undefined(), errors.New("credential provider unavailable")
 			}
-			s, err := r.ToString(moejs.Arg(args, 0))
+			target, err := findCredTarget(r, moejs.Arg(args, 0))
 			if err != nil {
 				return moejs.Undefined(), err
-			}
-			credID := strings.TrimSpace(s.GoString())
-			var target cred.Spec
-			var found bool
-			for _, cs := range spec.Credentials {
-				if cs.ID == credID {
-					target = cs
-					found = true
-					break
-				}
-			}
-			if !found {
-				return moejs.Undefined(), fmt.Errorf("credential %q is not declared in <credentials>", credID)
 			}
 			runCtx := ctx
 			if runCtx == nil {
@@ -735,7 +919,7 @@ func installBarGlobals(
 					if onInvalidate != nil {
 						onInvalidate()
 					}
-					return rt2.FromGo(creds.StatusMap([]cred.Spec{target})[target.ID])
+					return rt2.FromGo(runtimeDataFor(target))
 				})
 			}()
 			return p, nil

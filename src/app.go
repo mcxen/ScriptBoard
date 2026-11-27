@@ -759,14 +759,38 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		keys[name] = r.CacheKey()
 	}
 	httpClient := a.client
-	var credStatuses map[string]cred.Status
 	if a.credMgr != nil && len(s.Meta.Credentials) > 0 {
 		a.credMgr.RegisterSpecs(sc.ID, s.Meta.Credentials)
 		httpClient = a.credMgr.WrapClient(a.client, s.Meta.Credentials, nil)
 		opt.CacheSalt = fmt.Sprintf("cred=%d", a.credMgr.Revision(s.Meta.Credentials))
-		credStatuses = a.credMgr.StatusMap(s.Meta.Credentials)
+		for name, r := range reqs {
+			r.URL = a.credMgr.ExpandTemplate(r.URL, s.Meta.Credentials)
+			r.Body = a.credMgr.ExpandTemplate(r.Body, s.Meta.Credentials)
+			for k, v := range r.Headers {
+				r.Headers[k] = a.credMgr.ExpandTemplate(v, s.Meta.Credentials)
+			}
+			for j := range r.Fallbacks {
+				r.Fallbacks[j].URL = a.credMgr.ExpandTemplate(r.Fallbacks[j].URL, s.Meta.Credentials)
+				r.Fallbacks[j].Body = a.credMgr.ExpandTemplate(r.Fallbacks[j].Body, s.Meta.Credentials)
+				for k, v := range r.Fallbacks[j].Headers {
+					r.Fallbacks[j].Headers[k] = a.credMgr.ExpandTemplate(v, s.Meta.Credentials)
+				}
+			}
+			reqs[name] = r
+			keys[name] = r.CacheKey()
+		}
+		for name, hdrs := range expandedHeaders {
+			for k, v := range hdrs {
+				hdrs[k] = a.credMgr.ExpandTemplate(v, s.Meta.Credentials)
+			}
+			expandedHeaders[name] = hdrs
+		}
 	}
 	sources, info := engine.FetchRequests(context.Background(), httpClient, reqs, now, opt)
+	var credRuntime map[string]cred.RuntimeData
+	if a.credMgr != nil && len(s.Meta.Credentials) > 0 {
+		credRuntime = a.credMgr.RuntimeDataMap(s.Meta.Credentials)
+	}
 	var history map[string][]engine.HistoryPoint
 	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
 		history = engine.HistoryOf(opt.Cache, keys, names, n, now)
@@ -789,7 +813,7 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		Metrics:     a.store.Metrics(),
 		Feeds:       a.feedInput(s.Meta.Feeds, now),
 		Commands:    a.commandInput(s.Meta.Commands),
-		Credentials: credStatuses,
+		Credentials: credRuntime,
 		Usage:       a.usageInput(s.Meta.Usage, now),
 		Settings: map[string]any{
 			"weightUnit": set.WeightUnit,

@@ -112,9 +112,12 @@ type xmlCredential struct {
 	ReadyCookies      string `xml:"ready-cookies,attr"`
 	ReadyTitleInclude string `xml:"ready-title-includes,attr"`
 	RefreshOn         string `xml:"refresh-on,attr"`
+	Cookies           string `xml:"cookies,attr"`
+	CookieKey         string `xml:"cookie-key,attr"`
 	HeaderName        string `xml:"header-name,attr"`
 	HeaderPrefix      string `xml:"header-prefix,attr"`
 	CDPURL            string `xml:"cdp-url,attr"`
+	Domains           string `xml:"domains,attr"`
 	AllowedDomains    string `xml:"allowed-domains,attr"`
 }
 
@@ -218,6 +221,7 @@ func Parse(source string) (Spec, error) {
 				Origin:       strings.TrimSpace(xc.Origin),
 				Provider:     strings.TrimSpace(xc.Provider),
 				LoginURL:     strings.TrimSpace(xc.LoginURL),
+				CookieKey:    strings.TrimSpace(xc.CookieKey),
 				HeaderName:   strings.TrimSpace(xc.HeaderName),
 				HeaderPrefix: xc.HeaderPrefix,
 				CDPURL:       strings.TrimSpace(xc.CDPURL),
@@ -237,15 +241,20 @@ func Parse(source string) (Spec, error) {
 			}
 			if xc.RefreshOn != "" {
 				for _, part := range strings.Split(xc.RefreshOn, ",") {
-					if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n >= 400 && n <= 599 {
+					if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n >= 100 && n <= 599 {
 						cs.RefreshOn = append(cs.RefreshOn, n)
 					}
 				}
 			}
-			if xc.AllowedDomains != "" {
-				for _, d := range strings.Split(xc.AllowedDomains, ",") {
+			for _, ck := range strings.Split(xc.Cookies, ",") {
+				if ck = strings.TrimSpace(ck); ck != "" {
+					cs.Cookies = append(cs.Cookies, ck)
+				}
+			}
+			for _, rawList := range []string{xc.Domains, xc.AllowedDomains} {
+				for _, d := range strings.Split(rawList, ",") {
 					if d = strings.TrimSpace(d); d != "" {
-						cs.AllowedDomains = append(cs.AllowedDomains, d)
+						cs.Domains = append(cs.Domains, d)
 					}
 				}
 			}
@@ -253,6 +262,15 @@ func Parse(source string) (Spec, error) {
 			spec.Credentials = append(spec.Credentials, cs)
 			if cs.Origin != "" && OriginAllowed(cs.Origin, spec.Permissions) != nil {
 				spec.Permissions = append(spec.Permissions, cs.Origin)
+			}
+			for _, dom := range cs.Domains {
+				cleanDom := strings.TrimPrefix(strings.TrimSpace(dom), ".")
+				if cleanDom != "" {
+					cand := "https://" + cleanDom
+					if OriginAllowed(cand, spec.Permissions) != nil {
+						spec.Permissions = append(spec.Permissions, cand)
+					}
+				}
 			}
 		}
 	}

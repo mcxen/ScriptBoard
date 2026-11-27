@@ -867,3 +867,82 @@ func TestBarCredentialAutoRefreshAndCookieSync(t *testing.T) {
 		t.Fatalf("expected extracted cookie synced into bar CookieJar")
 	}
 }
+
+func TestBarCredentialsDeveloperAPIs(t *testing.T) {
+	mgr, err := cred.NewManager(t.TempDir(), cred.NewMemoryBackend(), cred.LoginHandlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	barXML := `<bar id="dev-cred-bar" title="Dev Cred Bar" version="1.0.0">
+  <credentials>
+    <credential id="dev-cred"
+                type="cookie"
+                origin="https://api.example.com"
+                domains=".example.com"
+                cookies="SSO,csrf"
+                cookie-key="SSO"
+                header-name="X-Session"
+                header-prefix="Token "
+                provider="manual" />
+  </credentials>
+  <script><![CDATA[
+    let summary = "";
+    export default {
+      async scheduled() {
+        const saved = $metrix.credentials.set("dev-cred", {
+          cookies: { SSO: "s_123", csrf: "c_456", extra: "drop_me" }
+        });
+        const all = $metrix.credentials.cookies("dev-cred");
+        const sso = $metrix.credentials.cookie("dev-cred", "SSO");
+        const hdr = $metrix.credentials.header("dev-cred");
+        const full = $metrix.credentials.get("dev-cred");
+        summary = [
+          saved && saved.status,
+          all && all.SSO,
+          all && all.extra ? "leaked" : "filtered",
+          sso,
+          hdr && hdr["X-Session"],
+          full && full.cookieCount
+        ].join("|");
+      },
+      render() {
+        return {
+          tray: { title: "Cred" },
+          panel: h("Text", {}, summary)
+        };
+      }
+    };
+  ]]></script>
+</bar>`
+
+	sp, err := Parse(barXML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sp.Credentials) != 1 || len(sp.Credentials[0].Cookies) != 2 || sp.Credentials[0].CookieKey != "SSO" {
+		t.Fatalf("unexpected parsed credential attributes: %+v", sp.Credentials)
+	}
+	jar, err := NewCookieJar("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := NewInstance(sp, Options{
+		Cookies:     jar,
+		Credentials: mgr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+
+	if !inst.WaitIdle(5 * time.Second) {
+		t.Fatal("bar WaitIdle timed out")
+	}
+	snap := inst.Snapshot()
+	txt := strings.Join(CollectTexts(snap.Panel), " ")
+	want := "ready|s_123|filtered|s_123|Token s_123|2"
+	if !strings.Contains(txt, want) {
+		t.Fatalf("expected panel text %q, got %q (err=%q)", want, txt, snap.Error)
+	}
+}

@@ -58,14 +58,16 @@ func fetchViaEgoCLI(ctx context.Context, bin string, spec Spec) (SecretPayload, 
 
 	// Origin is passed via environment variable SB_CRED_ORIGIN (no JS string interpolation).
 	script := `
-const origin = process.env.SB_CRED_ORIGIN;
+const origin = process.env.SB_CRED_ORIGIN || "";
+const method = origin ? "Network.getCookies" : "Storage.getCookies";
+const params = origin ? { urls: [origin] } : undefined;
 const extract = async () => {
   if (typeof task !== "undefined" && task && typeof task.cdp === "function") {
-    const res = await task.cdp("Network.getCookies", { urls: [origin] });
+    const res = await task.cdp(method, params);
     return res && res.cookies ? res.cookies : [];
   }
   if (typeof page !== "undefined" && page && typeof page.cdp === "function") {
-    const res = await page.cdp("Network.getCookies", { urls: [origin] });
+    const res = await page.cdp(method, params);
     return res && res.cookies ? res.cookies : [];
   }
   return [];
@@ -204,7 +206,7 @@ func queryCDPCookiesWS(ctx context.Context, wsURL, targetType, origin string) ([
 
 	method := "Storage.getCookies"
 	var params any
-	if targetType == "page" {
+	if targetType == "page" && origin != "" {
 		method = "Network.getCookies"
 		params = map[string]any{"urls": []string{origin}}
 	}
@@ -275,16 +277,13 @@ func finalizeCDPCookies(spec Spec, provider string, raw []cdpCookie) (SecretPayl
 			SameSite: c.SameSite,
 		})
 	}
-	filtered := spec.FilterAuthorizedCookies(converted)
-	if len(filtered) == 0 {
-		return SecretPayload{}, fmt.Errorf("cred: no authorized cookies found in %s for %s", provider, spec.Origin)
-	}
-	if spec.Ready != nil && len(spec.Ready.HasCookies) > 0 && !spec.Ready.Satisfied(spec.Origin, "", filtered) {
-		return SecretPayload{}, fmt.Errorf("cred: browser session is missing required cookies (%s) for %s", strings.Join(spec.Ready.HasCookies, ", "), spec.Origin)
+	selected := spec.SelectCookies(converted, spec.Origin != "" || len(spec.effectiveDomains()) > 0)
+	if len(selected) == 0 {
+		return SecretPayload{}, fmt.Errorf("cred: no matching cookies found in %s", provider)
 	}
 	return SecretPayload{
 		Type:      TypeCookie,
-		Cookies:   filtered,
+		Cookies:   selected,
 		Provider:  provider,
 		UpdatedAt: time.Now().UnixMilli(),
 	}, nil

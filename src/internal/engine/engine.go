@@ -799,8 +799,8 @@ type Input struct {
 	Feeds map[string]FeedData
 	// Commands holds the latest run and history of each command named in meta().commands.
 	Commands map[string]CommandData
-	// Credentials holds redacted credential readiness metadata (ctx.credentials).
-	Credentials map[string]cred.Status
+	// Credentials holds live credential status and cookies/tokens (ctx.credentials).
+	Credentials map[string]cred.RuntimeData
 	Metrics     map[string][]Point
 	Settings    map[string]any
 	Sources     map[string]json.RawMessage
@@ -980,9 +980,9 @@ func nonNilCommands(m map[string]CommandData) map[string]CommandData {
 	return m
 }
 
-func nonNilCredentials(m map[string]cred.Status) map[string]cred.Status {
+func nonNilCredentials(m map[string]cred.RuntimeData) map[string]cred.RuntimeData {
 	if m == nil {
-		return map[string]cred.Status{}
+		return map[string]cred.RuntimeData{}
 	}
 	return m
 }

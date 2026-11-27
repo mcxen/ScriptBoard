@@ -3,6 +3,7 @@ package cred
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -17,7 +18,7 @@ import (
 const (
 	defaultAttemptTimeout     = 15 * time.Second
 	defaultInteractiveTimeout = 5 * time.Minute
-	defaultFailCooldown       = 15 * time.Second
+	defaultFailCooldown       = 3 * time.Second
 	maxReplayRequestBody      = 2 << 20
 	maxBufferedErrorBody      = 64 << 10
 )
@@ -270,6 +271,196 @@ func (m *Manager) StatusMap(specs []Spec) map[string]Status {
 	return out
 }
 
+// RuntimeDataOf returns the developer-facing runtime object (status + cookies/token)
+// for a single stored credential ID.
+func (m *Manager) RuntimeDataOf(id string) (RuntimeData, bool) {
+	if m == nil {
+		return RuntimeData{}, false
+	}
+	id = strings.TrimSpace(id)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	rec, ok := m.records[id]
+	if !ok {
+		return RuntimeData{}, false
+	}
+	p, hasSec := m.secrets[id]
+	return BuildRuntimeData(rec, p, hasSec), true
+}
+
+// RuntimeDataMap returns a map of id -> RuntimeData for all declared specs so
+// JS scripts (ctx.credentials) and .bar components ($metrix.credentials) can
+// freely inspect status and pick any extracted cookie or token value.
+func (m *Manager) RuntimeDataMap(specs []Spec) map[string]RuntimeData {
+	out := make(map[string]RuntimeData, len(specs))
+	if m == nil {
+		return out
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, raw := range specs {
+		sp := raw.Normalized()
+		if sp.ID == "" {
+			continue
+		}
+		if rec, ok := m.records[sp.ID]; ok {
+			p, hasSec := m.secrets[sp.ID]
+			out[sp.ID] = BuildRuntimeData(rec, p, hasSec)
+		} else {
+			out[sp.ID] = RuntimeData{
+				ID:       sp.ID,
+				Name:     sp.Name,
+				Type:     sp.Type,
+				Origin:   sp.Origin,
+				Provider: sp.Provider,
+				Status:   StatusMissing,
+			}
+		}
+	}
+	return out
+}
+
+// BuildRuntimeData constructs a RuntimeData view combining non-secret metadata
+// with live decrypted credential values for plugin runtime execution.
+func BuildRuntimeData(rec Record, p SecretPayload, hasSec bool) RuntimeData {
+	rd := RuntimeData{
+		ID:          rec.Spec.ID,
+		Name:        rec.Spec.Name,
+		Type:        rec.Spec.Type,
+		Origin:      rec.Spec.Origin,
+		Provider:    rec.Spec.Provider,
+		Status:      rec.Status,
+		HasSecret:   hasSec,
+		CookieCount: rec.CookieCount,
+		CookieNames: append([]string(nil), rec.CookieNames...),
+		UpdatedAt:   rec.UpdatedAt,
+		LastError:   rec.LastError,
+	}
+	if !hasSec {
+		return rd
+	}
+	if len(p.Cookies) > 0 {
+		rd.Cookies, rd.CookieHeader = CookieMap(p.Cookies)
+	}
+	rd.Token = p.Token
+	rd.Username = p.Username
+	hName, hVal := resolvedHeaderPair(rec.Spec, p)
+	rd.HeaderName = hName
+	rd.HeaderValue = hVal
+	return rd
+}
+
+// ExpandTemplate replaces {cred.<id>.cookie.<name>}, {cred.<id>.cookieHeader},
+// {cred.<id>.token}, and {cred.<id>.header} placeholders inside URLs, headers,
+// and request bodies for specs and known stored credentials.
+func (m *Manager) ExpandTemplate(s string, specs []Spec) string {
+	if m == nil || !strings.Contains(s, "{cred.") {
+		return s
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seen := map[string]bool{}
+	var ids []string
+	for _, sp := range specs {
+		if sp.ID != "" && !seen[sp.ID] {
+			seen[sp.ID] = true
+			ids = append(ids, sp.ID)
+		}
+	}
+	for id := range m.secrets {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+
+	out := s
+	for _, id := range ids {
+		p, hasSec := m.secrets[id]
+		if !hasSec {
+			continue
+		}
+		rec := m.records[id]
+		if rec.Spec.ID == "" {
+			rec.Spec.ID = id
+		}
+		rd := BuildRuntimeData(rec, p, true)
+		prefix := "{cred." + id + "."
+		if !strings.Contains(out, prefix) {
+			continue
+		}
+		out = strings.ReplaceAll(out, prefix+"cookieHeader}", rd.CookieHeader)
+		out = strings.ReplaceAll(out, prefix+"token}", rd.Token)
+		if rd.HeaderValue != "" {
+			out = strings.ReplaceAll(out, prefix+"header}", rd.HeaderValue)
+		} else {
+			out = strings.ReplaceAll(out, prefix+"header}", rd.CookieHeader)
+		}
+		for k, v := range rd.Cookies {
+			out = strings.ReplaceAll(out, prefix+"cookie."+k+"}", v)
+		}
+	}
+	return out
+}
+
+func resolvedHeaderPair(sp Spec, p SecretPayload) (string, string) {
+	typ := p.Type
+	if typ == "" {
+		typ = sp.Type
+	}
+	switch typ {
+	case TypeCookie:
+		if sp.CookieKey != "" {
+			for _, c := range p.Cookies {
+				if c.Name == sp.CookieKey && c.Value != "" {
+					hName := firstNonEmpty(p.HeaderName, sp.HeaderName, "Authorization")
+					pref := p.HeaderPrefix
+					if pref == "" {
+						pref = sp.HeaderPrefix
+					}
+					return hName, pref + c.Value
+				}
+			}
+		}
+		_, hdr := CookieMap(p.Cookies)
+		if hdr != "" {
+			return "Cookie", hdr
+		}
+	case TypeBearer:
+		if strings.TrimSpace(p.Token) != "" {
+			pref := p.HeaderPrefix
+			if pref == "" {
+				pref = "Bearer "
+			}
+			return firstNonEmpty(p.HeaderName, "Authorization"), pref + strings.TrimSpace(p.Token)
+		}
+	case TypeToken, TypeHeader:
+		if strings.TrimSpace(p.Token) != "" {
+			hName := firstNonEmpty(p.HeaderName, sp.HeaderName, "Authorization")
+			pref := p.HeaderPrefix
+			if pref == "" {
+				pref = sp.HeaderPrefix
+			}
+			return hName, pref + p.Token
+		}
+	case TypeBasic:
+		if p.Username != "" {
+			return "Authorization", "Basic " + base64.StdEncoding.EncodeToString([]byte(p.Username+":"+p.Password))
+		}
+	}
+	return "", ""
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 // SaveSpec creates or updates a credential specification cleanly.
 func (m *Manager) SaveSpec(spec Spec) (Record, error) {
 	if m == nil {
@@ -328,11 +519,11 @@ func (m *Manager) SaveSecret(id string, p SecretPayload) (Record, error) {
 		p.UpdatedAt = time.Now().UnixMilli()
 	}
 	if p.Type == TypeCookie || len(p.Cookies) > 0 {
-		filtered := rec.Spec.FilterAuthorizedCookies(p.Cookies)
-		if len(filtered) == 0 {
-			return Record{}, fmt.Errorf("cred: no cookies match authorized origin %s", rec.Spec.Origin)
+		selected := rec.Spec.SelectCookies(p.Cookies, false)
+		if len(selected) == 0 {
+			return Record{}, errors.New("cred: no matching cookies to save")
 		}
-		p.Cookies = filtered
+		p.Cookies = selected
 	}
 	if err := m.vault.SetSecret(id, p); err != nil {
 		return Record{}, err
@@ -477,12 +668,18 @@ func applySecretToRequest(req *http.Request, sp Spec, p SecretPayload) {
 	switch typ {
 	case TypeCookie:
 		matching := matchingCookiesForURL(p.Cookies, req.URL.Hostname(), req.URL.Path, strings.EqualFold(req.URL.Scheme, "https"))
-		if len(matching) == 0 {
-			return
+		if len(matching) > 0 {
+			if merged := mergeCookieHeader(req.Header.Get("Cookie"), matching); merged != "" {
+				req.Header.Set("Cookie", merged)
+			}
 		}
-		merged := mergeCookieHeader(req.Header.Get("Cookie"), matching)
-		if merged != "" {
-			req.Header.Set("Cookie", merged)
+		if sp.CookieKey != "" && sp.HeaderName != "" {
+			for _, c := range p.Cookies {
+				if c.Name == sp.CookieKey && c.Value != "" {
+					req.Header.Set(sp.HeaderName, sp.HeaderPrefix+c.Value)
+					break
+				}
+			}
 		}
 	case TypeBearer:
 		if strings.TrimSpace(p.Token) == "" {
@@ -526,7 +723,7 @@ func matchingCookiesForURL(cookies []StoredCookie, host, path string, isHTTPS bo
 		path = "/"
 	}
 	nowSec := time.Now().Unix()
-	var out []StoredCookie
+	var strict, unexpired []StoredCookie
 	for _, c := range cookies {
 		if c.Name == "" {
 			continue
@@ -534,10 +731,11 @@ func matchingCookiesForURL(cookies []StoredCookie, host, path string, isHTTPS bo
 		if c.Expires > 0 && c.Expires <= nowSec {
 			continue
 		}
+		unexpired = append(unexpired, c)
 		if c.Secure && !isHTTPS {
 			continue
 		}
-		if !domainAppliesToHost(host, c.Domain) {
+		if c.Domain != "" && c.Domain != "*" && !domainAppliesToHost(host, c.Domain) {
 			continue
 		}
 		cp := c.Path
@@ -547,9 +745,12 @@ func matchingCookiesForURL(cookies []StoredCookie, host, path string, isHTTPS bo
 		if !strings.HasPrefix(path, cp) {
 			continue
 		}
-		out = append(out, c)
+		strict = append(strict, c)
 	}
-	return out
+	if len(strict) > 0 {
+		return strict
+	}
+	return unexpired
 }
 
 func mergeCookieHeader(existing string, fresh []StoredCookie) string {
@@ -971,11 +1172,13 @@ func syncRecordSummary(r *Record, p SecretPayload, hasSec bool) {
 
 func specsEqual(a, b Spec) bool {
 	if a.ID != b.ID || a.Name != b.Name || a.Type != b.Type || a.Origin != b.Origin ||
-		a.Provider != b.Provider || a.LoginURL != b.LoginURL || a.HeaderName != b.HeaderName ||
-		a.HeaderPrefix != b.HeaderPrefix || a.CDPURL != b.CDPURL || a.SourcePlugin != b.SourcePlugin {
+		a.Provider != b.Provider || a.LoginURL != b.LoginURL || a.CookieKey != b.CookieKey ||
+		a.HeaderName != b.HeaderName || a.HeaderPrefix != b.HeaderPrefix || a.CDPURL != b.CDPURL ||
+		a.SourcePlugin != b.SourcePlugin {
 		return false
 	}
-	if !slices.Equal(a.RefreshOn, b.RefreshOn) || !slices.Equal(a.AllowedDomains, b.AllowedDomains) {
+	if !slices.Equal(a.RefreshOn, b.RefreshOn) || !slices.Equal(a.Cookies, b.Cookies) ||
+		!slices.Equal(a.effectiveDomains(), b.effectiveDomains()) {
 		return false
 	}
 	if (a.Ready == nil) != (b.Ready == nil) {
