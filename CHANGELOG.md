@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.18
+
+- Unified Credential Provider (`src/internal/cred`, `/credentials`):
+  - **Keychain AES-256-GCM Vault**: Stores the 32-byte master key in the OS credential store (`mygo.Secrets`, falling back cleanly to `file-encrypted` on headless environments) and seals sensitive payloads (including multi-kilobyte enterprise cookie sets) in `credentials.vault` (`0600`), while `credentials.json` holds only non-secret redacted metadata.
+  - **Built-in Restricted WebView SSO Login (`webview`)**: Opens an ephemeral isolated MyGo session (`Untrusted: true`, custom Safari user-agent suffix), observes only URL, page title, load state, and origin-authorized cookies (`ready: { urlIncludes, hasCookies, titleIncludes }`) without injecting input listeners or logging form keystrokes, persists encrypted secrets, closes the login window, and automatically retries failed `401`/`403` requests once with single-flight deduplication and cancel cooldowns.
+  - **System Browser Takeover (`browser`), Manual Import (`manual`), and Ego/CDP Sync (`ego` / `cdp`)**: Starts an ephemeral `127.0.0.1` loopback HTTP callback & Paper & Ink local handoff form with random `state` token; supports pasting Cookie headers, curl commands, Netscape `cookies.txt` (including `#HttpOnly_`), Bearer tokens, custom headers, and Basic Auth without touching Chrome SQLite databases; optionally extracts origin-scoped cookies from running `ego-browser` or local Chromium CDP endpoints.
+  - **Plugin, `.bar`, UI & MCP Integration**: Supports `meta().credentials` (`ctx.credentials`) in scripts and `<credentials><credential .../></credentials>` (`$metrix.credentials`) in `.bar` components with `CookieJar` synchronization; adds `/credentials` management UI (`Settings -> Data sources -> Credentials`) plus `.bar` inspector controls; adds `cred_list`, `cred_get`, `cred_save`, `cred_import`, `cred_delete`, `cred_sync_cdp`, and `cred_login` MCP tools with strict redaction and `ReadOnly` guards.
+- Paper & Ink UI Taste Redesign & `DESIGN.md`:
+  - Adopts a calm archival light/dark Paper & Ink palette (`#F7F6F3` / `#161618` / `#2A7B62` / `#23537A`), refines card chrome, Home/sidebar/chart/bento/.bar framing, tabular-numeral typography, built-in script palettes, and full English localization parity.
+
 ## 0.1.17
 
 - Host command runner & scheduler (`src/internal/cmdrun`, `/commands`): supports macOS/Linux `sh`, `bash`, `zsh`, `pwsh`, `psh`, `exec`, and custom interpreters with login-shell `PATH` discovery, safe environment-passed parameters (`SB_PARAM_<KEY>` / password masking), JSON/regex/line/raw field extraction, manual and interval execution, per-command JSONL history, and built-in/user `AllowExec` permission gating.
