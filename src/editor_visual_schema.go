@@ -54,21 +54,21 @@ type visualTemplate struct {
 }
 
 var visualTemplates = []visualTemplate{
-	{"progressBar", "zap", "霓虹进度条", "Neon bar", "霓虹发光 / 点阵灯 / 渐变 / 分段", "#00F5D4"},
-	{"progressRing", "gauge", "完成度环", "Progress rings", "并排或同心活动圆环", "#F43F5E"},
-	{"donut", "circle-dollar-sign", "环形占比", "Donut share", "多分类占比环图与图例", "#3B82F6"},
-	{"checklist", "activity", "待办清单", "Checklist", "勾选状态、徽章与完成进度", "#10B981"},
-	{"kv", "file-spreadsheet", "状态面板", "Status KV", "键值指标与状态指示灯", "#38BDF8"},
-	{"table", "file-spreadsheet", "数据表格", "Data table", "排序、筛选、徽章与涨跌着色", "#2563EB"},
-	{"countdown", "bell", "倒计时", "Countdown", "目标日期倒数与进度条", "#A855F7"},
-	{"clock", "calendar-days", "时钟表盘", "Clock dial", "指针表盘 / 数字 / 多时区", "#F59E0B"},
-	{"contrib", "sparkles", "打卡热力格", "Activity grid", "7 行习惯打卡活跃矩阵", "#22C55E"},
-	{"line", "chart-line", "折线图表", "Line chart", "经典数值走势曲线", "#3B82F6"},
-	{"bento", "layout-grid", "Bento 看板", "Bento board", "主信息 + 探针点阵 + 汇总胶囊嵌套", "#22C55E"},
+	{"progressBar", "zap", "霓虹进度条", "Neon bar", "霓虹发光 / 点阵灯 / 渐变 / 分段", "#23537A"},
+	{"progressRing", "gauge", "完成度环", "Progress rings", "并排或同心活动圆环", "#B84A4A"},
+	{"donut", "circle-dollar-sign", "环形占比", "Donut share", "多分类占比环图与图例", "#23537A"},
+	{"checklist", "activity", "待办清单", "Checklist", "勾选状态、徽章与完成进度", "#2A7B62"},
+	{"kv", "file-spreadsheet", "状态面板", "Status KV", "键值指标与状态指示灯", "#3D7A80"},
+	{"table", "file-spreadsheet", "数据表格", "Data table", "排序、筛选、徽章与涨跌着色", "#23537A"},
+	{"countdown", "bell", "倒计时", "Countdown", "目标日期倒数与进度条", "#5B5F97"},
+	{"clock", "calendar-days", "时钟表盘", "Clock dial", "指针表盘 / 数字 / 多时区", "#C26D2D"},
+	{"contrib", "calendar-days", "打卡热力格", "Activity grid", "7 行习惯打卡活跃矩阵", "#2A7B62"},
+	{"line", "chart-line", "折线图表", "Line chart", "经典数值走势曲线", "#23537A"},
+	{"bento", "layout-grid", "Bento 看板", "Bento board", "主信息 + 探针点阵 + 汇总胶囊嵌套", "#2A7B62"},
 }
 
 var visualSwatches = []string{
-	"#00F5D4", "#38BDF8", "#FF2A85", "#A855F7", "#10B981", "#FB923C", "#F59E0B", "#3B82F6",
+	"#23537A", "#2A7B62", "#C26D2D", "#B84A4A", "#5B5F97", "#3D7A80", "#8B6B3F", "#4B5563",
 }
 
 // defaultVisualConfig returns a ready-to-preview config for template key.
@@ -126,12 +126,12 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Big:         "",
 			Sub:         pick("本月分类汇总", "Monthly breakdown"),
 			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
-			Donut:       engine.DonutStyle{Center: pick("¥6,420", "$6,420"), Sub: pick("总支出", "Total"), Thickness: 0.28, Neon: true},
+			Donut:       engine.DonutStyle{Center: pick("¥6,420", "$6,420"), Sub: pick("总支出", "Total"), Thickness: 0.28, Neon: false},
 			Slices: []engine.Slice{
-				{Name: pick("餐饮", "Food"), Value: 2180, Color: "#00F5D4", Unit: pick("元", "")},
-				{Name: pick("居住", "Housing"), Value: 2400, Color: "#38BDF8", Unit: pick("元", "")},
-				{Name: pick("交通", "Transit"), Value: 860, Color: "#A855F7", Unit: pick("元", "")},
-				{Name: pick("娱乐", "Leisure"), Value: 980, Color: "#FF2A85", Unit: pick("元", "")},
+				{Name: pick("餐饮", "Food"), Value: 2180, Color: "#23537A", Unit: pick("元", "")},
+				{Name: pick("居住", "Housing"), Value: 2400, Color: "#2A7B62", Unit: pick("元", "")},
+				{Name: pick("交通", "Transit"), Value: 860, Color: "#C26D2D", Unit: pick("元", "")},
+				{Name: pick("娱乐", "Leisure"), Value: 980, Color: "#5B5F97", Unit: pick("元", "")},
 			},
 		}
 	case "checklist":
@@ -144,10 +144,10 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Sub:         pick("每日核心清单", "Daily essentials"),
 			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
 			Checklist: []engine.CheckItem{
-				{Label: pick("晨间复盘与排期", "Morning planning"), Done: true, Badge: "09:00", Color: "#10B981"},
-				{Label: pick("完成核心需求评审", "Finish design review"), Done: true, Badge: pick("工作", "Work"), Color: "#38BDF8"},
-				{Label: pick("30 分钟有氧运动", "30-min cardio"), Done: false, Note: pick("晚饭后", "After dinner"), Badge: pick("健康", "Health"), Color: "#F59E0B"},
-				{Label: pick("阅读 20 页书籍", "Read 20 pages"), Done: false, Badge: pick("习惯", "Habit"), Color: "#A855F7"},
+				{Label: pick("晨间复盘与排期", "Morning planning"), Done: true, Badge: "09:00", Color: "#2A7B62"},
+				{Label: pick("完成核心需求评审", "Finish design review"), Done: true, Badge: pick("工作", "Work"), Color: "#23537A"},
+				{Label: pick("30 分钟有氧运动", "30-min cardio"), Done: false, Note: pick("晚饭后", "After dinner"), Badge: pick("健康", "Health"), Color: "#C26D2D"},
+				{Label: pick("阅读 20 页书籍", "Read 20 pages"), Done: false, Badge: pick("习惯", "Habit"), Color: "#5B5F97"},
 			},
 		}
 	case "kv":
@@ -202,7 +202,7 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Sub:         "",
 			Layout:      engine.Layout{Legend: "hide", Summary: "hide", Stats: "hide", Actions: "hover", Title: "hide"},
 			Countdown: []engine.CountdownItem{
-				{Label: pick("距离下一年", "Until next year"), Target: nextYear, Start: thisYearStart, Note: pick("时光进度", "Year progress"), Color: "#00F5D4", To: "#38BDF8", Style: "neon"},
+				{Label: pick("距离下一年", "Until next year"), Target: nextYear, Start: thisYearStart, Note: pick("时光进度", "Year progress"), Color: "#23537A", Style: "solid"},
 			},
 		}
 	case "clock":
@@ -217,8 +217,8 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Clock: engine.ClockSpec{
 				Style:   "analog",
 				Seconds: true,
-				Color:   "#00F5D4",
-				Neon:    true,
+				Color:   "#23537A",
+				Neon:    false,
 				Zones: []engine.ClockZone{
 					{Label: pick("北京 / 上海", "Shanghai"), Offset: 8},
 					{Label: pick("东京", "Tokyo"), Offset: 9},
@@ -241,11 +241,11 @@ func (a *app) defaultVisualConfig(key string) visualConfig {
 			Type:        "contrib",
 			Name:        pick("习惯打卡", "Habit tracker"),
 			Description: pick("近 12 周每日打卡活跃热力格", "12-week daily habit contribution grid"),
-			Icon:        "sparkles",
+			Icon:        "calendar-days",
 			Big:         pick("连续 12 天", "12-day streak"),
 			Sub:         pick("每日专注与运动", "Daily focus & exercise"),
 			Layout:      engine.Layout{Legend: "hide", Summary: "top", Stats: "hide", Actions: "hover", Title: "hide"},
-			Contrib:     engine.ContribSpec{Cells: cells, Color: "#00F5D4", Max: 4, Weeks: 12, Unit: pick(" 次", "x"), Neon: true},
+			Contrib:     engine.ContribSpec{Cells: cells, Color: "#2A7B62", Max: 4, Weeks: 12, Unit: pick(" 次", "x"), Neon: false},
 		}
 	case "bento":
 		return visualConfig{

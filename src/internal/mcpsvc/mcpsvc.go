@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"scriptboard/src/internal/cred"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/plugins"
 	"scriptboard/src/internal/spec"
@@ -78,6 +79,9 @@ type Server struct {
 	// OnChange is invoked after write tools update store.json so the live app
 	// can reload settings and sync trays/views immediately.
 	OnChange func()
+	// CredManager returns the app's live Keychain-backed credential manager
+	// when running inside the desktop app.
+	CredManager func() *cred.Manager
 }
 
 func (s Server) readOnly() bool { return s.ReadOnly != nil && s.ReadOnly() }
@@ -305,7 +309,8 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set",
 		"bar_save", "bar_delete", "bar_cookies_set", "bar_cookies_clear",
 		"bar_storage_set", "bar_storage_clear", "feed_save", "feed_delete",
-		"cmd_save", "cmd_delete", "cmd_run", "cmd_history_clear", "cmd_style_set":
+		"cmd_save", "cmd_delete", "cmd_run", "cmd_history_clear", "cmd_style_set",
+		"cred_save", "cred_import", "cred_delete", "cred_sync_cdp", "cred_login":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}

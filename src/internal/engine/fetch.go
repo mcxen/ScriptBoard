@@ -70,11 +70,28 @@ func Offline[V any](sources map[string]V) map[string]json.RawMessage {
 	return out
 }
 
+// HTTPStatusError records an unsuccessful HTTP response status code.
+type HTTPStatusError struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *HTTPStatusError) Error() string { return "HTTP " + e.Status }
+
+func withAttemptTimeout(ctx context.Context, client *http.Client) (context.Context, context.CancelFunc) {
+	if client != nil && client.Transport != nil {
+		if h, ok := client.Transport.(interface{ HandlesPerAttemptTimeout() bool }); ok && h.HandlesPerAttemptTimeout() {
+			return ctx, func() {}
+		}
+	}
+	return context.WithTimeout(ctx, fetchTimeout)
+}
+
 func get(ctx context.Context, client *http.Client, url string, header map[string]string) ([]byte, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	ctx, cancel := withAttemptTimeout(ctx, client)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -89,7 +106,7 @@ func get(ctx context.Context, client *http.Client, url string, header map[string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("HTTP " + resp.Status)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, maxFetchBytes))
 }
@@ -156,6 +173,8 @@ type FetchOptions struct {
 	// Lang is the language of the messages a source's error carries: "zh" or
 	// "en"; anything else is English.
 	Lang string
+	// CacheSalt isolates cached responses when host credential revisions change.
+	CacheSalt string
 }
 
 // offlineWord is why a source gave no request: the app is offline.
@@ -239,6 +258,9 @@ func FetchRequests(ctx context.Context, client *http.Client, reqs map[string]Req
 
 func fetchOne(ctx context.Context, client *http.Client, r Request, now time.Time, opt FetchOptions) (json.RawMessage, SourceInfo) {
 	key := r.CacheKey()
+	if opt.CacheSalt != "" {
+		key += "\n#salt=" + opt.CacheSalt
+	}
 	var cached CachedBody
 	var have bool
 	if opt.Cache != nil {

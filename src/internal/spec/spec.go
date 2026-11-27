@@ -46,11 +46,16 @@ func Resolve(m engine.Meta) Resolved {
 
 	// What the host sees the script use.
 	inferred := map[string]bool{}
-	if len(m.Sources) > 0 || len(m.Feeds) > 0 || m.NetProbe != nil {
+	if len(m.Sources) > 0 || len(m.Feeds) > 0 || m.NetProbe != nil || len(m.Credentials) > 0 {
 		inferred[caps.Network] = true
 	}
 	if len(m.Commands) > 0 {
 		inferred[caps.Exec] = true
+	}
+	for _, c := range m.Credentials {
+		if err := c.Validate(); err != nil {
+			r.Problems = append(r.Problems, fmt.Sprintf("credentials (%s): %v", c.ID, err))
+		}
 	}
 	allowed := map[string]bool{}
 	for _, sys := range caps.Systems {

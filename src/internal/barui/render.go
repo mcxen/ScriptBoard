@@ -46,36 +46,36 @@ type Theme struct {
 	BorderStrong    ui.Color
 }
 
-// ThemeFor constructs the default light or dark Theme. Surface values match
-// ScriptBoard's card palette (#1C1F26 dark, #FFFFFF light).
+// ThemeFor constructs the default light or dark Paper & Ink Theme.
+// Surface values match ScriptBoard's card palette (#1C1C1F dark, #FFFFFF light).
 func ThemeFor(dark, vibrancy bool) Theme {
 	if dark {
 		th := Theme{
 			Dark:            true,
 			Vibrancy:        vibrancy,
-			Surface:         ui.Hex("#1A1D24"),
+			Surface:         ui.Hex("#1C1C1F"),
 			SurfaceCard:     ui.RGBA(255, 255, 255, 0.055),
-			SurfaceElevated: ui.RGBA(255, 255, 255, 0.11),
-			SurfaceSubtle:   ui.RGBA(255, 255, 255, 0.04),
-			SurfaceHover:    ui.Hex("#282C38"),
-			SurfacePressed:  ui.Hex("#323846"),
-			Text:            ui.Hex("#F2F4F8"),
-			TextMuted:       ui.Hex("#9BA3B4"),
-			TextFaint:       ui.Hex("#687082"),
-			Accent:          ui.Hex("#5B8CFF"),
-			AccentSurface:   ui.RGBA(91, 140, 255, 0.17),
-			Success:         ui.Hex("#34D399"),
-			SuccessSurface:  ui.RGBA(52, 211, 153, 0.17),
-			Warning:         ui.Hex("#FBBF24"),
-			WarningSurface:  ui.RGBA(251, 191, 36, 0.17),
-			Danger:          ui.Hex("#F87171"),
-			DangerSurface:   ui.RGBA(248, 113, 113, 0.17),
-			Purple:          ui.Hex("#A78BFA"),
-			PurpleSurface:   ui.RGBA(167, 139, 250, 0.17),
-			Cyan:            ui.Hex("#22D3EE"),
-			CyanSurface:     ui.RGBA(34, 211, 238, 0.17),
-			Border:          ui.RGBA(255, 255, 255, 0.09),
-			BorderStrong:    ui.RGBA(255, 255, 255, 0.18),
+			SurfaceElevated: ui.RGBA(255, 255, 255, 0.10),
+			SurfaceSubtle:   ui.RGBA(255, 255, 255, 0.042),
+			SurfaceHover:    ui.Hex("#27272B"),
+			SurfacePressed:  ui.Hex("#323238"),
+			Text:            ui.Hex("#F0EFEA"),
+			TextMuted:       ui.Hex("#9D9A93"),
+			TextFaint:       ui.Hex("#6E6B65"),
+			Accent:          ui.Hex("#3F76AD"),
+			AccentSurface:   ui.RGBA(63, 118, 173, 0.17),
+			Success:         ui.Hex("#4AA884"),
+			SuccessSurface:  ui.RGBA(74, 168, 132, 0.17),
+			Warning:         ui.Hex("#D99B43"),
+			WarningSurface:  ui.RGBA(217, 155, 67, 0.17),
+			Danger:          ui.Hex("#DC6B6B"),
+			DangerSurface:   ui.RGBA(220, 107, 107, 0.17),
+			Purple:          ui.Hex("#8B8EC4"),
+			PurpleSurface:   ui.RGBA(139, 142, 196, 0.17),
+			Cyan:            ui.Hex("#5EA3AA"),
+			CyanSurface:     ui.RGBA(94, 163, 170, 0.17),
+			Border:          ui.RGBA(255, 255, 255, 0.085),
+			BorderStrong:    ui.RGBA(255, 255, 255, 0.16),
 		}
 		if vibrancy {
 			th.SurfaceCard = ui.RGBA(255, 255, 255, 0.05)
@@ -90,35 +90,35 @@ func ThemeFor(dark, vibrancy bool) Theme {
 		Dark:            false,
 		Vibrancy:        vibrancy,
 		Surface:         ui.Hex("#FFFFFF"),
-		SurfaceCard:     ui.RGBA(15, 23, 42, 0.032),
+		SurfaceCard:     ui.RGBA(28, 25, 23, 0.032),
 		SurfaceElevated: ui.Hex("#FFFFFF"),
-		SurfaceSubtle:   ui.RGBA(15, 23, 42, 0.048),
-		SurfaceHover:    ui.Hex("#ECEEF3"),
-		SurfacePressed:  ui.Hex("#DFE3EC"),
-		Text:            ui.Hex("#141821"),
-		TextMuted:       ui.Hex("#646C7E"),
-		TextFaint:       ui.Hex("#949CAE"),
-		Accent:          ui.Hex("#2563EB"),
-		AccentSurface:   ui.RGBA(37, 99, 235, 0.12),
-		Success:         ui.Hex("#10B981"),
-		SuccessSurface:  ui.RGBA(16, 185, 129, 0.13),
-		Warning:         ui.Hex("#D97706"),
-		WarningSurface:  ui.RGBA(245, 158, 11, 0.14),
-		Danger:          ui.Hex("#EF4444"),
-		DangerSurface:   ui.RGBA(239, 68, 68, 0.12),
-		Purple:          ui.Hex("#7C3AED"),
-		PurpleSurface:   ui.RGBA(124, 58, 237, 0.12),
-		Cyan:            ui.Hex("#0891B2"),
-		CyanSurface:     ui.RGBA(8, 145, 178, 0.12),
-		Border:          ui.RGBA(15, 23, 42, 0.08),
-		BorderStrong:    ui.RGBA(15, 23, 42, 0.16),
+		SurfaceSubtle:   ui.RGBA(28, 25, 23, 0.048),
+		SurfaceHover:    ui.Hex("#ECEAE4"),
+		SurfacePressed:  ui.Hex("#E0DDD5"),
+		Text:            ui.Hex("#181715"),
+		TextMuted:       ui.Hex("#625F59"),
+		TextFaint:       ui.Hex("#8F8B82"),
+		Accent:          ui.Hex("#23537A"),
+		AccentSurface:   ui.RGBA(35, 83, 122, 0.11),
+		Success:         ui.Hex("#1F7A5A"),
+		SuccessSurface:  ui.RGBA(31, 122, 90, 0.12),
+		Warning:         ui.Hex("#B46914"),
+		WarningSurface:  ui.RGBA(180, 105, 20, 0.12),
+		Danger:          ui.Hex("#C53D3D"),
+		DangerSurface:   ui.RGBA(197, 61, 61, 0.11),
+		Purple:          ui.Hex("#5B5F97"),
+		PurpleSurface:   ui.RGBA(91, 95, 151, 0.11),
+		Cyan:            ui.Hex("#3D7A80"),
+		CyanSurface:     ui.RGBA(61, 122, 128, 0.11),
+		Border:          ui.RGBA(28, 25, 23, 0.085),
+		BorderStrong:    ui.RGBA(28, 25, 23, 0.16),
 	}
 	if vibrancy {
 		th.SurfaceCard = ui.RGBA(255, 255, 255, 0.56)
-		th.SurfaceSubtle = ui.RGBA(15, 23, 42, 0.04)
-		th.SurfaceHover = ui.RGBA(15, 23, 42, 0.07)
-		th.SurfacePressed = ui.RGBA(15, 23, 42, 0.12)
-		th.Border = ui.RGBA(15, 23, 42, 0.08)
+		th.SurfaceSubtle = ui.RGBA(28, 25, 23, 0.04)
+		th.SurfaceHover = ui.RGBA(28, 25, 23, 0.07)
+		th.SurfacePressed = ui.RGBA(28, 25, 23, 0.12)
+		th.Border = ui.RGBA(28, 25, 23, 0.085)
 	}
 	return th
 }

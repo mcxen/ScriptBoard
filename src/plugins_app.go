@@ -48,6 +48,7 @@ func (a *app) syncPlugins() {
 		}
 	}
 	setIconDirs(plugins.IconDirs(a.dataDir))
+	a.syncDeclaredCredentials()
 	a.pluginNote = ""
 	if err != nil {
 		a.pluginNote = tr("有插件没能加载：") + err.Error()

@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"scriptboard/src/internal/cmdrun"
+	"scriptboard/src/internal/cred"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -646,7 +649,8 @@ func TestCommandPermissionAndBuiltinPingBar(t *testing.T) {
 	})
 	inst.RefreshRender()
 	snapFmt := waitSnapshot(t, updates, func(s Snapshot) bool {
-		return strings.Contains(strings.Join(CollectTexts(s.Panel), " "), "12.4ms/Sonic")
+		t := strings.Join(CollectTexts(s.Panel), " ")
+		return strings.Contains(t, "12.4ms/Sonic") && strings.Contains(t, "Clean")
 	})
 	fmtTxt := strings.Join(CollectTexts(snapFmt.Panel), " | ")
 	if !strings.Contains(fmtTxt, "Clean") || !hasStatusDotWithAnim(snapFmt.Panel, "orbit", 4) {
@@ -760,4 +764,106 @@ func hasStatusDotWithAnim(n *Node, wantAnim string, wantCount int) bool {
 		}
 	}
 	return false
+}
+
+func TestBarCredentialAutoRefreshAndCookieSync(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Cookie"), "token-portal-bridge_SSO_TOKEN_V3=sso-live-123") {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"login required"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"credits":980}`))
+	}))
+	defer srv.Close()
+
+	var loginCalls atomic.Int32
+	mgr, err := cred.NewManager(t.TempDir(), cred.NewMemoryBackend(), cred.LoginHandlers{
+		WebView: func(ctx context.Context, sp cred.Spec) (cred.SecretPayload, error) {
+			loginCalls.Add(1)
+			u, _ := url.Parse(sp.Origin)
+			return cred.SecretPayload{
+				Type: cred.TypeCookie,
+				Cookies: []cred.StoredCookie{
+					{Name: "token-portal-bridge_SSO_TOKEN_V3", Value: "sso-live-123", Domain: u.Hostname(), Path: "/"},
+				},
+				Provider: cred.ProviderWebView,
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	barXML := `<bar id="hub-bar" title="Token Hub" version="1.0.0">
+  <credentials>
+    <credential id="token-hub"
+                type="cookie"
+                origin="` + srv.URL + `"
+                provider="webview"
+                login-url="` + srv.URL + `/login"
+                ready-url-includes="/bridge/"
+                ready-cookies="token-portal-bridge_SSO_TOKEN_V3"
+                refresh-on="401,403" />
+  </credentials>
+  <script><![CDATA[
+    let credits = "--";
+    let errMsg = "";
+    export default {
+      async scheduled() {
+        const res = await fetch("` + srv.URL + `/bridge/usage/credits");
+        if (!res.ok) {
+          errMsg = "HTTP " + res.status;
+          return;
+        }
+        const data = await res.json();
+        credits = String(data.credits);
+        errMsg = "";
+      },
+      render() {
+        const st = $metrix.credentials.status("token-hub");
+        return {
+          tray: { title: credits },
+          panel: h("Column", {}, h("Text", {}, "Credits:" + credits + " Status:" + (st ? st.status : "") + " Err:" + errMsg))
+        };
+      }
+    };
+  ]]></script>
+</bar>`
+
+	sp, err := Parse(barXML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sp.Credentials) != 1 || sp.Credentials[0].ID != "token-hub" {
+		t.Fatalf("expected parsed credential in bar spec, got %+v", sp.Credentials)
+	}
+	jar, err := NewCookieJar("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := NewInstance(sp, Options{
+		Cookies:     jar,
+		Credentials: mgr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+
+	if !inst.WaitIdle(5 * time.Second) {
+		t.Fatal("bar credential WaitIdle timed out")
+	}
+	if loginCalls.Load() != 1 {
+		t.Fatalf("expected 1 WebView login call on 401, got %d", loginCalls.Load())
+	}
+	snap := inst.Snapshot()
+	txt := strings.Join(CollectTexts(snap.Panel), " ")
+	if !strings.Contains(txt, "Credits:980") || !strings.Contains(txt, "Status:ready") {
+		t.Fatalf("expected recovered credits & ready status, got %q (tray=%+v err=%q)", txt, snap.Tray, snap.Error)
+	}
+	if jar.Count() == 0 {
+		t.Fatalf("expected extracted cookie synced into bar CookieJar")
+	}
 }

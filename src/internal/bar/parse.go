@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"scriptboard/src/internal/cred"
 )
 
 // Spec is the parsed manifest and script of a .bar component.
@@ -33,6 +35,7 @@ type Spec struct {
 	CookieDomains   []string    `json:"cookieDomains,omitempty"`
 	StoragePerm     bool        `json:"storage,omitempty"`
 	ClipboardPerm   bool        `json:"clipboard,omitempty"`
+	Credentials     []cred.Spec `json:"credentials,omitempty"`
 	Inputs          []InputSpec `json:"inputs,omitempty"`
 	Script          string      `json:"-"`
 	ScriptAPIs      []string    `json:"scriptAPIs,omitempty"`
@@ -69,6 +72,7 @@ type xmlBar struct {
 	Refresh         string          `xml:"refresh,attr"`
 	Material        string          `xml:"material,attr"`
 	Permissions     *xmlPermissions `xml:"permissions"`
+	Credentials     *xmlCredentials `xml:"credentials"`
 	Inputs          *xmlInputs      `xml:"inputs"`
 	Script          xmlScript       `xml:"script"`
 }
@@ -91,6 +95,27 @@ type xmlCommandPerm struct {
 
 type xmlCookiePerm struct {
 	Domain string `xml:"domain,attr"`
+}
+
+type xmlCredentials struct {
+	Items []xmlCredential `xml:"credential"`
+}
+
+type xmlCredential struct {
+	ID                string `xml:"id,attr"`
+	Name              string `xml:"name,attr"`
+	Type              string `xml:"type,attr"`
+	Origin            string `xml:"origin,attr"`
+	Provider          string `xml:"provider,attr"`
+	LoginURL          string `xml:"login-url,attr"`
+	ReadyURLIncludes  string `xml:"ready-url-includes,attr"`
+	ReadyCookies      string `xml:"ready-cookies,attr"`
+	ReadyTitleInclude string `xml:"ready-title-includes,attr"`
+	RefreshOn         string `xml:"refresh-on,attr"`
+	HeaderName        string `xml:"header-name,attr"`
+	HeaderPrefix      string `xml:"header-prefix,attr"`
+	CDPURL            string `xml:"cdp-url,attr"`
+	AllowedDomains    string `xml:"allowed-domains,attr"`
 }
 
 type xmlInputs struct {
@@ -183,6 +208,53 @@ func Parse(source string) (Spec, error) {
 		}
 		spec.StoragePerm = doc.Permissions.Storage != nil
 		spec.ClipboardPerm = doc.Permissions.Clipboard != nil
+	}
+	if doc.Credentials != nil {
+		for _, xc := range doc.Credentials.Items {
+			cs := cred.Spec{
+				ID:           strings.TrimSpace(xc.ID),
+				Name:         strings.TrimSpace(xc.Name),
+				Type:         strings.TrimSpace(xc.Type),
+				Origin:       strings.TrimSpace(xc.Origin),
+				Provider:     strings.TrimSpace(xc.Provider),
+				LoginURL:     strings.TrimSpace(xc.LoginURL),
+				HeaderName:   strings.TrimSpace(xc.HeaderName),
+				HeaderPrefix: xc.HeaderPrefix,
+				CDPURL:       strings.TrimSpace(xc.CDPURL),
+				SourcePlugin: spec.ID,
+			}
+			if xc.ReadyURLIncludes != "" || xc.ReadyCookies != "" || xc.ReadyTitleInclude != "" {
+				rc := &cred.ReadyCondition{
+					URLIncludes:   strings.TrimSpace(xc.ReadyURLIncludes),
+					TitleIncludes: strings.TrimSpace(xc.ReadyTitleInclude),
+				}
+				for _, ck := range strings.Split(xc.ReadyCookies, ",") {
+					if ck = strings.TrimSpace(ck); ck != "" {
+						rc.HasCookies = append(rc.HasCookies, ck)
+					}
+				}
+				cs.Ready = rc
+			}
+			if xc.RefreshOn != "" {
+				for _, part := range strings.Split(xc.RefreshOn, ",") {
+					if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n >= 400 && n <= 599 {
+						cs.RefreshOn = append(cs.RefreshOn, n)
+					}
+				}
+			}
+			if xc.AllowedDomains != "" {
+				for _, d := range strings.Split(xc.AllowedDomains, ",") {
+					if d = strings.TrimSpace(d); d != "" {
+						cs.AllowedDomains = append(cs.AllowedDomains, d)
+					}
+				}
+			}
+			cs = cs.Normalized()
+			spec.Credentials = append(spec.Credentials, cs)
+			if cs.Origin != "" && OriginAllowed(cs.Origin, spec.Permissions) != nil {
+				spec.Permissions = append(spec.Permissions, cs.Origin)
+			}
+		}
 	}
 	if doc.Inputs != nil {
 		for _, in := range doc.Inputs.Inputs {

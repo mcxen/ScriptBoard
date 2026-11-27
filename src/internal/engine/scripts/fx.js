@@ -88,7 +88,7 @@ export function render(ctx) {
       note = t("示例数据：", "Sample data: ") + why;
     } else {
       note = t("未能取到汇率：", "Could not fetch the rate: ") + why;
-      return { title: title, icon: "dollar-sign", big: "--", sub: note, lines: [note], chart: null };
+      return { title: title, icon: "dollar-sign", big: "--", sub: note, lines: [note], chart: null, layout: { title: "show" } };
     }
   }
   // 范围：只看最近 n 个交易日（0 为全部）。
@@ -108,9 +108,10 @@ export function render(ctx) {
     lines: note ? [note] : [],
     chart: {
       type: "line",
-      series: [{ name: base + "/CNY", color: "#10B981", points: v }],
+      series: [{ name: base + "/CNY", color: "#2A7B62", points: v }],
       labels: data.dates,
       xLabels: [String(data.dates[0]), String(data.dates[data.dates.length - 1])],
     },
+    layout: { title: "show" },
   };
 }

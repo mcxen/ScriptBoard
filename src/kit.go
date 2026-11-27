@@ -25,11 +25,11 @@ import (
 const (
 	padPage    = 24 // padding around a page on a wide window
 	padPhone   = 16 // and on a phone
-	gapSection = 18 // between the blocks of a page
+	gapSection = 20 // between the blocks of a page
 	gapItem    = 12 // between items inside a block
-	radCard    = 16
+	radCard    = 14
 	formMaxW   = 440 // the widest a form of fields grows
-	radControl = 8
+	radControl = 7
 )
 
 // Type sizes, in DIPs. The default skin has a scale; Mac OS 9 has its pixel
@@ -61,16 +61,16 @@ type palette struct {
 
 func pal(c *ui.Context) palette {
 	tk := theme.TokensOf(c)
-	sidebar := ui.Hex("#EEF0F5")
+	sidebar := ui.Hex("#ECEAE4")
 	if tk.Dark {
-		sidebar = ui.Hex("#15181F")
+		sidebar = ui.Hex("#18181A")
 	}
 	if c.Vibrancy() && !isMac() {
 		sidebar = ui.Transparent
 	}
-	rowSel := ui.RGBA(255, 255, 255, 0.85)
+	rowSel := ui.RGBA(255, 255, 255, 0.90)
 	if tk.Dark {
-		rowSel = ui.RGBA(255, 255, 255, 0.095)
+		rowSel = ui.RGBA(255, 255, 255, 0.085)
 	}
 	return palette{
 		dark:         tk.Dark,
@@ -341,19 +341,110 @@ func chip(c *ui.Context, text string, fg, bg ui.Color) ui.Element {
 	})
 }
 
-// deltaChip shows a change as a Lobe tag with an arrow: red up, green down.
+// deltaChip shows a percentage change as a restrained typographic pill.
 func deltaChip(c *ui.Context, pct float64) ui.Element {
+	p := pal(c)
+	var txt string
+	var fg, bg ui.Color
 	switch {
 	case math.Abs(pct) < 0.005:
-		return display.Tag(c, "— 0.00%", display.TagProps{Size: theme.Small})
+		txt = "— 0.00%"
+		fg = p.muted
+		bg = p.chip
 	case pct > 0:
-		return display.Tag(c, "▲ "+sign(pct), display.TagProps{Color: display.TagError, Size: theme.Small})
+		txt = "▲ " + sign(pct)
+		fg = p.up
+		bg = p.up.Alpha(0.09)
+	default:
+		txt = "▼ " + sign(pct)
+		fg = p.down
+		bg = p.down.Alpha(0.09)
 	}
-	return display.Tag(c, "▼ "+sign(pct), display.TagProps{Color: display.TagSuccess, Size: theme.Small})
+	return ui.Row(c).Padding(2, 7).Radius(6).Background(bg).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, txt).FontSize(fsTiny).FontWeight(550).FontFeatures("tnum").TextColor(fg).NoWrap()
+	})
 }
 
 func sign(pct float64) string {
 	return formatPct(math.Abs(pct))
+}
+
+// paperSegmented draws a calm Paper & Ink segmented selector inside a warm
+// recessed capsule, falling back to Mac OS 9 styling when active.
+func paperSegmented(c *ui.Context, sel *int, labels ...string) bool {
+	if isMac() {
+		return choose(c, sel, labels...)
+	}
+	p := pal(c)
+	changed := false
+	ui.Row(c).AlignItems(ui.Center).Gap(2).Padding(2).Radius(radControl + 1).Background(p.chip).Children(func() {
+		for i, lbl := range labels {
+			i, lbl := i, lbl
+			active := sel != nil && *sel == i
+			item := ui.ButtonBase(c).
+				Height(26).
+				Padding(0, 10).
+				Radius(radControl - 1).
+				AlignItems(ui.Center).
+				Justify(ui.Center).
+				Cursor(ui.CursorPointer).
+				Label(lbl)
+			fg, weight := p.muted, 500
+			if active {
+				activeBG := p.card
+				if p.dark {
+					activeBG = ui.Hex("#2C2C30")
+				}
+				item = item.Background(activeBG).BorderWidth(1).BorderColor(p.border)
+				fg, weight = p.text, 600
+			} else if item.Hovered() {
+				item = item.Background(p.hover)
+				fg = p.text
+			}
+			if item.Children(func() {
+				ui.Text(c, lbl).FontSize(12).FontWeight(weight).TextColor(fg).NoWrap()
+			}).Clicked() && sel != nil && *sel != i {
+				*sel = i
+				changed = true
+			}
+		}
+	})
+	return changed
+}
+
+// paperOutlineBtn draws a restrained outline button (or solid-ink button when
+// solidInk is true), falling back to Mac OS 9 styling when active.
+func paperOutlineBtn(c *ui.Context, text string, solidInk bool) ui.Element {
+	if isMac() {
+		return macButton(c, text, solidInk)
+	}
+	p := pal(c)
+	b := ui.ButtonBase(c).
+		Height(30).
+		Padding(0, 12).
+		Radius(radControl + 1).
+		AlignItems(ui.Center).
+		Justify(ui.Center).
+		Cursor(ui.CursorPointer).
+		Label(text)
+	fg, weight := p.text, 500
+	if solidInk {
+		fg, weight = p.card, 600
+		bg := p.text
+		if b.Hovered() {
+			bg = p.text.Alpha(0.88)
+		}
+		b = b.Background(bg)
+	} else {
+		bg := p.card
+		if b.Hovered() {
+			bg = p.hover
+		}
+		b = b.Background(bg).BorderWidth(1).BorderColor(p.border)
+	}
+	return b.Children(func() {
+		ui.Text(c, text).FontSize(12.5).FontWeight(weight).TextColor(fg).NoWrap()
+	})
 }
 
 // iconBadge is an icon on a tinted rounded square.
@@ -373,9 +464,9 @@ func iconBadge(c *ui.Context, name string, color ui.Color, size float32) ui.Elem
 // navRow draws one Apple-native sidebar / settings navigation item.
 func navRow(c *ui.Context, key, iconName, label string, active bool, width float32, trailing func()) bool {
 	p := pal(c)
-	icCol, txtCol, weight := p.muted, p.text.Alpha(0.84), 500
+	icCol, txtCol, weight := p.muted, p.text.Alpha(0.82), 500
 	if active {
-		icCol, txtCol, weight = p.accent, p.text, 600
+		icCol, txtCol, weight = p.text, p.text, 600
 	}
 	b := ui.ButtonBase(c.Key(key)).
 		Width(width).
@@ -480,7 +571,7 @@ func accentOf(res engine.Result, fallback ui.Color) ui.Color {
 			}
 		case "contrib":
 			if res.Chart.Contrib != nil {
-				return parseColor(res.Chart.Contrib.Color, ui.Hex("#10B981"))
+				return parseColor(res.Chart.Contrib.Color, ui.Hex("#2A7B62"))
 			}
 		case "candle":
 		default:

@@ -140,6 +140,7 @@ func extraTools() []Tool {
 	base = append(base, barTools()...)
 	base = append(base, feedTools()...)
 	base = append(base, commandTools()...)
+	base = append(base, credTools()...)
 	return base
 }
 
@@ -768,26 +769,26 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 			displays = s.Displays()
 		}
 		payload := map[string]any{
-			"name":            "ScriptBoard",
-			"protocolVersion": protocolVersion,
-			"readOnly":        s.readOnly(),
-			"allowExec":       allowExec,
-			"platform":        map[string]string{"os": caps.OS(), "kind": caps.Platform()},
-			"widgetTypes":     engine.ChartTypes,
-			"barVDOMNodes":    []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Badge", "Progress", "Ring", "Chart", "StatusDot", "Segmented", "Switch", "ListRow", "Image", "Input", "Spacer", "Divider"},
-			"barRuntimeAPIs":  []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "h", "$ui", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies", "$metrix.command"},
+			"name":                     "ScriptBoard",
+			"protocolVersion":          protocolVersion,
+			"readOnly":                 s.readOnly(),
+			"allowExec":                allowExec,
+			"platform":                 map[string]string{"os": caps.OS(), "kind": caps.Platform()},
+			"widgetTypes":              engine.ChartTypes,
+			"barVDOMNodes":             []string{"Column", "Row", "Box", "Scroll", "Text", "Icon", "Button", "Badge", "Progress", "Ring", "Chart", "StatusDot", "Segmented", "Switch", "ListRow", "Image", "Input", "Spacer", "Divider"},
+			"barRuntimeAPIs":           []string{"fetch", "Headers", "Request", "Response", "URL", "URLSearchParams", "ReadableStream", "AbortController", "setTimeout", "setInterval", "console", "localStorage", "h", "$ui", "$metrix.invalidate", "$metrix.openURL", "$metrix.copy", "$metrix.log", "$metrix.storage", "$metrix.cookies", "$metrix.command"},
 			"cookieSupport":            true,
 			"storageSupport":           true,
 			"commandSupport":           true,
 			"commandDisplayVariants":   cmdrun.ValidDisplayVariants(),
 			"commandDisplayAnimations": cmdrun.ValidDisplayAnimations(),
 			"toolsCount":               len(AllTools()),
-			"trayActions":     append(append([]string(nil), engine.MenuActions...), "set_var:<k>=<v>", "set_dim:<k>=<v>"),
-			"trayIcons":       engine.MenuBarIcons,
-			"displayModes":    []string{"cursor", "internal", "external"},
-			"menuBarModes":    []string{"panel", "menu", "open"},
-			"displays":        displays,
-			"shippedIcons":    len(iconcat.Names()),
+			"trayActions":              append(append([]string(nil), engine.MenuActions...), "set_var:<k>=<v>", "set_dim:<k>=<v>"),
+			"trayIcons":                engine.MenuBarIcons,
+			"displayModes":             []string{"cursor", "internal", "external"},
+			"menuBarModes":             []string{"panel", "menu", "open"},
+			"displays":                 displays,
+			"shippedIcons":             len(iconcat.Names()),
 			"counts": map[string]int{
 				"scripts":      scripts,
 				"tables":       tables,
@@ -810,6 +811,9 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 		return out, true, err
 	}
 	if out, handled, err := s.callCommand(name, a); handled {
+		return out, true, err
+	}
+	if out, handled, err := s.callCred(name, a); handled {
 		return out, true, err
 	}
 	return "", false, nil

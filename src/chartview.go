@@ -90,14 +90,14 @@ func resolveStyle(ch *engine.Chart, want string) string {
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // Candles that closed higher are red and those that closed lower green, as in
-// the markets in China.
+// the markets in China, tuned to the Paper & Ink archival palette.
 var (
-	upColor   = ui.Hex("#E5484D")
-	downColor = ui.Hex("#18A870")
+	upColor   = ui.Hex("#C53D3D")
+	downColor = ui.Hex("#1F7A5A")
 )
 
 var seriesPalette = []ui.Color{
-	ui.Hex("#3B82F6"), ui.Hex("#F97316"), ui.Hex("#10B981"), ui.Hex("#EAB308"),
+	ui.Hex("#23537A"), ui.Hex("#C26D2D"), ui.Hex("#2A7B62"), ui.Hex("#8B6B3F"),
 }
 
 // parseColor reads a CSS color literal (#RGB, #RGBA, #RRGGBB, #RRGGBBAA,

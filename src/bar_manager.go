@@ -261,14 +261,15 @@ func (a *app) ensureBarInstance(sc store.Script) (*bar.Instance, bar.Spec, error
 	id := sc.ID
 	themeName := a.effectiveThemeName()
 	inst, err := bar.NewInstance(sp, bar.Options{
-		Client:     a.client,
-		Inputs:     a.barInputs(id, sp),
-		Lang:       curLang(),
-		Theme:      themeName,
-		Offline:    a.set.Offline,
-		DataDir:    bar.ComponentDataDir(a.dataDir, id),
-		Commands:   appCommandBridge{a},
-		OnCopyText: func(s string) { a.post(func() { copyText(s) }) },
+		Client:      a.client,
+		Inputs:      a.barInputs(id, sp),
+		Lang:        curLang(),
+		Theme:       themeName,
+		Offline:     a.set.Offline,
+		DataDir:     bar.ComponentDataDir(a.dataDir, id),
+		Commands:    appCommandBridge{a},
+		Credentials: a.credMgr,
+		OnCopyText:  func(s string) { a.post(func() { copyText(s) }) },
 		OnUpdate: func(snap bar.Snapshot) {
 			a.post(func() {
 				a.onBarUpdate(id, snap)

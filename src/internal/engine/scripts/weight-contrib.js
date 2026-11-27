@@ -103,24 +103,21 @@ export function render(ctx) {
         value: Math.round(lost * 10) / 10,
         max: stepGoal,
         unit: " " + unit,
-        color: "#00F5D4",
-        to: "#38BDF8",
+        color: "#23537A",
       },
       {
         name: t("近 7 天打卡", "7-day check-ins"),
         value: weekDays,
         max: 7,
         unit: t(" 天", " d"),
-        color: "#A855F7",
-        to: "#38BDF8",
+        color: "#2A7B62",
       },
       {
         name: t("近 30 天打卡", "30-day check-ins"),
         value: monthDays,
         max: 30,
         unit: t(" 天", " d"),
-        color: "#FF2A85",
-        to: "#FB923C",
+        color: "#C26D2D",
       },
     ];
     return {
@@ -131,9 +128,9 @@ export function render(ctx) {
       lines: [],
       progressBar: {
         style: "neon",
-        height: 10,
+        height: 8,
         track: "dark",
-        glow: 1.0,
+        glow: 0.9,
         items: items,
       },
       layout: { legend: "hide" },
@@ -155,7 +152,7 @@ export function render(ctx) {
     lines: [],
     chart: {
       type: "contrib",
-      contrib: { color: "#00F5D4", max: 2, weeks: 12, unit: t(" 次", "x"), neon: true, cells: cells },
+      contrib: { color: "#2A7B62", max: 2, weeks: 12, unit: t(" 次", "x"), neon: false, cells: cells },
     },
     layout: { legend: "hide" },
   };

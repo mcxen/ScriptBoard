@@ -94,5 +94,6 @@ export function render(ctx) {
       labels: labels,
       xLabels: [mmdd(dayIndex(recent[0].t, off)), mmdd(dayIndex(recent[recent.length - 1].t, off))],
     },
+    layout: { title: "show" },
   };
 }

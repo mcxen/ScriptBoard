@@ -225,7 +225,7 @@ func send(ctx context.Context, client *http.Client, r Request) ([]byte, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	ctx, cancel := withAttemptTimeout(ctx, client)
 	defer cancel()
 	var body io.Reader
 	if r.Body != "" {
@@ -251,7 +251,7 @@ func send(ctx context.Context, client *http.Client, r Request) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.New("HTTP " + resp.Status)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, maxFetchBytes))
 }

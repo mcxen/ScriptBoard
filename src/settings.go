@@ -281,6 +281,11 @@ func (a *app) settingsTabContent(c *ui.Context, tab settingsTabItem, compact boo
 					a.openCommands()
 				}
 			}},
+			row{title: tr("凭据管理"), note: tr("统一管理登录态、Cookie 与 Token，使用系统钥匙串加密并支持 401/403 自动登录刷新"), control: func() {
+				if btn(c, tr("管理")).Clicked() {
+					a.openCredentials()
+				}
+			}},
 		)
 
 	case "mcp":

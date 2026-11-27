@@ -21,6 +21,7 @@ import (
 	"github.com/MoeForge/moejs/webapi"
 
 	"scriptboard/src/internal/cmdrun"
+	"scriptboard/src/internal/cred"
 )
 
 // CommandBridge connects .bar components to host-managed CLI/shell commands and history.
@@ -33,19 +34,20 @@ type CommandBridge interface {
 
 // Options configures a running .bar Instance.
 type Options struct {
-	Client     *http.Client
-	Inputs     map[string]string
-	Lang       string
-	Theme      string
-	Vibrancy   bool
-	Offline    bool
-	DataDir    string
-	Cookies    *CookieJar
-	Storage    *KVStore
-	Commands   CommandBridge
-	OnUpdate   func(Snapshot)
-	OnOpenURL  func(string)
-	OnCopyText func(string)
+	Client      *http.Client
+	Inputs      map[string]string
+	Lang        string
+	Theme       string
+	Vibrancy    bool
+	Offline     bool
+	DataDir     string
+	Cookies     *CookieJar
+	Storage     *KVStore
+	Commands    CommandBridge
+	Credentials *cred.Manager
+	OnUpdate    func(Snapshot)
+	OnOpenURL   func(string)
+	OnCopyText  func(string)
 }
 
 // Instance runs a single parsed .bar component in its own moejs runtime and
@@ -59,6 +61,7 @@ type Instance struct {
 	cookies    *CookieJar
 	storage    *KVStore
 	commands   CommandBridge
+	creds      *cred.Manager
 	ctx        context.Context
 	cancel     context.CancelFunc
 	remove     func()
@@ -144,6 +147,7 @@ func NewInstance(spec Spec, opts Options) (*Instance, error) {
 		cookies:    cookies,
 		storage:    storage,
 		commands:   opts.Commands,
+		creds:      opts.Credentials,
 		ctx:        instCtx,
 		cancel:     cancel,
 		onUpdate:   opts.OnUpdate,
@@ -155,6 +159,15 @@ func NewInstance(spec Spec, opts Options) (*Instance, error) {
 		vibrancy:   opts.Vibrancy,
 		offline:    opts.Offline,
 		actions:    map[string]*moejs.Object{},
+	}
+
+	httpClient := &clientCopy
+	if opts.Credentials != nil && len(spec.Credentials) > 0 {
+		opts.Credentials.RegisterSpecs(spec.ID, spec.Credentials)
+		seedCredsToCookieJar(opts.Credentials, spec.Credentials, cookies)
+		httpClient = opts.Credentials.WrapClient(&clientCopy, spec.Credentials, func(_ cred.Spec, p cred.SecretPayload) {
+			syncCredCookiesToJar(cookies, p.Cookies)
+		})
 	}
 
 	loop, err := eventloop.New(rt, eventloop.Options{
@@ -185,7 +198,7 @@ func NewInstance(spec Spec, opts Options) (*Instance, error) {
 	})
 
 	api, err := webapi.Install(loop, webapi.Options{
-		Client: &clientCopy,
+		Client: httpClient,
 		Allow: func(req *http.Request) error {
 			if inst.isOffline() {
 				return errors.New("offline mode is enabled")
@@ -250,6 +263,7 @@ func (inst *Instance) installGlobals() error {
 		inst.loop,
 		inst.ctx,
 		inst.commands,
+		inst.creds,
 		func(raw string) {
 			if inst.onCopyText != nil {
 				inst.onCopyText(raw)
@@ -286,6 +300,7 @@ func installBarGlobals(
 	loop *eventloop.Loop,
 	ctx context.Context,
 	commands CommandBridge,
+	creds *cred.Manager,
 	onCopy func(string),
 	onOpen func(string),
 	onInvalidate func(),
@@ -663,6 +678,70 @@ func installBarGlobals(
 		}),
 	}
 
+	credentialsAPI := map[string]any{
+		"status": rt.Function("status", 0, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			if creds == nil {
+				return rt.FromGo(map[string]any{})
+			}
+			statuses := creds.StatusMap(spec.Credentials)
+			if len(args) >= 1 && !moejs.Arg(args, 0).IsUndefined() && !moejs.Arg(args, 0).IsNull() {
+				s, err := r.ToString(moejs.Arg(args, 0))
+				if err != nil {
+					return moejs.Undefined(), err
+				}
+				id := strings.TrimSpace(s.GoString())
+				if st, ok := statuses[id]; ok {
+					return rt.FromGo(st)
+				}
+				return moejs.Null(), nil
+			}
+			return rt.FromGo(statuses)
+		}),
+		"login": rt.Function("login", 1, func(r *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			if creds == nil || loop == nil {
+				return moejs.Undefined(), errors.New("credential provider unavailable")
+			}
+			s, err := r.ToString(moejs.Arg(args, 0))
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			credID := strings.TrimSpace(s.GoString())
+			var target cred.Spec
+			var found bool
+			for _, cs := range spec.Credentials {
+				if cs.ID == credID {
+					target = cs
+					found = true
+					break
+				}
+			}
+			if !found {
+				return moejs.Undefined(), fmt.Errorf("credential %q is not declared in <credentials>", credID)
+			}
+			runCtx := ctx
+			if runCtx == nil {
+				runCtx = context.Background()
+			}
+			p, settle := loop.NewPromise()
+			go func() {
+				payload, acqErr := creds.Acquire(runCtx, target, 0, true)
+				if acqErr == nil {
+					syncCredCookiesToJar(cookies, payload.Cookies)
+				}
+				settle(func(rt2 *moejs.Runtime) (moejs.Value, error) {
+					if acqErr != nil {
+						return moejs.Undefined(), acqErr
+					}
+					if onInvalidate != nil {
+						onInvalidate()
+					}
+					return rt2.FromGo(creds.StatusMap([]cred.Spec{target})[target.ID])
+				})
+			}()
+			return p, nil
+		}),
+	}
+
 	metrix := map[string]any{
 		"invalidate": rt.Function("invalidate", 0, func(_ *moejs.Realm, _ moejs.Value, _ []moejs.Value) (moejs.Value, error) {
 			if onInvalidate != nil {
@@ -694,10 +773,11 @@ func installBarGlobals(
 			}
 			return moejs.Undefined(), nil
 		}),
-		"log":     rt.Function("log", 0, logFn),
-		"storage": storageAPI,
-		"cookies": cookiesAPI,
-		"command": commandAPI,
+		"log":         rt.Function("log", 0, logFn),
+		"storage":     storageAPI,
+		"cookies":     cookiesAPI,
+		"command":     commandAPI,
+		"credentials": credentialsAPI,
 	}
 	if err := rt.SetGlobal("$metrix", metrix); err != nil {
 		return err
@@ -809,6 +889,48 @@ func (inst *Instance) Cookies() *CookieJar { return inst.cookies }
 
 // Storage returns the component's KVStore.
 func (inst *Instance) Storage() *KVStore { return inst.storage }
+
+// SyncCredentials seeds any updated vault cookies for this component's declared
+// credentials into its runtime CookieJar.
+func (inst *Instance) SyncCredentials() {
+	if inst == nil || inst.creds == nil || len(inst.spec.Credentials) == 0 {
+		return
+	}
+	seedCredsToCookieJar(inst.creds, inst.spec.Credentials, inst.cookies)
+}
+
+func seedCredsToCookieJar(mgr *cred.Manager, specs []cred.Spec, jar *CookieJar) {
+	if mgr == nil || jar == nil {
+		return
+	}
+	for _, cs := range specs {
+		if p, ok := mgr.GetSecret(cs.ID); ok && len(p.Cookies) > 0 {
+			syncCredCookiesToJar(jar, p.Cookies)
+		}
+	}
+}
+
+func syncCredCookiesToJar(jar *CookieJar, list []cred.StoredCookie) {
+	if jar == nil || len(list) == 0 {
+		return
+	}
+	for _, c := range list {
+		var exp time.Time
+		if c.Expires > 0 {
+			exp = time.Unix(c.Expires, 0)
+		}
+		_ = jar.Set(StoredCookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Domain:   c.Domain,
+			Path:     c.Path,
+			Expires:  exp,
+			Secure:   c.Secure,
+			HttpOnly: c.HTTPOnly,
+			SameSite: c.SameSite,
+		})
+	}
+}
 
 // ReloadState reloads persisted cookies and storage from disk.
 func (inst *Instance) ReloadState() error {
@@ -1408,6 +1530,11 @@ func CheckRender(source, lang string) (Spec, Snapshot, []string, error) {
 			warnings = append(warnings, fmt.Sprintf("invalid command permission id %q", cid))
 		}
 	}
+	for _, cs := range sp.Credentials {
+		if err := cs.Validate(); err != nil {
+			warnings = append(warnings, fmt.Sprintf("invalid credential %q: %v", cs.ID, err))
+		}
+	}
 	seenInputs := map[string]bool{}
 	for _, in := range sp.Inputs {
 		if seenInputs[in.Name] {
@@ -1433,7 +1560,7 @@ func CheckRender(source, lang string) (Spec, Snapshot, []string, error) {
 	cookies, _ := NewCookieJar("")
 	storage, _ := NewKVStore("")
 	var logs []string
-	if err := installBarGlobals(rt, sp, cookies, storage, nil, nil, nil, nil, nil, nil, func(line string) {
+	if err := installBarGlobals(rt, sp, cookies, storage, nil, nil, nil, nil, nil, nil, nil, func(line string) {
 		logs = append(logs, line)
 	}); err != nil {
 		return sp, Snapshot{}, warnings, err

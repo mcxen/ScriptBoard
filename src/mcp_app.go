@@ -17,6 +17,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 
 	"scriptboard/src/internal/bar"
+	"scriptboard/src/internal/cred"
 	"scriptboard/src/internal/mcpsvc"
 	"scriptboard/src/internal/store"
 )
@@ -82,6 +83,7 @@ func (a *app) applyMCP() {
 		ReadOnly:        func() bool { return a.store.Settings().MCP.ReadOnly },
 		Displays:        a.mcpDisplays,
 		MenuBarSnapshot: a.mcpMenuBarSnapshot,
+		CredManager:     func() *cred.Manager { return a.credMgr },
 		OnChange:        func() { a.post(a.reloadFromMCP) },
 	}.HTTPHandler(m.Key))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -211,7 +213,7 @@ func (a *app) mcpGroups(c *ui.Context, compact, titled bool) {
 	}
 
 	rows := []row{
-		row{title: tr("开启 MCP 服务器"), note: tr("让 AI 助手创建和修改本地插件与图标；默认关闭，每次请求都要带密钥。") + a.mcp.status(m), control: func() {
+		{title: tr("开启 MCP 服务器"), note: tr("让 AI 助手创建和修改本地插件与图标；默认关闭，每次请求都要带密钥。") + a.mcp.status(m), control: func() {
 			if toggle(c, &on) {
 				m.Enabled = on
 				if on && m.Key == "" {
@@ -473,6 +475,10 @@ func (a *app) reloadFromMCP() {
 			_ = inst.ReloadState()
 			inst.UpdateInputs(a.barInputs(id, sp), curLang())
 		}
+	}
+	if a.credMgr != nil {
+		_ = a.credMgr.Reload()
+		a.syncDeclaredCredentials()
 	}
 	a.invalidateAll()
 	a.syncBarMenuBar()

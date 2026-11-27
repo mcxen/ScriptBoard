@@ -36,7 +36,7 @@ func (a *app) quickEntryWidth(c *ui.Context, scriptID string, in engine.ManualIn
 	}
 	narrow := width > 0 && width < 210
 	recordBtn := func() {
-		if primaryBtn(c, tr("记录")).Shrink(0).Clicked() {
+		if btn(c, tr("记录")).Shrink(0).Clicked() {
 			if err := a.recordMetric(in.Metric, *v); err != nil {
 				a.quickNote = tr("记录失败：") + err.Error()
 				a.hapticError()

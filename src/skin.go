@@ -41,27 +41,26 @@ func setSkin(name string) {
 	skin.Store(skinDefault)
 }
 
-// brandDefault is the app's own look: Lobe's tokens with a calm blue primary
-// and cool neutrals, so that the surfaces, lines and text step down evenly:
-// canvas, card, hairline; text, secondary, tertiary.
+// brandDefault is the app's own look: Paper & Ink (Apple / Swiss Editorial)
+// with warm archival daylight paper, neutral charcoal ink in dark mode, and a
+// calm Prussian ink primary accent.
 var brandDefault = func() *theme.Config {
 	light, dark := *theme.Light(), *theme.Dark()
-	// Cool-neutral Apple-native palette harmonized with Weather .bar tokens.
-	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#2563EB"), ui.Hex("#1D4FD8"), ui.Hex("#1E40AF")
-	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#5B8CFF"), ui.Hex("#7BA3FF"), ui.Hex("#4A78E8")
+	light.Primary, light.PrimaryHover, light.PrimaryActive = ui.Hex("#23537A"), ui.Hex("#1B4363"), ui.Hex("#15354F")
+	dark.Primary, dark.PrimaryHover, dark.PrimaryActive = ui.Hex("#3F76AD"), ui.Hex("#5187BE"), ui.Hex("#326394")
 	light.PrimaryForeground, dark.PrimaryForeground = light.TextLightSolid, dark.TextLightSolid
 
-	light.BgLayout, light.BgContainer, light.BgElevated = ui.Hex("#F5F6F9"), ui.Hex("#FFFFFF"), ui.Hex("#FFFFFF")
-	light.BorderSecondary, light.Border = ui.RGBA(15, 23, 42, 0.075), ui.RGBA(15, 23, 42, 0.12)
-	light.Text, light.TextSecondary, light.TextTertiary = ui.Hex("#141821"), ui.Hex("#646C7E"), ui.Hex("#7E869A")
-	light.FillTertiary, light.FillQuaternary = ui.RGBA(15, 23, 42, 0.065), ui.RGBA(15, 23, 42, 0.045)
-	light.Success, light.Warning, light.Error = ui.Hex("#10B981"), ui.Hex("#D97706"), ui.Hex("#EF4444")
+	light.BgLayout, light.BgContainer, light.BgElevated = ui.Hex("#F5F4F0"), ui.Hex("#FFFFFF"), ui.Hex("#FFFFFF")
+	light.BorderSecondary, light.Border = ui.RGBA(28, 25, 23, 0.085), ui.RGBA(28, 25, 23, 0.14)
+	light.Text, light.TextSecondary, light.TextTertiary = ui.Hex("#181715"), ui.Hex("#625F59"), ui.Hex("#8F8B82")
+	light.FillTertiary, light.FillQuaternary = ui.RGBA(28, 25, 23, 0.055), ui.RGBA(28, 25, 23, 0.042)
+	light.Success, light.Warning, light.Error = ui.Hex("#1F7A5A"), ui.Hex("#B46914"), ui.Hex("#C53D3D")
 
-	dark.BgLayout, dark.BgContainer, dark.BgElevated = ui.Hex("#111318"), ui.Hex("#1A1D24"), ui.Hex("#222631")
-	dark.BorderSecondary, dark.Border = ui.RGBA(255, 255, 255, 0.08), ui.RGBA(255, 255, 255, 0.12)
-	dark.Text, dark.TextSecondary, dark.TextTertiary = ui.Hex("#F2F4F8"), ui.Hex("#9BA3B4"), ui.Hex("#687082")
-	dark.FillTertiary, dark.FillQuaternary = ui.RGBA(255, 255, 255, 0.085), ui.RGBA(255, 255, 255, 0.055)
-	dark.Success, dark.Warning, dark.Error = ui.Hex("#34D399"), ui.Hex("#FBBF24"), ui.Hex("#F87171")
+	dark.BgLayout, dark.BgContainer, dark.BgElevated = ui.Hex("#131314"), ui.Hex("#1C1C1F"), ui.Hex("#242428")
+	dark.BorderSecondary, dark.Border = ui.RGBA(255, 255, 255, 0.075), ui.RGBA(255, 255, 255, 0.13)
+	dark.Text, dark.TextSecondary, dark.TextTertiary = ui.Hex("#F0EFEA"), ui.Hex("#9D9A93"), ui.Hex("#6E6B65")
+	dark.FillTertiary, dark.FillQuaternary = ui.RGBA(255, 255, 255, 0.075), ui.RGBA(255, 255, 255, 0.048)
+	dark.Success, dark.Warning, dark.Error = ui.Hex("#4AA884"), ui.Hex("#D99B43"), ui.Hex("#DC6B6B")
 	return theme.NewConfig(light, dark)
 }()
 
@@ -193,19 +192,19 @@ func skinBackground(c *ui.Context, el ui.Element) ui.Element {
 	return el.Background(pal(c).sidebar)
 }
 
-// skinCard is a card of the skin: a quiet Apple widget surface by default, a
-// square window panel with a dark 1 px edge in Mac OS 9.
+// skinCard is a card of the skin: a crisp Paper & Ink surface with whisper-light
+// paper elevation by default, or a square beveled panel in Mac OS 9.
 func skinCard(c *ui.Context) ui.Element {
 	if isMac() {
 		return macBevel(layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Radius(0).Background(macPanel), false)
 	}
 	p := pal(c)
-	sh := ui.RGBA(15, 23, 42, 0.05)
+	sh := ui.RGBA(28, 25, 23, 0.035)
 	if p.dark {
-		sh = ui.RGBA(0, 0, 0, 0.24)
+		sh = ui.RGBA(0, 0, 0, 0.18)
 	}
 	return ui.Column(c).Radius(radCard).Background(p.card).
-		BorderWidth(1).BorderColor(p.border).Shadow(0, 1, 3, 0, sh)
+		BorderWidth(1).BorderColor(p.border).Shadow(0, 1, 2, 0, sh)
 }
 
 // setTypeScale sets the type sizes of the skin. The default has the app's

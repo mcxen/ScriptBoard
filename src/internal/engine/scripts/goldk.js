@@ -70,6 +70,7 @@ export function render(ctx) {
       sub: t("还没有录入", "Nothing recorded yet"),
       lines: [t("在「编辑」页录入金价", "Record gold prices in Edit")],
       chart: null,
+      layout: { title: "show" },
     };
   }
   const last = ticks[ticks.length - 1].v;
@@ -82,5 +83,6 @@ export function render(ctx) {
     sub: `${t("较前一根", "vs previous")} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`,
     lines: [t("悬浮查看每根的开高低收", "Hover a candle for its open, high, low and close")],
     chart: { type: "candle", ticks: ticks, period: period, limit: 60 },
+    layout: { title: "show" },
   };
 }

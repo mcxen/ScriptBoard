@@ -20,9 +20,9 @@ type navItem struct {
 var navItems = []navItem{
 	{path: "/", icon: "layout-grid", label: "首页", also: []string{"/full/"}},
 	{path: "/edit", icon: "pencil-line", label: "组件管理", also: []string{"/edit/"}},
-	{path: "/bar", icon: "sparkles", label: "菜单管理", also: []string{"/bar/"}},
+	{path: "/bar", icon: "gauge", label: "菜单管理", also: []string{"/bar/"}},
 	{path: "/community", icon: "users", label: "社区"},
-	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds", "/commands"}},
+	{path: "/settings", icon: "settings", label: "设置", also: []string{"/feeds", "/commands", "/credentials"}},
 }
 
 // mainNavItems are the pages that live inside the main window; settings opens
@@ -139,6 +139,9 @@ func (a *app) view(c *ui.Context) {
 					case r.Match("/commands"):
 						r.Title(tr("命令任务"))
 						a.commandsPage(c, compact)
+					case r.Match("/credentials"):
+						r.Title(tr("凭据管理"))
+						a.credentialsPage(c, compact)
 					case r.Match("/community"):
 						r.Title(tr("社区"))
 						a.community(c, compact)
@@ -250,12 +253,16 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 	if isMac() {
 		borderCol = macBlack
 	}
-	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(12, 10, 14, 10).Gap(2).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(2, 8, 14, 8).Children(func() {
-			iconBadge(c, "chart-line", p.accent, 26)
-			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-				ui.Text(c, appName()).FontSize(fsBodyLarge).FontWeight(650).LetterSpacing(-0.2)
-				ui.Text(c, tr("脚本小组件")).FontSize(fsTiny).TextColor(p.faint)
+	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(14, 12, 14, 12).Gap(3).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(4, 8, 18, 8).Children(func() {
+			if isMac() {
+				macBevel(ui.Row(c).Size(10, 10).Background(macBlack), false)
+			} else {
+				ui.Box(c).Size(8, 8).Radius(2.5).Background(p.text).Shrink(0)
+			}
+			ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+				ui.Text(c, appName()).FontSize(15).FontWeight(650).LetterSpacing(-0.35).TextColor(p.text)
+				ui.Text(c, tr("脚本小组件")).FontSize(10.5).TextColor(p.faint)
 			})
 			if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
 				a.toggleSidebar()
@@ -365,7 +372,7 @@ func macOrRailItem(c *ui.Context, n navItem, chosen bool, p palette) bool {
 	if isMac() {
 		fg = p.text
 	} else if chosen {
-		fg = p.accent
+		fg = p.text
 	}
 	if chosen {
 		el = el.Background(p.rowSel)
@@ -406,11 +413,11 @@ func (a *app) tabBar(c *ui.Context, p palette, path string) {
 			active := n.active(path)
 			fg := p.muted
 			if active {
-				fg = p.accent
+				fg = p.text
 			}
 			el := ui.Column(c).Grow(1).AlignItems(ui.Center).Gap(3).Padding(4, 0).Radius(radControl)
 			if active {
-				el = el.Background(p.accentSoft)
+				el = el.Background(p.chip)
 			}
 			el.Children(func() {
 				ui.Icon(c, icon(n.icon)).FontSize(20).TextColor(fg)

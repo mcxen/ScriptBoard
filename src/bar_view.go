@@ -126,7 +126,7 @@ func (a *app) barView(c *ui.Context, compact bool) {
 			}
 			if selected == nil {
 				ui.Column(c).Grow(1).Center().Padding(24).Children(func() {
-					empty(c, "sparkles", tr("还没有组件"), tr("点击左上角 + 导入 .bar 组件文件。"))
+					empty(c, "gauge", tr("还没有组件"), tr("点击左上角 + 导入 .bar 组件文件。"))
 				})
 				return
 			}
@@ -234,7 +234,7 @@ func (a *app) barImportBox(c *ui.Context, p palette) {
 			ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() {
 				for _, tpl := range bar.Templates() {
 					tpl := tpl
-					box := ui.Column(c.Key("bar-tpl:"+tpl.ID)).
+					box := ui.Column(c.Key("bar-tpl:" + tpl.ID)).
 						Grow(1).MinWidth(180).Padding(12).Gap(6).
 						Radius(10).Background(p.chip)
 					if box.Hovered() {
@@ -431,6 +431,9 @@ func (a *app) barWorkspace(c *ui.Context, p palette, sc store.Script, compact bo
 		a.barPlacementSection(c, p, sc.ID, pl)
 		if len(sp.Inputs) > 0 {
 			a.barInputsSection(c, p, sc.ID, sp)
+		}
+		if len(sp.Credentials) > 0 {
+			a.barCredentialsSection(c, p, sc.ID, sp)
 		}
 		if len(sp.Permissions) > 0 || a.barCookieCount(sc.ID) > 0 {
 			a.barCookiesSection(c, p, sc.ID, sp)
@@ -632,7 +635,7 @@ func (a *app) barInputsSection(c *ui.Context, p palette, id string, sp bar.Spec)
 			for _, in := range sp.Inputs {
 				in := in
 				curVal := saved[in.Name]
-				ui.Column(c.Key("bar-in:"+id+":"+in.Name)).FillWidth().Gap(5).Children(func() {
+				ui.Column(c.Key("bar-in:" + id + ":" + in.Name)).FillWidth().Gap(5).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 						ui.Text(c, in.Label).FontSize(fsSmall).FontWeight(500)
 						if in.Required {
@@ -700,6 +703,52 @@ func (a *app) barInputsSection(c *ui.Context, p palette, id string, sp bar.Spec)
 	})
 }
 
+func (a *app) barCredentialsSection(c *ui.Context, p palette, id string, sp bar.Spec) {
+	if a.credMgr == nil {
+		return
+	}
+	a.credMgr.RegisterSpecs(sp.ID, sp.Credentials)
+	statuses := a.credMgr.StatusMap(sp.Credentials)
+	ui.Column(c.Key("bar-creds:" + id)).FillWidth().Gap(6).Children(func() {
+		ui.Text(c, tr("凭据提供器")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
+		ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(10).Children(func() {
+			for _, cs := range sp.Credentials {
+				cs := cs
+				st := statuses[cs.ID]
+				stLbl, stCol := a.credStatusBadge(p, st.Status)
+				busy := a.isRefreshing("cred:" + cs.ID)
+				ui.Column(c.Key("bar-cred-item:" + cs.ID)).FillWidth().Gap(6).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
+						ui.Text(c, credDisplayName(cs)).FontSize(fsSmall).FontWeight(600).Grow(1).MinWidth(0)
+						chip(c, stLbl, stCol, stCol.Alpha(0.13))
+					})
+					ui.Text(c, cs.Origin).Font("monospace").FontSize(fsTiny).TextColor(p.muted)
+					if st.LastError != "" {
+						ui.Text(c, st.LastError).FontSize(fsTiny).TextColor(p.up)
+					}
+					ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
+						if !isMobile() {
+							lbl := tr("内置登录")
+							if busy {
+								lbl = tr("登录中…")
+							}
+							if primaryBtn(c, lbl).Clicked() && !busy {
+								a.acquireCredentialAsync(cs, "webview")
+							}
+							if btn(c, tr("浏览器授权")).Clicked() && !busy {
+								a.acquireCredentialAsync(cs, "browser")
+							}
+						}
+						if btn(c, tr("去凭据管理")).Clicked() {
+							a.openCredentials()
+						}
+					})
+				})
+			}
+		})
+	})
+}
+
 func (a *app) barCookiesSection(c *ui.Context, p palette, id string, sp bar.Spec) {
 	count := a.barCookieCount(id)
 	statusText := tr("未保存 Cookie")
@@ -710,7 +759,7 @@ func (a *app) barCookiesSection(c *ui.Context, p palette, id string, sp bar.Spec
 		a.barCookieURL = strings.Replace(sp.Permissions[0], "*.", "", 1)
 	}
 
-	ui.Column(c.Key("bar-cookies:"+id)).FillWidth().Gap(6).Children(func() {
+	ui.Column(c.Key("bar-cookies:" + id)).FillWidth().Gap(6).Children(func() {
 		ui.Text(c, tr("Cookie 会话")).FontSize(fsTiny).FontWeight(600).LetterSpacing(0.3).TextColor(p.muted)
 		ui.Column(c).FillWidth().Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border).Padding(12).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
@@ -1188,7 +1237,7 @@ func (a *app) renderScriptMenuCard(c *ui.Context, sc store.Script, st *runState,
 
 func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, onClose func()) {
 	title := tr(sc.Name)
-	iconName := "sparkles"
+	iconName := "gauge"
 	th := barThemeFor(c, barThemeAuto)
 	themeName := "dark"
 	if !th.dark {
@@ -1215,7 +1264,7 @@ func (a *app) renderDockedBarPanel(c *ui.Context, sc store.Script, p palette, on
 		}
 	}
 
-	ui.Column(c.Key("dock:"+sc.ID)).Gap(6).Children(func() {
+	ui.Column(c.Key("dock:" + sc.ID)).Gap(6).Children(func() {
 		ui.Row(c).Width(300).AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Icon(c, icon(iconName)).FontSize(13).TextColor(p.muted)
 			ui.Text(c, title).FontSize(fsTiny).FontWeight(600).TextColor(p.muted).SingleLine().Ellipsis("…")

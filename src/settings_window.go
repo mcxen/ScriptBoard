@@ -99,3 +99,9 @@ func (a *app) openCommands() {
 	a.router.Push("/commands")
 	a.showWindow()
 }
+
+// openCredentials shows the unified credential manager page in the main window.
+func (a *app) openCredentials() {
+	a.router.Push("/credentials")
+	a.showWindow()
+}

@@ -1,0 +1,210 @@
+package main
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/egoist/mygo/ui"
+
+	"scriptboard/src/internal/cred"
+	"scriptboard/src/internal/store"
+)
+
+func TestAppScriptCredential401AutoRefreshAndRecovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Cookie"), "token-portal-bridge_SSO_TOKEN_V3=sso-app-ok") {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"expired"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"credits": 420}`))
+	}))
+	defer srv.Close()
+
+	a, err := newApp(t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.closeBarInstances)
+	var hookCalls atomic.Int32
+	a.credLoginHook = func(ctx context.Context, sp cred.Spec) (cred.SecretPayload, error) {
+		hookCalls.Add(1)
+		u, _ := url.Parse(sp.Origin)
+		return cred.SecretPayload{
+			Type: cred.TypeCookie,
+			Cookies: []cred.StoredCookie{
+				{Name: "token-portal-bridge_SSO_TOKEN_V3", Value: "sso-app-ok", Domain: u.Hostname(), Path: "/"},
+			},
+			Provider: cred.ProviderWebView,
+		}, nil
+	}
+
+	scriptSrc := `
+export function meta() {
+  return {
+    name: "Token Hub",
+    icon: "log-in",
+    credentials: [{
+      id: "token-hub",
+      type: "cookie",
+      origin: ` + `"` + srv.URL + `"` + `,
+      provider: "webview",
+      loginUrl: ` + `"` + srv.URL + `/bridge/usage/credits"` + `,
+      ready: {
+        urlIncludes: "/bridge/",
+        hasCookies: ["token-portal-bridge_SSO_TOKEN_V3"]
+      },
+      refreshOn: [401, 403]
+    }],
+    sources: {
+      credits: ` + `"` + srv.URL + `/bridge/usage/credits"` + `
+    }
+  };
+}
+export function render(ctx) {
+  const d = ctx.sources.credits || {};
+  const st = ctx.credentials["token-hub"] || {};
+  return {
+    title: "Token Hub",
+    big: d.credits ? String(d.credits) : "--",
+    sub: st.status || ""
+  };
+}
+`
+	sc := store.Script{
+		ID:     "token-hub-card",
+		Name:   "Token Hub",
+		Source: scriptSrc,
+		Home:   true,
+	}
+	if err := a.store.SaveScript(sc); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := a.executeOpt(sc, nil, true)
+	if err != nil {
+		t.Fatalf("executeOpt failed: %v", err)
+	}
+	if res.Big != "420" {
+		t.Fatalf("expected credits=420 after single-flight refresh & retry, got Big=%q Sub=%q", res.Big, res.Sub)
+	}
+	if hookCalls.Load() != 1 {
+		t.Fatalf("expected 1 login hook call, got %d", hookCalls.Load())
+	}
+
+	// Second run uses cached Keychain vault secret without opening login window again.
+	res2, err := a.executeOpt(sc, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Big != "420" || res2.Sub != "ready" {
+		t.Fatalf("expected cached ready credential on rerun, got Big=%q Sub=%q", res2.Big, res2.Sub)
+	}
+	if hookCalls.Load() != 1 {
+		t.Fatalf("expected login hook still at 1 call, got %d", hookCalls.Load())
+	}
+}
+
+func TestAppBarCredentialIntegrationAndRecovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Cookie"), "SSO=bar-ok") {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"expired"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"balance": 88}`))
+	}))
+	defer srv.Close()
+
+	a, err := newApp(t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.closeBarInstances)
+	a.credLoginHook = func(ctx context.Context, sp cred.Spec) (cred.SecretPayload, error) {
+		u, _ := url.Parse(sp.Origin)
+		return cred.SecretPayload{
+			Type: cred.TypeCookie,
+			Cookies: []cred.StoredCookie{
+				{Name: "SSO", Value: "bar-ok", Domain: u.Hostname(), Path: "/"},
+			},
+			Provider: cred.ProviderWebView,
+		}, nil
+	}
+
+	barSrc := `<bar id="auth-bar" title="Auth Bar" version="1.0.0">
+  <credentials>
+    <credential id="bar-hub" type="cookie" origin="` + srv.URL + `" provider="webview" refresh-on="401,403" />
+  </credentials>
+  <script><![CDATA[
+    let bal = "--";
+    export default {
+      async scheduled() {
+        const res = await fetch("` + srv.URL + `/api/balance");
+        if (res.ok) {
+          const data = await res.json();
+          bal = String(data.balance);
+        }
+      },
+      render() {
+        return { tray: { title: bal }, panel: h("Text", {}, "Balance:" + bal) };
+      }
+    };
+  ]]></script>
+</bar>`
+
+	sc, err := a.importBarSource(barSrc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, _, err := a.ensureBarInstance(sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+	if !inst.WaitIdle(5 * time.Second) {
+		t.Fatal("bar instance WaitIdle timed out")
+	}
+	snap := inst.Snapshot()
+	if snap.Tray == nil || snap.Tray.Title != "88" {
+		t.Fatalf("expected bar tray title 88 after auth recovery, got %+v (err=%q)", snap.Tray, snap.Error)
+	}
+}
+
+func TestCredentialsPageZHAndEnglishParity(t *testing.T) {
+	t.Cleanup(func() { setLang(langZH) })
+	a := newTestApp(t)
+
+	_, err := a.credMgr.SaveSpec(cred.Spec{
+		ID:       "token-hub",
+		Name:     "Token Hub",
+		Type:     cred.TypeCookie,
+		Origin:   "https://token-hub.alibaba-inc.com",
+		Provider: cred.ProviderWebView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Render Chinese /credentials page.
+	tt := ui.NewTester(a.view, 1100, 760)
+	a.openCredentials()
+	settle(tt)
+	requireText(t, tt, "凭据管理")
+	requireText(t, tt, "Token Hub")
+
+	// Switch to English and verify zero leaked CJK text on /credentials.
+	a.set.Lang = langEN
+	setLang(langEN)
+	settle(tt)
+	requireText(t, tt, "Credentials")
+	onlyEnglish(t, tt, "credentials")
+}

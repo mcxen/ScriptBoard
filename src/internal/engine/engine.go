@@ -19,6 +19,7 @@ import (
 	"github.com/MoeForge/moejs"
 
 	"scriptboard/src/internal/cmdrun"
+	"scriptboard/src/internal/cred"
 )
 
 const (
@@ -61,6 +62,9 @@ type Meta struct {
 	Feeds []string `json:"feeds"`
 	// Commands names the command tasks the script reads, as ctx.commands[id].
 	Commands []string `json:"commands,omitempty"`
+	// Credentials declares managed host credentials (cookie/bearer/token/basic/header)
+	// with automatic WebView/Browser/Ego/Manual refresh on 401/403.
+	Credentials []cred.Spec `json:"credentials,omitempty"`
 	// Sources maps a name to where its data comes from: an address, or a
 	// request of its own (request.go). {start} and {end} expand to the dates of
 	// the last 30 days, as yyyy-mm-dd.
@@ -226,8 +230,8 @@ type Gauge struct {
 	Used  float64 `json:"used"`
 	Limit float64 `json:"limit"`
 	Unit  string  `json:"unit"`
-	Label string  `json:"label"` // what the quantity is, such as "本月额度"
-	Reset string  `json:"reset"` // when it renews, such as "3 天后重置"
+	Label string  `json:"label"`           // what the quantity is, such as "本月额度"
+	Reset string  `json:"reset"`           // when it renews, such as "3 天后重置"
 	Style string  `json:"style,omitempty"` // "" (classic ring) | "matrix" (LED dot-matrix dial)
 }
 
@@ -285,7 +289,7 @@ type Chart struct {
 // BentoSpec configures a nested "bento" dashboard component.
 type BentoSpec struct {
 	Theme       string           `json:"theme,omitempty"` // "" (inherit) | "dark" | "light"
-	Maskable   bool             `json:"maskable,omitempty"`
+	Maskable    bool             `json:"maskable,omitempty"`
 	Hero        *BentoHero       `json:"hero,omitempty"`
 	Probes      *BentoProbeGroup `json:"probes,omitempty"`
 	Pills       *BentoPillGroup  `json:"pills,omitempty"`
@@ -795,9 +799,11 @@ type Input struct {
 	Feeds map[string]FeedData
 	// Commands holds the latest run and history of each command named in meta().commands.
 	Commands map[string]CommandData
-	Metrics  map[string][]Point
-	Settings map[string]any
-	Sources  map[string]json.RawMessage
+	// Credentials holds redacted credential readiness metadata (ctx.credentials).
+	Credentials map[string]cred.Status
+	Metrics     map[string][]Point
+	Settings    map[string]any
+	Sources     map[string]json.RawMessage
 	// SourceInfo says where each source's data came from (ctx.sourceInfo), and
 	// History holds the past responses of the sources the script asked for
 	// (ctx.history).
@@ -856,24 +862,25 @@ func (s *Script) Run(ctx context.Context, in Input) (Result, error) {
 	defer cancel()
 	themeName := themeOr(in.Theme)
 	arg, err := json.Marshal(map[string]any{
-		"now":        in.Now.UnixMilli(),
-		"lang":       langOr(in.Lang),
-		"theme":      themeName,
-		"dark":       themeName == "dark",
-		"platform":   map[string]string{"os": in.OS, "kind": in.Kind},
-		"granted":    grantedSet(in.Granted),
-		"tzOffset":   in.TZOffset,
-		"view":       nonNilView(in.View),
-		"feeds":      nonNilFeeds(in.Feeds),
-		"commands":   nonNilCommands(in.Commands),
-		"usage":      nonNilUsage(in.Usage),
-		"metrics":    nonNilMetrics(in.Metrics),
-		"settings":   nonNilSettings(in.Settings),
-		"sources":    nonNilSources(in.Sources),
-		"sourceInfo": nonNilInfo(in.SourceInfo),
-		"history":    nonNilHistory(in.History),
-		"vars":       nonNilVars(in.Vars),
-		"netprobe":   nonNilNetProbe(in.NetProbe),
+		"now":         in.Now.UnixMilli(),
+		"lang":        langOr(in.Lang),
+		"theme":       themeName,
+		"dark":        themeName == "dark",
+		"platform":    map[string]string{"os": in.OS, "kind": in.Kind},
+		"granted":     grantedSet(in.Granted),
+		"tzOffset":    in.TZOffset,
+		"view":        nonNilView(in.View),
+		"feeds":       nonNilFeeds(in.Feeds),
+		"commands":    nonNilCommands(in.Commands),
+		"credentials": nonNilCredentials(in.Credentials),
+		"usage":       nonNilUsage(in.Usage),
+		"metrics":     nonNilMetrics(in.Metrics),
+		"settings":    nonNilSettings(in.Settings),
+		"sources":     nonNilSources(in.Sources),
+		"sourceInfo":  nonNilInfo(in.SourceInfo),
+		"history":     nonNilHistory(in.History),
+		"vars":        nonNilVars(in.Vars),
+		"netprobe":    nonNilNetProbe(in.NetProbe),
 	})
 	if err != nil {
 		return Result{}, err
@@ -969,6 +976,13 @@ func nonNilFeeds(m map[string]FeedData) map[string]FeedData {
 func nonNilCommands(m map[string]CommandData) map[string]CommandData {
 	if m == nil {
 		return map[string]CommandData{}
+	}
+	return m
+}
+
+func nonNilCredentials(m map[string]cred.Status) map[string]cred.Status {
+	if m == nil {
+		return map[string]cred.Status{}
 	}
 	return m
 }

@@ -26,12 +26,13 @@ A §.bar§ component is an XML bundle containing permissions, user-configurable 
 
 ---
 
-## 1.5. Design Standard (Apple Native / Weather Bar Style)
+## 1.5. Design Standard (Paper & Ink / Apple Native Restraint)
 
-ScriptBoard's flagship visual aesthetic follows the built-in Weather Bar (§BuiltinWeatherBar§): **frameless glass layering**, **light-weight oversized numerals**, and **restraint with borders**.
-- **Frameless Glass Layering**: Set §material="glass"§ and let the OS translucency do the work. Prefer root §Column({ preferredWidth: 300, padding: [10, 16, 16, 16], gap: 14, safeArea: true })§ separated into 3–4 calm bands by 1px §$ui.divider()§ lines instead of nesting multiple bordered §$ui.card§ containers.
-- **26px Minimal Top Bar**: Use §$ui.topBar({ icon, title, subtitle, loading, externalURL, onRefresh })§ for a whisper-quiet 26px header with hoverable 26×26 icon buttons and a spinning refresh icon while §loading: true§.
-- **Oversized Light Hero Typography**: Use §$ui.hero({ value, unit, label, secondary, icon, metrics })§ (§fontSize: 44–52§, §fontWeight: 300§, §letterSpacing: -1.5..-2§, §fontFeatures: "tnum"§, §contentTransition: { numeric: true }§) paired with a crisp right-side wireframe icon or gradient Ring and one horizontal line of 12px §tnum§ micro-metrics.
+ScriptBoard's flagship visual aesthetic combines **Paper & Ink restraint** with the built-in Weather Bar (§BuiltinWeatherBar§): **frameless glass layering**, **light-weight oversized numerals**, and **discipline with chrome**.
+- **Frameless Glass Layering**: Set §material="glass"§ and let the OS translucency do the work. Prefer root §Column({ preferredWidth: 300, padding: [10, 16, 16, 16], gap: 14, safeArea: true })§ separated into 3–4 calm bands by 1px §$ui.divider()§ lines instead of nesting bordered §$ui.card§ containers (avoid "cards-within-cards").
+- **26px Minimal Top Bar**: Use §$ui.topBar({ icon, title, subtitle, loading, externalURL, onRefresh })§ for a whisper-quiet 26px header with hoverable 26×26 icon buttons and a spinning refresh icon while §loading: true§. Avoid the §sparkles§ cliché icon in headers or empty states.
+- **Oversized Light Hero Typography**: Use §$ui.hero({ value, unit, label, secondary, icon, metrics })§ (§fontSize: 44–52§, §fontWeight: 300§, §letterSpacing: -1.5..-2§, §fontFeatures: "tnum"§, §contentTransition: { numeric: true }§) paired with a crisp right-side wireframe icon or clean Ring and one horizontal line of 12px §tnum§ micro-metrics.
+- **Restrained Archival Color**: Default to §text§, §textMuted§, §accent§, §success§, §warning§, and §danger§ semantic tokens (or muted archival tones §#23537A§, §#2A7B62§, §#C26D2D§); avoid unrequested neon glows, LED matrices, or rainbow badges unless explicitly desired.
 - **Range Bars & Stale-While-Error**: Use §$ui.rangeRow(...)§ for low/high distributions (latency bounds, temperatures, P50–P99) and §$ui.staleError(lastError)§ to surface refresh failures without wiping cached data.
 
 ---
@@ -161,6 +162,7 @@ Always prefer semantic tokens over hardcoded §#000000§ / §#FFFFFF§:
 
 - **Web APIs**: §fetch§, §Headers§ (§getSetCookie()§), §Request§, §Response§, §URL§, §URLSearchParams§, §ReadableStream§, §AbortController§, timers, §console§, persisted §localStorage§.
 - **Automatic Persistent §CookieJar§** (§<dataDir>/bars/<id>/cookies.json§, §0600§): captures §Set-Cookie§ headers automatically and attaches cookies on subsequent requests; manageable via UI ("Manage cookies") or MCP (§bar_cookies_set/get/clear§).
+- **Unified Credential Provider (§<credentials>§ + Keychain Vault)**: Declare §<credentials><credential id="token-hub" type="cookie" origin="https://example.com" provider="webview" login-url="https://example.com/login" ready-url-includes="/bridge/" ready-cookies="SSO_TOKEN" refresh-on="401,403" /></credentials>§. On §401/403§ in §fetch()§, the host performs single-flight auth (restricted WebView / System Browser / Ego-CDP), encrypts secrets in OS Keychain + AES-256-GCM vault, syncs cookies to §CookieJar§, and retries once automatically. Scripts can also inspect §$metrix.credentials.status(id?)§ and §await $metrix.credentials.login(id)§, and assistants can manage them via §cred_list§ / §cred_save§ / §cred_import§ / §cred_sync_cdp§ / §cred_login§.
 - **§$metrix§**:
   - §$metrix.invalidate()§, §$metrix.openURL(url)§, §$metrix.copy(text)§, §$metrix.log(...args)§
   - §$metrix.storage§: §get(k)§, §set(k, v)§, §delete(k)§, §clear()§, §keys()§

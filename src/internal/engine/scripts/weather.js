@@ -83,11 +83,12 @@ export function render(ctx) {
     chart: {
       type: "line",
       series: [
-        { name: t("最高", "High"), color: "#F97316", points: days.max },
-        { name: t("最低", "Low"), color: "#64B5F6", points: days.min },
+        { name: t("最高", "High"), color: "#C26D2D", points: days.max },
+        { name: t("最低", "Low"), color: "#4D7EA8", points: days.min },
       ],
       labels: days.time,
       xLabels: [String(days.time[0]), String(days.time[days.time.length - 1])],
     },
+    layout: { title: "show" },
   };
 }

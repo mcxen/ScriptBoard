@@ -72,45 +72,109 @@ func (a *app) home(c *ui.Context, compact bool) {
 	now := a.now()
 	scripts := a.orderedHome(a.homeScripts())
 	subtitle := fmt.Sprintf(tr("%d月%d日 %s · %d 个组件"), int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]), len(scripts))
-	scrollEl := pageFull(c, compact, func() {
-		// A phone has room for the size switch under the title, not beside it;
-		// the scale slider is for a window with room to scale into.
-		sizeControls := func() {
-			if !compact {
-				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-					ui.Icon(c, icon("sparkles")).FontSize(15).TextColor(p.muted)
-					if slider(c, &a.set.CardScale, 0.7, 1.6).Width(104).Tooltip(tr("图标与卡片大小 ") + fmtScale(a.scale())).Changed() {
-						a.set.CardScale = float64(a.scale())
+	homeHeader := func(actions func()) {
+		if isMac() {
+			macHeader(c, tr("总览"), subtitle, actions)
+			return
+		}
+		ui.Row(c).AlignItems(ui.End).Gap(gapItem).Wrap().Children(func() {
+			ui.Column(c).Gap(3).Children(func() {
+				ui.Text(c, subtitle).FontSize(11.5).FontWeight(500).FontFeatures("tnum").TextColor(p.muted)
+				titleSize := float32(26)
+				if compact {
+					titleSize = 24
+				}
+				ui.Text(c, tr("总览")).FontSize(titleSize).FontWeight(600).LetterSpacing(-0.65).TextColor(p.text)
+			})
+			ui.Spacer(c)
+			if actions != nil {
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Wrap().Children(actions)
+			}
+		})
+	}
+	scaleControl := func() {
+		if compact {
+			return
+		}
+		scaleTrigger := ui.ButtonBase(c).
+			Height(30).
+			Padding(0, 10).
+			Radius(radControl + 1).
+			AlignItems(ui.Center).
+			Justify(ui.Center).
+			Cursor(ui.CursorPointer).
+			Tooltip(tr("缩放比例"))
+		bg := p.card
+		if a.scalePopoverOpen || scaleTrigger.Hovered() {
+			bg = p.hover
+		}
+		scaleTrigger = scaleTrigger.Background(bg).BorderWidth(1).BorderColor(p.border).Children(func() {
+			ui.Text(c, fmtScale(a.scale())).FontSize(12).FontWeight(500).FontFeatures("tnum").TextColor(p.muted).NoWrap()
+		})
+		if scaleTrigger.Clicked() {
+			a.scalePopoverOpen = !a.scalePopoverOpen
+		}
+		ui.PopoverBase(c, scaleTrigger, &a.scalePopoverOpen, func(panel ui.Element) {
+			pop := panel.Width(220).Padding(14).Gap(10).Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
+			if !isMac() {
+				sh := ui.RGBA(28, 25, 23, 0.12)
+				if p.dark {
+					sh = ui.RGBA(0, 0, 0, 0.36)
+				}
+				pop = pop.Shadow(0, 8, 24, 0, sh)
+			}
+			pop.Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, tr("缩放比例")).FontSize(fsSmall).FontWeight(600).TextColor(p.text)
+					ui.Spacer(c)
+					ui.Text(c, fmtScale(a.scale())).FontSize(fsSmall).FontFeatures("tnum").TextColor(p.muted)
+				})
+				if slider(c, &a.set.CardScale, 0.7, 1.6).Width(192).Changed() {
+					a.set.CardScale = float64(a.scale())
+					if err := a.store.SetSettings(a.set); err != nil {
+						a.set = a.store.Settings()
+					}
+				}
+				if math.Abs(float64(a.scale())-1) > 0.01 {
+					if paperOutlineBtn(c, tr("恢复默认"), false).FillWidth().Clicked() {
+						a.set.CardScale = 1
 						if err := a.store.SetSettings(a.set); err != nil {
 							a.set = a.store.Settings()
 						}
 					}
-				})
-			}
-			if choose(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
+				}
+			})
+		})
+	}
+	scrollEl := pageFull(c, compact, func() {
+		sizeControls := func() {
+			if paperSegmented(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
 				a.setAllSizes(a.cardSize)
+			}
+			if !compact {
+				ui.Box(c).Width(1).Height(16).Background(p.hairline)
+				scaleControl()
 			}
 		}
 		editControls := func() {
 			if a.editing {
-				if primaryBtn(c, tr("完成")).Clicked() {
+				if paperOutlineBtn(c, tr("完成"), true).Clicked() {
 					a.editing = false
 					a.rz = nil
 				}
 				return
 			}
-			if btn(c, tr("编辑布局")).Clicked() {
+			if paperOutlineBtn(c, tr("编辑布局"), false).Clicked() {
 				a.editing = true
 			}
 		}
 		if compact {
-			header(c, tr("总览"), subtitle, nil)
+			homeHeader(nil)
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-				label(c, tr("卡片大小"))
 				sizeControls()
 			})
 		} else {
-			header(c, tr("总览"), subtitle, func() {
+			homeHeader(func() {
 				sizeControls()
 				editControls()
 			})
@@ -122,7 +186,9 @@ func (a *app) home(c *ui.Context, compact bool) {
 			return
 		}
 		if a.editing {
-			hint(c, tr("拖动卡片换位置；拖右下角的角调整大小。右键卡片也能选大小。"))
+			ui.Row(c).Padding(8, 12).Radius(radControl + 1).Background(p.chip).Children(func() {
+				hint(c, tr("拖动卡片换位置；拖右下角的角调整大小。右键卡片也能选大小。"))
+			})
 		}
 		a.homeIDs = a.homeIDs[:0]
 		items := make([]placed, 0, len(scripts))
@@ -211,11 +277,19 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		bigSize = clampF(28*s, 22, 34)
 	}
 	// What is left of the header for the title: the card less its padding, the
-	// icon, the two buttons, a tag when there is one, and the gaps.
+	// icon, optional buttons, a tag when there is one, and the gaps. On narrow
+	// cards action buttons sit in a floating corner bar instead of the header row.
 	hasTag := ready && (size > 0 || (st.res.Chart != nil && st.res.Chart.Type == "gauge"))
-	titleW := w - 32*s - 14 - 2*24 - 10*2
+	padSide := 18 * s
+	if narrow {
+		padSide = 13 * s
+	}
+	titleW := w - 2*padSide - 13 - 10
+	if !narrow {
+		titleW -= 2*22 + 8
+	}
 	if hasTag {
-		titleW -= 56 + 10
+		titleW -= 52
 	}
 	title = fitText(title, max(titleW, 40), fsCaption)
 
@@ -280,9 +354,9 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	// A card with a picture is the picture, edge to edge, unless its layout says
 	// inline: its text and buttons are over it while the pointer is on it.
 	cv := a.coverOf(sc, st.res, ready && size != sizeMini && !a.editing && lay.Image != "inline")
-	padding := 16 * s
+	padding := 18 * s
 	if narrow {
-		padding = 12 * s
+		padding = 13 * s
 	}
 	if cv != nil {
 		padding = 0
@@ -336,25 +410,28 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				ui.Spacer(c)
 				ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).
 					FontSize(clampF(44*s, 28, 60)).
-					FontWeight(300).
-					LetterSpacing(-1.8).
+					FontWeight(350).
+					LetterSpacing(-1.6).
 					FontFeatures("tnum").
+					TextColor(p.text).
 					ContentTransition(ui.ContentTransition{Numeric: true}).
 					SingleLine().
 					Ellipsis("…")
 			}
 		} else {
 			if showTitle {
-				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
-					ui.Icon(c, icon(iconName)).FontSize(14).TextColor(accent)
-					// The title gives way, with an ellipsis, so the tag and the buttons
+				ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+					ui.Icon(c, icon(iconName)).FontSize(13).TextColor(p.muted)
+					// The title gives way, with an ellipsis, so the tag and any buttons
 					// stay whole on a small card.
 					ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-						ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(p.muted).NoWrap()
+						ui.Text(c, title).FontSize(12).FontWeight(550).TextColor(p.muted).NoWrap()
 					})
 					chip()
-					a.refreshButton(c, sc, showActions)
-					a.sizeButton(c, sc, size, showActions)
+					if !narrow {
+						a.refreshButton(c, sc, showActions)
+						a.sizeButton(c, sc, size, showActions)
+					}
 				})
 			}
 			switch {
@@ -375,21 +452,28 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					(!isCountdown(viewRes.Chart) || len(viewRes.Chart.Countdown) == 1) && !isBento(viewRes.Chart)) ||
 					isBentoHero(viewRes.Chart))
 				if st.res.Big != "" && !selfHero {
-					ui.Text(c, tickText(c, "card:"+sc.ID, st.res.Big)).
-						FontSize(bigSize).
-						FontWeight(300).
-						LetterSpacing(-1.5).
-						FontFeatures("tnum").
-						ContentTransition(ui.ContentTransition{Numeric: true}).
-						SingleLine().
-						Ellipsis("…")
+					renderHeroBig(c, p, sc.ID, st.res.Big, bigSize, s)
 				}
 				hasSub := lay.Summary != "hide" && st.res.Sub != "" && !isBentoHero(viewRes.Chart)
+				subColor := p.muted
+				subFS := fsSmall
+				if st.res.Big == "--" {
+					subColor = p.faint
+					subFS = fsTiny
+				}
 				switch {
 				case showTitle && hasSub:
-					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
+					subTxt := ui.Text(c, st.res.Sub).FontSize(subFS).TextColor(subColor)
+					if st.res.Big == "--" {
+						subTxt.LineHeight(1.45)
+					} else {
+						subTxt.SingleLine().Ellipsis("…")
+					}
 				case !showTitle && hasSub && !chipOK:
-					ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted)
+					subTxt := ui.Text(c, st.res.Sub).FontSize(subFS).TextColor(subColor)
+					if st.res.Big == "--" {
+						subTxt.LineHeight(1.45)
+					}
 				case !showTitle && (hasSub || chipOK):
 					subGap := float32(8)
 					if narrow {
@@ -399,7 +483,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 					ui.Row(c).AlignItems(ui.Center).Gap(subGap).Children(func() {
 						if hasSub {
 							ui.Row(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(func() {
-								ui.Text(c, st.res.Sub).FontSize(fsSmall).TextColor(p.muted).SingleLine().Ellipsis("…")
+								ui.Text(c, st.res.Sub).FontSize(subFS).TextColor(subColor).SingleLine().Ellipsis("…")
 							})
 						}
 						chip()
@@ -508,8 +592,19 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 				}
 			}
 		}
-		if !showTitle && !a.editing && size != sizeMini {
-			a.hoverBar(c, sc, title, size, showActions, w)
+		if !a.editing && size != sizeMini {
+			if !showTitle {
+				a.hoverBar(c, sc, title, size, showActions, w)
+			} else if narrow {
+				corner := ui.Row(c).Absolute().Top(6).Right(6).AlignItems(ui.Center).Gap(2).Padding(2, 4).Radius(8).Background(p.card.Alpha(0.94)).BorderWidth(1).BorderColor(p.border)
+				if !showActions {
+					corner = corner.Opacity(0).IgnoreInput(true)
+				}
+				corner.Children(func() {
+					a.refreshButton(c, sc, true)
+					a.sizeButton(c, sc, size, true)
+				})
+			}
 		}
 		if a.editing {
 			a.removeRow(c, sc)
@@ -537,11 +632,79 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 		}
 	}
 	if el.Hovered() {
-		el.Border(1, accent.Alpha(0.42))
+		hb := ui.RGBA(28, 25, 23, 0.20)
+		if p.dark {
+			hb = ui.RGBA(255, 255, 255, 0.20)
+		}
+		el.Border(1, hb)
 	}
 	if el.Clicked() && !a.editing {
 		a.router.Push("/full/" + sc.ID)
 	}
+}
+
+func renderHeroBig(c *ui.Context, p palette, scriptID, raw string, bigSize, s float32) {
+	if raw == "--" {
+		ui.Text(c, raw).
+			FontSize(clampF(26*s, 20, 32)).
+			FontWeight(350).
+			TextColor(p.faint).
+			SingleLine()
+		return
+	}
+	if num, unit, ok := splitHeroUnit(raw); ok {
+		unitFS := clampF(bigSize*0.44, 12, 16)
+		ui.Row(c).AlignItems(ui.Baseline).Gap(4).Label(raw).Children(func() {
+			ui.Text(c, tickText(c, "card:"+scriptID, num)).
+				FontSize(bigSize).
+				FontWeight(350).
+				LetterSpacing(-1.3).
+				FontFeatures("tnum").
+				TextColor(p.text).
+				ContentTransition(ui.ContentTransition{Numeric: true}).
+				SingleLine()
+			ui.Text(c, unit).
+				FontSize(unitFS).
+				FontWeight(450).
+				TextColor(p.muted).
+				NoWrap()
+		})
+		return
+	}
+	ui.Text(c, tickText(c, "card:"+scriptID, raw)).
+		FontSize(bigSize).
+		FontWeight(350).
+		LetterSpacing(-1.3).
+		FontFeatures("tnum").
+		TextColor(p.text).
+		ContentTransition(ui.ContentTransition{Numeric: true}).
+		SingleLine().
+		Ellipsis("…")
+}
+
+func splitHeroUnit(raw string) (num, unit string, ok bool) {
+	s := strings.TrimSpace(raw)
+	idx := strings.LastIndexByte(s, ' ')
+	if idx <= 0 || idx >= len(s)-1 {
+		return "", "", false
+	}
+	num = strings.TrimSpace(s[:idx])
+	unit = strings.TrimSpace(s[idx+1:])
+	if num == "" || unit == "" {
+		return "", "", false
+	}
+	first := num[0]
+	if (first < '0' || first > '9') && first != '+' && first != '-' {
+		return "", "", false
+	}
+	runes := 0
+	for _, r := range unit {
+		runes++
+		if runes > 6 || (r >= '0' && r <= '9') || r == ':' || r == '/' {
+			return "", "", false
+		}
+	}
+	return num, unit, true
 }
 
 func (a *app) cardContextMenu(c *ui.Context, sc store.Script, meta engine.Meta, st *runState, viewRes engine.Result, compSpec engine.WidgetSpec, el ui.Element) {

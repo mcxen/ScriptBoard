@@ -65,8 +65,8 @@ export function render(ctx) {
       clock: {
         style: style,
         seconds: true,
-        color: "#00F5D4",
-        neon: true,
+        color: "",
+        neon: false,
         zones: zones,
       },
     },

@@ -1,4 +1,4 @@
-// 年度与节日倒计时：纯离线自动按当前日期计算下一年、月底、季末与下个周末倒计时，搭配霓虹时光进度条。
+// 年度与节日倒计时：纯离线自动按当前日期计算下一年、月底、季末与下个周末倒计时。
 // Language: meta({lang}) and render(ctx) both get lang ("zh" or "en").
 let EN = false;
 const t = (zh, en) => (EN ? en : zh);
@@ -7,7 +7,7 @@ export function meta(a) {
   EN = !!a && a.lang === "en";
   return {
     name: t("年度与节日倒计时", "Year & milestones"),
-    description: t("年度倒计时霓虹进度条与近期时间节点列表，离线可用", "Year progress neon countdown and upcoming milestones, offline"),
+    description: t("年度倒计时与近期时间节点列表，离线可用", "Year progress countdown and upcoming milestones, offline"),
     version: "1.0.0",
     platforms: ["desktop", "mobile"],
     needs: [],
@@ -97,10 +97,10 @@ export function render(ctx) {
       chart: {
         type: "countdown",
         countdown: [
-          { label: t("下个周末", "Next weekend"), target: nextSat, note: t("周六", "Saturday"), color: "#22C55E", to: "#00F5D4", style: "neon" },
-          { label: t("本月末", "End of month"), target: nextMonth, start: monthStart, note: fmtDate(cur.y, cur.m, 1).slice(0, 7), color: "#38BDF8", to: "#A855F7", style: "gradient" },
-          { label: t("本季末", "End of quarter"), target: nextQuarter, start: qStart, note: "Q" + (Math.floor((cur.m - 1) / 3) + 1), color: "#A855F7", to: "#FF2A85", style: "gradient" },
-          { label: EN ? `New Year ${cur.y + 1}` : `${cur.y + 1} 新年`, target: nextYear, start: yearStart, color: "#00F5D4", to: "#38BDF8", style: "neon" },
+          { label: t("下个周末", "Next weekend"), target: nextSat, note: t("周六", "Saturday"), color: "#2A7B62", style: "solid" },
+          { label: t("本月末", "End of month"), target: nextMonth, start: monthStart, note: fmtDate(cur.y, cur.m, 1).slice(0, 7), color: "#23537A", style: "solid" },
+          { label: t("本季末", "End of quarter"), target: nextQuarter, start: qStart, note: "Q" + (Math.floor((cur.m - 1) / 3) + 1), color: "#C26D2D", style: "solid" },
+          { label: EN ? `New Year ${cur.y + 1}` : `${cur.y + 1} 新年`, target: nextYear, start: yearStart, color: "#5B5F97", style: "solid" },
         ],
       },
       layout: { legend: "hide", summary: "hide" },
@@ -121,9 +121,8 @@ export function render(ctx) {
           target: nextYear,
           start: yearStart,
           note: t("年度时光进度", "Year progress"),
-          color: "#00F5D4",
-          to: "#38BDF8",
-          style: "neon",
+          color: "#23537A",
+          style: "solid",
         },
       ],
     },

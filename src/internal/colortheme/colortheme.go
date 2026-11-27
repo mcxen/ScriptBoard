@@ -32,25 +32,25 @@ type Palette struct {
 	Border     ui.Color
 }
 
-// DefaultPalette returns the base ScriptBoard dark or light palette.
+// DefaultPalette returns the base ScriptBoard dark or light Paper & Ink palette.
 func DefaultPalette(dark bool) Palette {
 	if dark {
 		return Palette{
 			Dark:       true,
-			Surface:    ui.Hex("#1A1D24"),
-			SurfaceAlt: ui.Hex("#222631"),
-			Text:       ui.Hex("#F2F4F8"),
-			TextMuted:  ui.Hex("#9BA3B4"),
+			Surface:    ui.Hex("#1C1C1F"),
+			SurfaceAlt: ui.Hex("#242428"),
+			Text:       ui.Hex("#F0EFEA"),
+			TextMuted:  ui.Hex("#9D9A93"),
 			Border:     ui.RGBA(255, 255, 255, 0.10),
 		}
 	}
 	return Palette{
 		Dark:       false,
 		Surface:    ui.Hex("#FFFFFF"),
-		SurfaceAlt: ui.Hex("#F5F6F9"),
-		Text:       ui.Hex("#141821"),
-		TextMuted:  ui.Hex("#646C7E"),
-		Border:     ui.RGBA(15, 23, 42, 0.10),
+		SurfaceAlt: ui.Hex("#F5F4F0"),
+		Text:       ui.Hex("#181715"),
+		TextMuted:  ui.Hex("#625F59"),
+		Border:     ui.RGBA(28, 25, 23, 0.10),
 	}
 }
 

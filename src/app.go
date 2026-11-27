@@ -19,6 +19,7 @@ import (
 	"scriptboard/src/internal/cache"
 	"scriptboard/src/internal/caps"
 	"scriptboard/src/internal/cmdrun"
+	"scriptboard/src/internal/cred"
 	"scriptboard/src/internal/engine"
 	"scriptboard/src/internal/feed"
 	"scriptboard/src/internal/store"
@@ -70,8 +71,8 @@ type app struct {
 	hiddenSeries   map[string]map[int]bool      // hidden series indices per script ID for interactive legends
 	checkOverrides map[string]map[int]bool      // interactive local checklist toggle overrides per script
 	tableViews     map[string]*tableWidgetState // per-view sort/search state for table widgets
-	bentoViews     map[string]*bentoViewState  // per-view interactive state for bento widgets
-	fullModes      map[string]int              // full-view mode per script: 0 visual, 1 table, 2 raw
+	bentoViews     map[string]*bentoViewState   // per-view interactive state for bento widgets
+	fullModes      map[string]int               // full-view mode per script: 0 visual, 1 table, 2 raw
 
 	width    float32 // width of the window, from the last frame
 	height   float32 // height of the window, from the last frame
@@ -123,11 +124,12 @@ type app struct {
 
 	// The home page in edit mode: whether it is on, the card being resized, the
 	// columns and the width of one column, and the cards in the order shown.
-	editing bool
-	rz      *resize
-	cols    int
-	unit    float32
-	homeIDs []string
+	editing          bool
+	scalePopoverOpen bool
+	rz               *resize
+	cols             int
+	unit             float32
+	homeIDs          []string
 	// confirmReset is the script whose reset button was clicked once.
 	confirmReset string
 	// aboutOpen is whether the full view shows a script's details.
@@ -169,6 +171,12 @@ type app struct {
 	cmdHistory *cmdrun.HistoryStore
 	cmdRunner  *cmdrun.Runner
 	cmdForm    cmdForm
+
+	// Unified Credential Provider (Keychain AES vault + WebView/Browser/Ego-CDP/Manual).
+	credMgr        *cred.Manager
+	credForm       credForm
+	credBrowserURL map[string]string
+	credLoginHook  func(context.Context, cred.Spec) (cred.SecretPayload, error)
 
 	// Community: the list, the login form and the upload description.
 	comm       commState
@@ -256,29 +264,29 @@ func newApp(dir string, offline bool) (*app, error) {
 		return nil, err
 	}
 	a := &app{
-		router:          ui.NewRouter("/"),
-		store:           st,
-		client:          &http.Client{Timeout: 10 * time.Second},
-		now:             time.Now,
-		runs:            map[string]*runState{},
-		metas:           map[string]metaEntry{},
-		dims:            map[string][]int{},
-		styles:          map[string]string{},
-		quick:           map[string]*float64{},
-		refreshing:      map[string]bool{},
-		refreshStates:   map[string]refreshState{},
-		usageForms:      map[string]*usageForm{},
-		sels:            map[string]*int{},
-		cardSize:        1, // medium cards to start with
+		router:            ui.NewRouter("/"),
+		store:             st,
+		client:            &http.Client{Timeout: 10 * time.Second},
+		now:               time.Now,
+		runs:              map[string]*runState{},
+		metas:             map[string]metaEntry{},
+		dims:              map[string][]int{},
+		styles:            map[string]string{},
+		quick:             map[string]*float64{},
+		refreshing:        map[string]bool{},
+		refreshStates:     map[string]refreshState{},
+		usageForms:        map[string]*usageForm{},
+		sels:              map[string]*int{},
+		cardSize:          1, // medium cards to start with
 		barInsts:          map[string]*bar.Instance{},
 		barSpecs:          map[string]bar.Spec{},
 		barSourceSig:      map[string]string{},
 		barTrays:          map[string]*mygo.Tray{},
-		barTraySig:      map[string]string{},
+		barTraySig:        map[string]string{},
 		barFlyouts:        map[string]*mygo.Window{},
 		barFlyoutActive:   map[string]bool{},
 		barFlyoutClosedAt: map[string]time.Time{},
-		barInputDrafts:  map[string]map[string]string{},
+		barInputDrafts:    map[string]map[string]string{},
 	}
 	a.dataDir = filepath.Dir(st.Path())
 	a.cache = cache.Open(filepath.Join(a.dataDir, "cache"))
@@ -290,6 +298,7 @@ func newApp(dir string, offline bool) (*app, error) {
 	}, a.samples)
 	a.cmdHistory = cmdrun.NewHistoryStore(filepath.Join(a.dataDir, "commands"))
 	a.cmdRunner = cmdrun.NewRunner(a.cmdHistory, a.allowCommandExec)
+	a.initCredentials()
 	if err := a.seed(); err != nil {
 		return nil, err
 	}
@@ -306,6 +315,7 @@ func newApp(dir string, offline bool) (*app, error) {
 		return nil, err
 	}
 	a.syncPlugins()
+	a.syncDeclaredCredentials()
 	a.set = st.Settings()
 	for id, style := range a.set.CardStyles {
 		a.styles[id] = style
@@ -748,7 +758,15 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		reqs[name] = r
 		keys[name] = r.CacheKey()
 	}
-	sources, info := engine.FetchRequests(context.Background(), a.client, reqs, now, opt)
+	httpClient := a.client
+	var credStatuses map[string]cred.Status
+	if a.credMgr != nil && len(s.Meta.Credentials) > 0 {
+		a.credMgr.RegisterSpecs(sc.ID, s.Meta.Credentials)
+		httpClient = a.credMgr.WrapClient(a.client, s.Meta.Credentials, nil)
+		opt.CacheSalt = fmt.Sprintf("cred=%d", a.credMgr.Revision(s.Meta.Credentials))
+		credStatuses = a.credMgr.StatusMap(s.Meta.Credentials)
+	}
+	sources, info := engine.FetchRequests(context.Background(), httpClient, reqs, now, opt)
 	var history map[string][]engine.HistoryPoint
 	if names, n := historyWanted(s.Meta); len(names) > 0 && opt.Cache != nil {
 		history = engine.HistoryOf(opt.Cache, keys, names, n, now)
@@ -760,18 +778,19 @@ func (a *app) executeOpt(sc store.Script, vals map[string]float64, force bool) (
 		netProbe, npAt, npStale = a.netProbeInput(*s.Meta.NetProbe, force, now)
 	}
 	res, err := s.Run(context.Background(), engine.Input{
-		Now:      now,
-		Lang:     curLang(),
-		Theme:    a.effectiveThemeName(),
-		TZOffset: tz,
-		OS:       caps.OS(),
-		Kind:     caps.Platform(),
-		Granted:  a.grantedList(sc),
-		View:     vals,
-		Metrics:  a.store.Metrics(),
-		Feeds:    a.feedInput(s.Meta.Feeds, now),
-		Commands: a.commandInput(s.Meta.Commands),
-		Usage:    a.usageInput(s.Meta.Usage, now),
+		Now:         now,
+		Lang:        curLang(),
+		Theme:       a.effectiveThemeName(),
+		TZOffset:    tz,
+		OS:          caps.OS(),
+		Kind:        caps.Platform(),
+		Granted:     a.grantedList(sc),
+		View:        vals,
+		Metrics:     a.store.Metrics(),
+		Feeds:       a.feedInput(s.Meta.Feeds, now),
+		Commands:    a.commandInput(s.Meta.Commands),
+		Credentials: credStatuses,
+		Usage:       a.usageInput(s.Meta.Usage, now),
 		Settings: map[string]any{
 			"weightUnit": set.WeightUnit,
 			"offline":    set.Offline,
