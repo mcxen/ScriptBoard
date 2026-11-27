@@ -107,7 +107,7 @@ func (a *app) view(c *ui.Context) {
 		case isMac() && !compact:
 			macMenuBar(c, a)
 		case !compact:
-			titleBar(c, a, func() {})
+			desktopTopBar(c, a, p, path)
 		}
 		pages := func() {
 			skinSurface(c, ui.Column(c).Grow(1)).Children(func() {
@@ -253,22 +253,22 @@ func (a *app) sidebar(c *ui.Context, p palette, path string) {
 	if isMac() {
 		borderCol = macBlack
 	}
-	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(14, 12, 14, 12).Gap(3).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(4, 8, 18, 8).Children(func() {
-			if isMac() {
-				macBevel(ui.Row(c).Size(10, 10).Background(macBlack), false)
-			} else {
-				ui.Box(c).Size(8, 8).Radius(2.5).Background(p.text).Shrink(0)
-			}
-			ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
-				ui.Text(c, appName()).FontSize(15).FontWeight(650).LetterSpacing(-0.35).TextColor(p.text)
-				ui.Text(c, tr("脚本小组件")).FontSize(10.5).TextColor(p.faint)
-			})
-			if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
-				a.toggleSidebar()
-			}
-		})
+	topPad := float32(8)
+	if isMac() {
+		topPad = 14
+	}
+	ui.Column(c).Width(sidebarWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(topPad, 12, 14, 12).Gap(3).Children(func() {
 		if isMac() {
+			ui.Row(c).AlignItems(ui.Center).Gap(9).Padding(4, 8, 18, 8).Children(func() {
+				macBevel(ui.Row(c).Size(10, 10).Background(macBlack), false)
+				ui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+					ui.Text(c, appName()).FontSize(15).FontWeight(650).LetterSpacing(-0.35).TextColor(p.text)
+					ui.Text(c, tr("脚本小组件")).FontSize(10.5).TextColor(p.faint)
+				})
+				if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
+					a.toggleSidebar()
+				}
+			})
 			for _, n := range mainNavItems {
 				if macSidebarItem(c, tr(n.label), n.icon, n.active(path), sidebarWidth-20) {
 					a.goTo(n.path)
@@ -324,8 +324,10 @@ func (a *app) sidebarRail(c *ui.Context, p palette, path string) {
 		borderCol = macBlack
 	}
 	ui.Column(c).Width(railWidth).Background(p.sidebar).BorderWidth(0, 1, 0, 0).BorderColor(borderCol).Padding(10, 6, 14, 6).Gap(6).AlignItems(ui.Center).Children(func() {
-		if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
-			a.toggleSidebar()
+		if isMac() {
+			if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
+				a.toggleSidebar()
+			}
 		}
 		for _, n := range mainNavItems {
 			if macOrRailItem(c, n, n.active(path), p) {

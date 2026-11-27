@@ -152,6 +152,10 @@ func normalizePluginID(id string) string {
 }
 
 func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
+	return s.callExtraCtx(context.Background(), name, a)
+}
+
+func (s Server) callExtraCtx(ctx context.Context, name string, a map[string]any) (string, bool, error) {
 	str := func(key string) string {
 		v, _ := a[key].(string)
 		return v
@@ -813,7 +817,7 @@ func (s Server) callExtra(name string, a map[string]any) (string, bool, error) {
 	if out, handled, err := s.callCommand(name, a); handled {
 		return out, true, err
 	}
-	if out, handled, err := s.callCred(name, a); handled {
+	if out, handled, err := s.callCredCtx(ctx, name, a); handled {
 		return out, true, err
 	}
 	return "", false, nil

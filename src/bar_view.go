@@ -716,7 +716,7 @@ func (a *app) barCredentialsSection(c *ui.Context, p palette, id string, sp bar.
 				cs := cs
 				st := statuses[cs.ID]
 				stLbl, stCol := a.credStatusBadge(p, st.Status)
-				busy := a.isRefreshing("cred:" + cs.ID)
+				busy := a.isRefreshing("cred:"+cs.ID) || (a.credMgr != nil && a.credMgr.IsAuthenticating(cs.ID))
 				ui.Column(c.Key("bar-cred-item:" + cs.ID)).FillWidth().Gap(6).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Wrap().Children(func() {
 						ui.Text(c, credDisplayName(cs)).FontSize(fsSmall).FontWeight(600).Grow(1).MinWidth(0)
@@ -737,6 +737,11 @@ func (a *app) barCredentialsSection(c *ui.Context, p palette, id string, sp bar.
 							}
 							if btn(c, tr("浏览器授权")).Clicked() && !busy {
 								a.acquireCredentialAsync(cs, "browser")
+							}
+						}
+						if busy {
+							if btn(c.Key("bar-cred-stop:"+cs.ID), tr("终止")).Clicked() {
+								a.cancelCredential(cs)
 							}
 						}
 						if btn(c, tr("去凭据管理")).Clicked() {

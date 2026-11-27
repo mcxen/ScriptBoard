@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -14,8 +16,8 @@ import (
 // same height, so the lights stay where the window put them when a skin changes.
 
 const (
-	// titleRow is the height of the title row at the top of the window.
-	titleRow = 38
+	// titleRow is the height of the fused title/tool row at the top of the window.
+	titleRow = 44
 	// trafficInset is the room the macOS traffic lights take on the left.
 	trafficInset = 78
 	// captionWidth is the width of one Windows caption button.
@@ -60,6 +62,196 @@ func titleBarIn(c *ui.Context, a *app, w *mygo.Window, body func()) {
 		if ownControls {
 			a.windowButtons(c, w)
 		}
+	})
+}
+
+// desktopTopBar renders the fused Paper & Ink top bar across the main window:
+// on desktop it merges the app wordmark + sidebar toggle beside the macOS
+// traffic lights (when expanded) with active Home view tabs, S/M/L preset
+// switcher, scale pill, refresh, and edit-layout controls on the right.
+func desktopTopBar(c *ui.Context, a *app, p palette, path string) {
+	if !a.set.SidebarCollapsed {
+		ui.Row(c).Height(titleRow).FillWidth().AlignItems(ui.Center).Children(func() {
+			sideBarTop := ui.Row(c).
+				Width(sidebarWidth).
+				Height(titleRow).
+				Background(p.sidebar).
+				BorderWidth(0, 1, 0, 0).
+				BorderColor(p.hairline).
+				AlignItems(ui.Center).
+				Gap(8).
+				DragWindow()
+			if !ownControls {
+				sideBarTop = sideBarTop.Padding(0, 10, 0, 0)
+			} else {
+				sideBarTop = sideBarTop.Padding(0, 10, 0, 14)
+			}
+			sideBarTop.Children(func() {
+				if !ownControls {
+					ui.Box(c).Width(trafficInset).Shrink(0)
+				}
+				ui.Box(c).Size(8, 8).Radius(2.5).Background(p.text).Shrink(0)
+				ui.Text(c, appName()).FontSize(13.5).FontWeight(650).LetterSpacing(-0.3).TextColor(p.text).NoWrap()
+				ui.Spacer(c)
+				if sidebarToggle(c, "panel-left", tr("收起侧栏")).Clicked() {
+					a.toggleSidebar()
+				}
+			})
+
+			mainTop := ui.Row(c).
+				Grow(1).
+				MinWidth(0).
+				Height(titleRow).
+				Background(p.canvas).
+				BorderWidth(0, 0, 1, 0).
+				BorderColor(p.hairline).
+				Padding(0, 14, 0, 16).
+				Gap(10).
+				AlignItems(ui.Center).
+				DragWindow()
+			mainTop.Children(func() {
+				a.topBarMainContent(c, p, path)
+				if ownControls {
+					a.windowButtons(c, a.win)
+				}
+			})
+		})
+		return
+	}
+
+	bar := ui.Row(c).
+		FillWidth().
+		Height(titleRow).
+		Background(p.canvas).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(p.hairline).
+		AlignItems(ui.Center).
+		Gap(10).
+		DragWindow()
+	if !ownControls {
+		bar = bar.Padding(0, 14, 0, 0)
+	} else {
+		bar = bar.Padding(0, 14, 0, 10)
+	}
+	bar.Children(func() {
+		if !ownControls {
+			ui.Box(c).Width(trafficInset).Shrink(0)
+		}
+		if sidebarToggle(c, "panel-left", tr("展开侧栏")).Clicked() {
+			a.toggleSidebar()
+		}
+		ui.Box(c).Width(1).Height(16).Background(p.hairline).Shrink(0)
+		a.topBarMainContent(c, p, path)
+		if ownControls {
+			a.windowButtons(c, a.win)
+		}
+	})
+}
+
+func (a *app) topBarMainContent(c *ui.Context, p palette, path string) {
+	if path == "/" {
+		scripts := a.activeHomeScripts()
+		ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(10).Children(func() {
+			a.homeViewTabs(c, p, true)
+			if a.width >= 1160 {
+				ui.Text(c, fmt.Sprintf(tr("%d 个组件"), len(scripts))).
+					FontSize(11.5).FontWeight(500).FontFeatures("tnum").TextColor(p.muted).NoWrap().Shrink(0)
+			}
+			ui.Spacer(c)
+		})
+		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
+			if paperSegmented(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
+				a.switchSizePreset(a.cardSize)
+			}
+			ui.Box(c).Width(1).Height(16).Background(p.hairline)
+			a.homeScaleControl(c, false)
+			a.refreshIconButton(c, "home-bar-ref", "__home_view__", tr("刷新当前视图"), 28, 14, true, p.hover, p.muted, p.accent, p.down, p.up, func() {
+				a.refreshAllHome(scripts)
+			})
+			if a.editing {
+				if paperToolbarBtn(c, tr("完成"), true).Clicked() {
+					a.editing = false
+					a.rz = nil
+				}
+			} else if paperToolbarBtn(c, tr("编辑布局"), false).Clicked() {
+				a.editing = true
+			}
+		})
+		return
+	}
+
+	ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(8).Children(func() {
+		switch {
+		case strings.HasPrefix(path, "/full/"):
+			id := strings.TrimPrefix(path, "/full/")
+			ui.BackButton(c, a.router)
+			title := id
+			if sc, ok := a.store.Script(id); ok {
+				title = a.scriptDisplayName(sc)
+			}
+			ui.Text(c, title).FontSize(13.5).FontWeight(600).TextColor(p.text).SingleLine().Ellipsis("…")
+		case path == "/edit" || strings.HasPrefix(path, "/edit/"):
+			ui.Text(c, tr("组件管理")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+			if a.draft.Name != "" {
+				ui.Text(c, "· "+a.scriptDisplayName(a.draft)).FontSize(12.5).TextColor(p.muted).SingleLine().Ellipsis("…")
+			}
+		case path == "/bar" || strings.HasPrefix(path, "/bar/"):
+			ui.Text(c, tr("菜单管理")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+			if a.barSelectedID != "" {
+				if sc, ok := a.store.Script(a.barSelectedID); ok {
+					ui.Text(c, "· "+a.scriptDisplayName(sc)).FontSize(12.5).TextColor(p.muted).SingleLine().Ellipsis("…")
+				}
+			}
+		case path == "/community":
+			ui.Text(c, tr("社区")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		case path == "/feeds":
+			ui.BackButton(c, a.router)
+			ui.Text(c, tr("数据源")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		case path == "/commands":
+			ui.BackButton(c, a.router)
+			ui.Text(c, tr("命令任务")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		case path == "/credentials":
+			ui.BackButton(c, a.router)
+			ui.Text(c, tr("凭据管理")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		case path == "/settings":
+			ui.Text(c, tr("设置")).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		default:
+			ui.Text(c, appName()).FontSize(13.5).FontWeight(600).TextColor(p.text).NoWrap()
+		}
+		ui.Spacer(c)
+	})
+}
+
+func paperToolbarBtn(c *ui.Context, text string, solidInk bool) ui.Element {
+	if isMac() {
+		return macButton(c, text, solidInk)
+	}
+	p := pal(c)
+	b := ui.ButtonBase(c).
+		Height(28).
+		Padding(0, 11).
+		Radius(radControl).
+		AlignItems(ui.Center).
+		Justify(ui.Center).
+		Cursor(ui.CursorPointer).
+		Label(text)
+	fg, weight := p.text, 500
+	if solidInk {
+		fg, weight = p.card, 600
+		bg := p.text
+		if b.Hovered() {
+			bg = p.text.Alpha(0.88)
+		}
+		b = b.Background(bg)
+	} else {
+		bg := p.card
+		if b.Hovered() {
+			bg = p.hover
+		}
+		b = b.Background(bg).BorderWidth(1).BorderColor(p.border)
+	}
+	return b.Children(func() {
+		ui.Text(c, text).FontSize(12).FontWeight(weight).TextColor(fg).NoWrap()
 	})
 }
 

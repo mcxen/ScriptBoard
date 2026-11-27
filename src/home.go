@@ -65,16 +65,84 @@ func (a *app) sizeOf(id string) int {
 	return a.cardSize
 }
 
-// home is the overview: the cards on a grid, in the order the user arranged
-// them. In edit mode a card moves by its body and is resized by its corner.
+func (a *app) homeScaleControl(c *ui.Context, compact bool) {
+	if compact {
+		return
+	}
+	p := pal(c)
+	triggerH := float32(28)
+	if isMac() {
+		triggerH = 30
+	}
+	scaleTrigger := ui.ButtonBase(c).
+		Height(triggerH).
+		Padding(0, 9).
+		Radius(radControl).
+		AlignItems(ui.Center).
+		Justify(ui.Center).
+		Cursor(ui.CursorPointer).
+		Tooltip(tr("缩放比例"))
+	bg := p.card
+	if a.scalePopoverOpen || scaleTrigger.Hovered() {
+		bg = p.hover
+	}
+	scaleTrigger = scaleTrigger.Background(bg).BorderWidth(1).BorderColor(p.border).Children(func() {
+		ui.Text(c, fmtScale(a.scale())).FontSize(12).FontWeight(500).FontFeatures("tnum").TextColor(p.muted).NoWrap()
+	})
+	if scaleTrigger.Clicked() {
+		a.scalePopoverOpen = !a.scalePopoverOpen
+	}
+	ui.PopoverBase(c, scaleTrigger, &a.scalePopoverOpen, func(panel ui.Element) {
+		pop := panel.Width(220).Padding(14).Gap(10).Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
+		if !isMac() {
+			sh := ui.RGBA(28, 25, 23, 0.12)
+			if p.dark {
+				sh = ui.RGBA(0, 0, 0, 0.36)
+			}
+			pop = pop.Shadow(0, 8, 24, 0, sh)
+		}
+		pop.Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, tr("缩放比例")).FontSize(fsSmall).FontWeight(600).TextColor(p.text)
+				ui.Spacer(c)
+				ui.Text(c, fmtScale(a.scale())).FontSize(fsSmall).FontFeatures("tnum").TextColor(p.muted)
+			})
+			if slider(c, &a.set.CardScale, 0.7, 1.6).Width(192).Changed() {
+				a.set.CardScale = float64(a.scale())
+				if err := a.store.SetSettings(a.set); err != nil {
+					a.set = a.store.Settings()
+				}
+			}
+			if math.Abs(float64(a.scale())-1) > 0.01 {
+				if paperOutlineBtn(c, tr("恢复默认"), false).FillWidth().Clicked() {
+					a.set.CardScale = 1
+					if err := a.store.SetSettings(a.set); err != nil {
+						a.set = a.store.Settings()
+					}
+				}
+			}
+		})
+	})
+}
+
+// home is the overview or any user-customized dashboard view: the cards on a grid,
+// in the order the user arranged them. In edit mode a card moves by its body and
+// is resized by its corner, remembered independently per S/M/L preset.
 func (a *app) home(c *ui.Context, compact bool) {
 	p := pal(c)
 	now := a.now()
-	scripts := a.orderedHome(a.homeScripts())
+	activeView := a.activeHomeView()
+	viewTitle := tr("总览")
+	viewIsAll := true
+	if activeView != nil {
+		viewTitle = homeViewTitle(*activeView)
+		viewIsAll = activeView.All
+	}
+	scripts := a.activeHomeScripts()
 	subtitle := fmt.Sprintf(tr("%d月%d日 %s · %d 个组件"), int(now.Month()), now.Day(), tr(weekdays[now.Weekday()]), len(scripts))
 	homeHeader := func(actions func()) {
 		if isMac() {
-			macHeader(c, tr("总览"), subtitle, actions)
+			macHeader(c, viewTitle, subtitle, actions)
 			return
 		}
 		ui.Row(c).AlignItems(ui.End).Gap(gapItem).Wrap().Children(func() {
@@ -84,7 +152,7 @@ func (a *app) home(c *ui.Context, compact bool) {
 				if compact {
 					titleSize = 24
 				}
-				ui.Text(c, tr("总览")).FontSize(titleSize).FontWeight(600).LetterSpacing(-0.65).TextColor(p.text)
+				ui.Text(c, viewTitle).FontSize(titleSize).FontWeight(600).LetterSpacing(-0.65).TextColor(p.text)
 			})
 			ui.Spacer(c)
 			if actions != nil {
@@ -92,68 +160,14 @@ func (a *app) home(c *ui.Context, compact bool) {
 			}
 		})
 	}
-	scaleControl := func() {
-		if compact {
-			return
-		}
-		scaleTrigger := ui.ButtonBase(c).
-			Height(30).
-			Padding(0, 10).
-			Radius(radControl + 1).
-			AlignItems(ui.Center).
-			Justify(ui.Center).
-			Cursor(ui.CursorPointer).
-			Tooltip(tr("缩放比例"))
-		bg := p.card
-		if a.scalePopoverOpen || scaleTrigger.Hovered() {
-			bg = p.hover
-		}
-		scaleTrigger = scaleTrigger.Background(bg).BorderWidth(1).BorderColor(p.border).Children(func() {
-			ui.Text(c, fmtScale(a.scale())).FontSize(12).FontWeight(500).FontFeatures("tnum").TextColor(p.muted).NoWrap()
-		})
-		if scaleTrigger.Clicked() {
-			a.scalePopoverOpen = !a.scalePopoverOpen
-		}
-		ui.PopoverBase(c, scaleTrigger, &a.scalePopoverOpen, func(panel ui.Element) {
-			pop := panel.Width(220).Padding(14).Gap(10).Radius(12).Background(p.card).BorderWidth(1).BorderColor(p.border)
-			if !isMac() {
-				sh := ui.RGBA(28, 25, 23, 0.12)
-				if p.dark {
-					sh = ui.RGBA(0, 0, 0, 0.36)
-				}
-				pop = pop.Shadow(0, 8, 24, 0, sh)
-			}
-			pop.Children(func() {
-				ui.Row(c).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, tr("缩放比例")).FontSize(fsSmall).FontWeight(600).TextColor(p.text)
-					ui.Spacer(c)
-					ui.Text(c, fmtScale(a.scale())).FontSize(fsSmall).FontFeatures("tnum").TextColor(p.muted)
-				})
-				if slider(c, &a.set.CardScale, 0.7, 1.6).Width(192).Changed() {
-					a.set.CardScale = float64(a.scale())
-					if err := a.store.SetSettings(a.set); err != nil {
-						a.set = a.store.Settings()
-					}
-				}
-				if math.Abs(float64(a.scale())-1) > 0.01 {
-					if paperOutlineBtn(c, tr("恢复默认"), false).FillWidth().Clicked() {
-						a.set.CardScale = 1
-						if err := a.store.SetSettings(a.set); err != nil {
-							a.set = a.store.Settings()
-						}
-					}
-				}
-			})
-		})
-	}
 	scrollEl := pageFull(c, compact, func() {
 		sizeControls := func() {
 			if paperSegmented(c, &a.cardSize, tr("小"), tr("中"), tr("大")) {
-				a.setAllSizes(a.cardSize)
+				a.switchSizePreset(a.cardSize)
 			}
 			if !compact {
 				ui.Box(c).Width(1).Height(16).Background(p.hairline)
-				scaleControl()
+				a.homeScaleControl(c, false)
 			}
 		}
 		editControls := func() {
@@ -170,25 +184,47 @@ func (a *app) home(c *ui.Context, compact bool) {
 		}
 		if compact {
 			homeHeader(nil)
+			a.homeViewTabs(c, p, false)
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
 				sizeControls()
 			})
-		} else {
+		} else if isMac() {
 			homeHeader(func() {
 				sizeControls()
 				editControls()
 			})
+			a.homeViewTabs(c, p, false)
+		}
+		if a.viewEdit.open {
+			a.homeViewEditorPanel(c, compact)
+		}
+		if a.editing {
+			ui.Row(c).Padding(8, 12).Gap(10).AlignItems(ui.Center).Radius(radControl + 1).Background(p.chip).Wrap().Children(func() {
+				ui.Text(c, fmt.Sprintf(tr("拖动卡片换位置；拖右下角的角调整大小；修改会按「%s」子视图单独记住。"), sizePresetLabel(a.cardSize))).
+					FontSize(fsSmall).TextColor(p.muted)
+				ui.Spacer(c)
+				if btn(c, tr("选择组件")).Clicked() && activeView != nil {
+					a.openEditHomeViewEditor(activeView.ID)
+				}
+				if btn(c, tr("重置本尺寸")).Clicked() {
+					a.resetActivePresetSizes()
+				}
+			})
 		}
 		if len(scripts) == 0 {
 			card(c).Children(func() {
-				empty(c, "layout-grid", tr("还没有组件"), tr("在「编辑」里新建脚本，或到「社区」下载别人写好的。"))
+				if !viewIsAll {
+					ui.Column(c).AlignItems(ui.Center).Gap(12).Padding(28).Children(func() {
+						empty(c, homeViewIcon(*activeView), tr("当前视图还没有组件"), tr("点击「选择组件」挑选要在此视图中显示的脚本、菜单组件或数据表。"))
+						if btn(c, tr("选择组件")).Clicked() && activeView != nil {
+							a.openEditHomeViewEditor(activeView.ID)
+						}
+					})
+				} else {
+					empty(c, "layout-grid", tr("还没有组件"), tr("在「编辑」里新建脚本，或到「社区」下载别人写好的。"))
+				}
 			})
 			return
-		}
-		if a.editing {
-			ui.Row(c).Padding(8, 12).Radius(radControl + 1).Background(p.chip).Children(func() {
-				hint(c, tr("拖动卡片换位置；拖右下角的角调整大小。右键卡片也能选大小。"))
-			})
 		}
 		a.homeIDs = a.homeIDs[:0]
 		items := make([]placed, 0, len(scripts))
@@ -222,7 +258,7 @@ func (a *app) card(c *ui.Context, sc store.Script, b store.CardBox, span int, w 
 	p := pal(c)
 	s := a.scale()
 	if sc.IsBar() {
-		a.barHomeCard(c, sc, b, w, s)
+		a.barHomeCard(c, sc, b, span, w, s)
 		return
 	}
 	meta, metaErr := a.metaOf(sc)
@@ -846,16 +882,33 @@ func fitText(s string, width, fs float32) string {
 // page. The script stays in 编辑, where it can be put back with 显示在首页.
 func (a *app) removeRow(c *ui.Context, sc store.Script) {
 	p := pal(c)
+	tip := tr("从首页移除")
+	if v := a.activeHomeView(); v != nil && !v.All {
+		tip = tr("从当前视图移除")
+	}
 	ui.Row(c.Key("remove:" + sc.ID)).Absolute().Top(6).Right(6).Padding(2).Radius(radControl).
 		Background(p.card.Alpha(0.92)).BorderWidth(1).BorderColor(p.hairline).Children(func() {
-		if action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tr("从首页移除")}).Clicked() {
+		if action.ActionIcon(c, icon("x"), action.ActionIconProps{Size: theme.Small, Title: tip}).Clicked() {
 			a.removeFromHome(sc)
 		}
 	})
 }
 
-// removeFromHome takes a script off the home page.
+// removeFromHome takes a script off the active Home view (or Overview home=false).
 func (a *app) removeFromHome(sc store.Script) {
+	if idx := a.activeHomeViewIndex(); idx >= 0 && !a.set.HomeViews[idx].All {
+		v := &a.set.HomeViews[idx]
+		kept := v.Scripts[:0]
+		for _, id := range v.Scripts {
+			if id != sc.ID {
+				kept = append(kept, id)
+			}
+		}
+		v.Scripts = kept
+		a.saveSettings()
+		a.status = tr("已从当前视图移除")
+		return
+	}
 	sc.Home = false
 	if err := a.store.SaveScript(sc); err != nil {
 		a.status = tr("移除失败：") + err.Error()
@@ -864,7 +917,7 @@ func (a *app) removeFromHome(sc store.Script) {
 	a.status = tr("已从首页移除，在「编辑」里可以再显示")
 }
 
-func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s float32) {
+func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, span int, w, s float32) {
 	p := pal(c)
 	inst, _, err := a.ensureBarInstance(sc)
 	th := barThemeFor(c, barThemeAuto)
@@ -879,12 +932,9 @@ func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s 
 	} else if err != nil {
 		snap.Error = err.Error()
 	}
-	h := max(b.Height*s, 220*s)
+	h := max(b.Height*s, 128*s)
 	el := card(c).Width(w).Height(h).Clip().Cursor(ui.CursorPointer)
 	el.Children(func() {
-		if a.editing {
-			a.removeRow(c, sc)
-		}
 		ui.Scroll(c).Fill().Children(func() {
 			if snap.Panel != nil {
 				renderBarNodeInteractive(c, snap.Panel, th, false, func(aid string) {
@@ -898,15 +948,67 @@ func (a *app) barHomeCard(c *ui.Context, sc store.Script, b store.CardBox, w, s 
 				})
 			}
 		})
+		if a.editing {
+			a.removeRow(c, sc)
+			a.resizeHandle(c, sc.ID, span, b)
+		}
 	})
+	a.barCardContextMenu(c, sc, el)
 	if !a.editing && el.LongPressed() {
 		a.hapticMedium()
 		a.sheetScriptID = sc.ID
 		a.sheetOpen = true
 	}
+	if a.editing {
+		el = el.Drag(cardRef{sc.ID}).Cursor(ui.CursorGrab).Label("card:" + sc.ID)
+		if a.rz != nil && a.rz.id == sc.ID {
+			el.Border(2, p.accent)
+		} else {
+			el.Border(1, p.accent.Alpha(0.55))
+		}
+		if ref, ok := ui.Drop[cardRef](el); ok && ref.id != sc.ID {
+			a.moveCard(ref.id, sc.ID)
+		}
+	}
 	if el.Clicked() && !a.editing {
 		a.router.Push("/bar/" + sc.ID)
 	}
+}
+
+func (a *app) barCardContextMenu(c *ui.Context, sc store.Script, el ui.Element) {
+	p := pal(c)
+	open := a.cardMenuOpen(sc.ID)
+	curSize := classOf(a.boxOf(sc.ID))
+	item := func(label string, checked bool) bool {
+		if isMac() {
+			return btn(c, label).Clicked()
+		}
+		return popoverMenuRow(c, label, checked, false).Clicked()
+	}
+	ui.ContextMenuBase(c, el, open).Popup(func(panel ui.Element) {
+		pop := panel.MinWidth(168).Padding(6).Gap(2).Background(p.card).Radius(12).BorderWidth(1).BorderColor(p.border)
+		if !isMac() {
+			pop = pop.Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.24))
+		}
+		pop.Children(func() {
+			for i, name := range sizeNames() {
+				i := i
+				if item(name, i == curSize) {
+					a.setSize(sc.ID, i)
+					*open = false
+				}
+			}
+			ui.Box(c).Height(1).Shrink(0).Background(p.hairline)
+			if item(tr("刷新数据"), false) {
+				a.refreshBar(sc.ID)
+				*open = false
+			}
+			if item(tr("编辑"), false) {
+				*open = false
+				a.router.Push("/bar/" + sc.ID)
+			}
+		})
+	})
 }
 
 func (a *app) cardActionSheet(c *ui.Context) {

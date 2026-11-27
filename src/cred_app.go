@@ -135,6 +135,23 @@ func (a *app) onCredentialUpdated(credID string) {
 		return
 	}
 	a.post(func() {
+		// Always clear browser handoff banner once auth settles or cancels.
+		ready := false
+		if a.credMgr != nil {
+			if rec, ok := a.credMgr.Get(credID); ok && rec.Status == cred.StatusReady && rec.HasSecret {
+				ready = true
+			}
+			if !a.credMgr.IsAuthenticating(credID) && a.credBrowserURL != nil {
+				delete(a.credBrowserURL, credID)
+			}
+		}
+		if !ready {
+			if a.settingsWin != nil {
+				a.settingsWin.Update(func() {})
+			}
+			a.redrawFlyouts()
+			return
+		}
 		for _, sc := range a.store.Scripts() {
 			if sc.IsTable() {
 				continue
@@ -395,12 +412,30 @@ func (a *app) openBrowserLogin(ctx context.Context, sp cred.Spec) (cred.SecretPa
 	return cb.Wait(ctx)
 }
 
+func (a *app) cancelCredential(sp cred.Spec) {
+	refKey := "cred:" + sp.ID
+	cancelled := false
+	if a.credMgr != nil {
+		cancelled = a.credMgr.Cancel(sp.ID)
+	}
+	if a.credBrowserURL != nil {
+		delete(a.credBrowserURL, sp.ID)
+	}
+	wasRefreshing := a.isRefreshing(refKey)
+	if wasRefreshing {
+		a.finishRefresh(refKey, false, tr("已取消"))
+	}
+	if cancelled || wasRefreshing {
+		a.credForm.note = tr("已终止获取凭据 ") + credDisplayName(sp)
+	}
+}
+
 func (a *app) acquireCredentialAsync(sp cred.Spec, providerOverride string) {
 	if a.credMgr == nil {
 		return
 	}
 	refKey := "cred:" + sp.ID
-	if a.isRefreshing(refKey) {
+	if a.isRefreshing(refKey) || a.credMgr.IsAuthenticating(sp.ID) {
 		return
 	}
 	if providerOverride != "" {
@@ -410,7 +445,15 @@ func (a *app) acquireCredentialAsync(sp cred.Spec, providerOverride string) {
 	run := func() {
 		_, err := a.credMgr.Acquire(context.Background(), sp, 0, true)
 		a.post(func() {
+			if a.credBrowserURL != nil {
+				delete(a.credBrowserURL, sp.ID)
+			}
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					a.credForm.note = tr("已终止获取凭据 ") + credDisplayName(sp)
+					a.finishRefresh(refKey, false, tr("已取消"))
+					return
+				}
 				a.credForm.note = credDisplayName(sp) + "：" + err.Error()
 				a.finishRefresh(refKey, false, err.Error())
 				return
@@ -631,7 +674,7 @@ func (a *app) credentialsPage(c *ui.Context, compact bool) {
 func (a *app) credCard(c *ui.Context, p palette, rec cred.Record, compact bool) {
 	sp := rec.Spec
 	refKey := "cred:" + sp.ID
-	busy := a.isRefreshing(refKey)
+	busy := a.isRefreshing(refKey) || (a.credMgr != nil && a.credMgr.IsAuthenticating(sp.ID))
 	stText, stColor := a.credStatusBadge(p, rec.Status)
 
 	card(c.Key("cred-card:" + sp.ID)).Padding(16).Gap(10).Children(func() {
@@ -678,6 +721,11 @@ func (a *app) credCard(c *ui.Context, p palette, rec cred.Record, compact bool) 
 				if btn(c, tr("打开本地回传页")).Clicked() && a.win != nil {
 					_ = mygo.Shell.OpenExternal(handoffURL)
 				}
+				if busy {
+					if btn(c.Key("cred-banner-stop:"+sp.ID), tr("终止")).Clicked() {
+						a.cancelCredential(sp)
+					}
+				}
 			})
 		}
 
@@ -695,6 +743,11 @@ func (a *app) credCard(c *ui.Context, p palette, rec cred.Record, compact bool) 
 				}
 				if btn(c, tr("Ego/CDP 同步")).Clicked() && !busy {
 					a.acquireCredentialAsync(sp, cred.ProviderEgo)
+				}
+			}
+			if busy {
+				if btn(c.Key("cred-stop:"+sp.ID), tr("终止")).Clicked() {
+					a.cancelCredential(sp)
 				}
 			}
 

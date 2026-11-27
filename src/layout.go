@@ -63,19 +63,57 @@ func fromCols(span, cols int) int {
 	return min(max(n, 1), gridCols)
 }
 
-// boxOf is the box of a home card: its own, else the box of its size.
+// boxOf is the box of a home card: its remembered box in the active S/M/L
+// preset, else legacy CardBoxes/CardSizes on Overview, else plugin/default size.
 func (a *app) boxOf(id string) store.CardBox {
-	if b, ok := a.set.CardBoxes[id]; ok && b.Span >= 1 && b.Height > 0 {
-		return b
-	}
-	// A plugin's default size, when the user has not chosen one.
-	if sc, ok := a.store.Script(id); ok && sc.Size != "" {
-		if i := sizeIndex(sc.Size); i >= 0 {
-			return store.CardBox{Span: gridSpans[i], Height: cardSizes[i][1]}
+	preset := sizePresetKey(a.cardSize)
+	v := a.activeHomeView()
+	if v != nil && v.SizeBoxes != nil {
+		if b, ok := v.SizeBoxes[preset][id]; ok && b.Span >= 1 && b.Height > 0 {
+			return b
 		}
 	}
-	size := a.sizeOf(id)
+	if v == nil || v.All {
+		if b, ok := a.set.CardBoxes[id]; ok && b.Span >= 1 && b.Height > 0 {
+			return b
+		}
+		if a.cardSize == 1 {
+			if n, ok := a.set.CardSizes[id]; ok && n >= 0 && n <= sizeMini {
+				return store.CardBox{Span: gridSpans[n], Height: cardSizes[n][1]}
+			}
+		}
+	}
+	if a.cardSize == 1 {
+		// A plugin's default size, when the user has not chosen one.
+		if sc, ok := a.store.Script(id); ok && sc.Size != "" {
+			if i := sizeIndex(sc.Size); i >= 0 {
+				return store.CardBox{Span: gridSpans[i], Height: cardSizes[i][1]}
+			}
+		}
+	}
+	size := clampSizePreset(a.cardSize)
+	if v == nil || v.All {
+		size = a.sizeOf(id)
+	}
 	return store.CardBox{Span: gridSpans[size], Height: cardSizes[size][1]}
+}
+
+func (a *app) setCardBoxForActivePreset(id string, box store.CardBox) {
+	preset := sizePresetKey(a.cardSize)
+	if idx := a.activeHomeViewIndex(); idx >= 0 {
+		v := &a.set.HomeViews[idx]
+		if v.SizeBoxes == nil {
+			v.SizeBoxes = map[string]map[string]store.CardBox{}
+		}
+		if v.SizeBoxes[preset] == nil {
+			v.SizeBoxes[preset] = map[string]store.CardBox{}
+		}
+		v.SizeBoxes[preset][id] = box
+	}
+	if a.set.CardBoxes == nil {
+		a.set.CardBoxes = map[string]store.CardBox{}
+	}
+	a.set.CardBoxes[id] = box
 }
 
 // sizeMini is the smallest card: only its number, no title and no curve.
@@ -107,21 +145,26 @@ func sizeIndex(name string) int {
 	return -1
 }
 
-// setSize gives a card one of the size menu's sizes.
+// setSize gives a card one of the size menu's sizes within the active S/M/L preset.
 func (a *app) setSize(id string, size int) {
-	if a.set.CardBoxes == nil {
-		a.set.CardBoxes = map[string]store.CardBox{}
-	}
-	a.set.CardBoxes[id] = store.CardBox{Span: gridSpans[size], Height: cardSizes[size][1]}
+	a.setCardBoxForActivePreset(id, store.CardBox{Span: gridSpans[size], Height: cardSizes[size][1]})
 	if err := a.store.SetSettings(a.set); err != nil {
 		a.set = a.store.Settings()
 	}
 }
 
-// setAllSizes gives every card the same size again, and forgets where the user
-// put them.
+// setAllSizes gives every card the same size again in the chosen preset, and
+// forgets custom sizes recorded for it.
 func (a *app) setAllSizes(size int) {
+	size = clampSizePreset(size)
 	a.cardSize = size
+	if idx := a.activeHomeViewIndex(); idx >= 0 {
+		v := &a.set.HomeViews[idx]
+		v.SizeMode = size
+		if v.SizeBoxes != nil {
+			delete(v.SizeBoxes, sizePresetKey(size))
+		}
+	}
 	a.set.CardSizes = nil
 	a.set.CardBoxes = nil
 	if err := a.store.SetSettings(a.set); err != nil {
@@ -301,10 +344,7 @@ func (a *app) applyResize() {
 	span = min(max(span, 1), a.cols)
 	h := r.height + r.dy/a.scale()
 	h = max(minCardHeight, float32(math.Round(float64(h)/heightStep))*heightStep)
-	if a.set.CardBoxes == nil {
-		a.set.CardBoxes = map[string]store.CardBox{}
-	}
-	a.set.CardBoxes[r.id] = store.CardBox{Span: fromCols(span, a.cols), Height: h}
+	a.setCardBoxForActivePreset(r.id, store.CardBox{Span: fromCols(span, a.cols), Height: h})
 }
 
 // moveCard puts the card from where the home page shows it before the card to.
@@ -319,7 +359,29 @@ func (a *app) moveCard(from, to string) {
 	if at < 0 {
 		return
 	}
-	a.set.CardOrder = slices.Insert(order, at, from)
+	reordered := slices.Insert(order, at, from)
+	if idx := a.activeHomeViewIndex(); idx >= 0 {
+		v := &a.set.HomeViews[idx]
+		if v.All {
+			a.set.CardOrder = reordered
+			v.Order = append([]string(nil), reordered...)
+		} else {
+			seen := make(map[string]bool, len(reordered))
+			next := make([]string, 0, len(v.Scripts))
+			for _, id := range reordered {
+				seen[id] = true
+				next = append(next, id)
+			}
+			for _, id := range v.Scripts {
+				if !seen[id] {
+					next = append(next, id)
+				}
+			}
+			v.Scripts = next
+		}
+	} else {
+		a.set.CardOrder = reordered
+	}
 	if err := a.store.SetSettings(a.set); err != nil {
 		a.set = a.store.Settings()
 	}

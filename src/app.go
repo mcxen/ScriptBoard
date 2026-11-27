@@ -130,6 +130,8 @@ type app struct {
 	cols             int
 	unit             float32
 	homeIDs          []string
+	viewEdit         homeViewEditor
+	viewTabMenus     map[string]*bool
 	// confirmReset is the script whose reset button was clicked once.
 	confirmReset string
 	// aboutOpen is whether the full view shows a script's details.
@@ -278,6 +280,7 @@ func newApp(dir string, offline bool) (*app, error) {
 		usageForms:        map[string]*usageForm{},
 		sels:              map[string]*int{},
 		cardSize:          1, // medium cards to start with
+		viewTabMenus:      map[string]*bool{},
 		barInsts:          map[string]*bar.Instance{},
 		barSpecs:          map[string]bar.Spec{},
 		barSourceSig:      map[string]string{},
@@ -317,6 +320,7 @@ func newApp(dir string, offline bool) (*app, error) {
 	a.syncPlugins()
 	a.syncDeclaredCredentials()
 	a.set = st.Settings()
+	a.ensureHomeViews()
 	for id, style := range a.set.CardStyles {
 		a.styles[id] = style
 	}

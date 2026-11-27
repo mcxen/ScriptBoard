@@ -33,9 +33,13 @@ type LoginHandlers struct {
 }
 
 type inflightAuth struct {
-	done    chan struct{}
-	payload SecretPayload
-	err     error
+	done            chan struct{}
+	cancel          context.CancelFunc
+	provider        string
+	startedAt       time.Time
+	cancelledByUser bool
+	payload         SecretPayload
+	err             error
 }
 
 // Manager coordinates declared credentials, Keychain vault persistence,
@@ -103,7 +107,7 @@ func (m *Manager) Reload() error {
 		p, ok := m.secrets[r.Spec.ID]
 		r.HasSecret = ok
 		syncRecordSummary(&r, p, ok)
-		if r.Status == StatusAuthenticating {
+		if r.Status == StatusAuthenticating && m.inFlight[r.Spec.ID] == nil {
 			if ok {
 				r.Status = StatusReady
 			} else {
@@ -576,6 +580,7 @@ func (m *Manager) ClearSecret(id string) error {
 		return nil
 	}
 	id = strings.TrimSpace(id)
+	m.Cancel(id)
 	if err := m.vault.DeleteSecret(id); err != nil {
 		return err
 	}
@@ -609,6 +614,7 @@ func (m *Manager) Delete(id string) error {
 		return nil
 	}
 	id = strings.TrimSpace(id)
+	m.Cancel(id)
 	if err := m.vault.DeleteSecret(id); err != nil {
 		return err
 	}
@@ -792,23 +798,115 @@ func mergeCookieHeader(existing string, fresh []StoredCookie) string {
 	return strings.Join(parts, "; ")
 }
 
+// IsAuthenticating reports whether a credential currently has an active
+// in-flight login or Ego/CDP cookie sync.
+func (m *Manager) IsAuthenticating(id string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.inFlight[strings.TrimSpace(id)] != nil
+}
+
+// Cancel terminates an active in-flight login or cookie sync for id.
+func (m *Manager) Cancel(id string) bool {
+	if m == nil {
+		return false
+	}
+	id = strings.TrimSpace(id)
+	m.mu.Lock()
+	infl := m.inFlight[id]
+	var cancel context.CancelFunc
+	if infl != nil {
+		infl.cancelledByUser = true
+		cancel = infl.cancel
+	}
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return infl != nil
+}
+
+// CancelAll terminates every active in-flight credential login or cookie sync.
+func (m *Manager) CancelAll() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(m.inFlight))
+	count := len(m.inFlight)
+	for _, infl := range m.inFlight {
+		infl.cancelledByUser = true
+		if infl.cancel != nil {
+			cancels = append(cancels, infl.cancel)
+		}
+	}
+	m.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	return count
+}
+
+// SyncCookies executes a tracked, cancellable Ego/CDP cookie sync for an
+// existing credential without overwriting its saved provider or CDPURL.
+func (m *Manager) SyncCookies(ctx context.Context, id, provider, cdpURL string) (Record, error) {
+	if m == nil {
+		return Record{}, errors.New("cred: manager is nil")
+	}
+	id = strings.TrimSpace(id)
+	rec, ok := m.Get(id)
+	if !ok {
+		return Record{}, fmt.Errorf("cred: unknown credential %q", id)
+	}
+	prov := strings.ToLower(strings.TrimSpace(provider))
+	if prov == "" {
+		prov = ProviderEgo
+	}
+	if prov != ProviderEgo && prov != ProviderCDP {
+		return Record{}, fmt.Errorf("cred: SyncCookies supports only ego or cdp, got %q", prov)
+	}
+	sp := rec.Spec
+	sp.Provider = prov
+	if cu := strings.TrimSpace(cdpURL); cu != "" {
+		sp.CDPURL = cu
+	}
+	if _, err := m.Acquire(ctx, sp, 0, true); err != nil {
+		return Record{}, err
+	}
+	updated, _ := m.Get(id)
+	return updated, nil
+}
+
 // Acquire executes the configured credential provider with single-flight
 // deduplication and failure/cancel cooldown protection.
 func (m *Manager) Acquire(ctx context.Context, rawSpec Spec, triggerStatus int, forceInteractive bool) (SecretPayload, error) {
 	if m == nil {
 		return SecretPayload{}, errors.New("cred: manager is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	sp := rawSpec.Normalized()
 	if err := sp.Validate(); err != nil {
 		return SecretPayload{}, err
 	}
-	m.RegisterSpecs(sp.SourcePlugin, []Spec{sp})
+	if _, exists := m.Get(sp.ID); !exists {
+		m.RegisterSpecs(sp.SourcePlugin, []Spec{sp})
+	}
 
 	m.mu.Lock()
-	if rec, ok := m.records[sp.ID]; ok && rawSpec.Provider == "" {
-		sp = rec.Spec
-	} else if rawSpec.Provider != "" {
-		sp.Provider = strings.ToLower(strings.TrimSpace(rawSpec.Provider))
+	if rec, ok := m.records[sp.ID]; ok {
+		runSpec := rec.Spec
+		if strings.TrimSpace(rawSpec.Provider) != "" {
+			runSpec.Provider = strings.ToLower(strings.TrimSpace(rawSpec.Provider))
+		}
+		if strings.TrimSpace(rawSpec.CDPURL) != "" {
+			runSpec.CDPURL = strings.TrimRight(strings.TrimSpace(rawSpec.CDPURL), "/")
+		}
+		sp = runSpec
 	}
 
 	if infl, busy := m.inFlight[sp.ID]; busy {
@@ -848,7 +946,21 @@ func (m *Manager) Acquire(ctx context.Context, rawSpec Spec, triggerStatus int, 
 		return SecretPayload{}, errors.New("credential requires manual import")
 	}
 
-	infl := &inflightAuth{done: make(chan struct{})}
+	handlers := m.handlers
+	timeout := m.InteractiveTimeout
+	if timeout <= 0 {
+		timeout = defaultInteractiveTimeout
+	}
+	cooldown := m.Cooldown
+	acquireCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	infl := &inflightAuth{
+		done:      make(chan struct{}),
+		cancel:    cancel,
+		provider:  sp.Provider,
+		startedAt: time.Now(),
+	}
 	m.inFlight[sp.ID] = infl
 	if rec, ok := m.records[sp.ID]; ok {
 		rec.Status = StatusAuthenticating
@@ -856,28 +968,50 @@ func (m *Manager) Acquire(ctx context.Context, rawSpec Spec, triggerStatus int, 
 		rec.LastError = ""
 		m.records[sp.ID] = rec
 	}
-	handlers := m.handlers
-	timeout := m.InteractiveTimeout
-	if timeout <= 0 {
-		timeout = defaultInteractiveTimeout
-	}
-	cooldown := m.Cooldown
+	m.revision++
+	onStartChange := m.handlers.OnChange
 	m.mu.Unlock()
 
-	if ctx == nil {
-		ctx = context.Background()
+	if onStartChange != nil {
+		onStartChange(sp.ID)
 	}
-	acquireCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	payload, err := dispatchProvider(acquireCtx, sp, handlers)
 	if err == nil {
 		_, saveErr := m.SaveSecret(sp.ID, payload)
 		if saveErr != nil {
 			err = saveErr
+		} else {
+			m.mu.Lock()
+			delete(m.inFlight, sp.ID)
+			infl.payload = payload
+			infl.err = nil
+			close(infl.done)
+			onChange := m.handlers.OnChange
+			m.mu.Unlock()
+			if onChange != nil {
+				onChange(sp.ID)
+			}
+			return payload, nil
+		}
+	}
+
+	m.mu.Lock()
+	cancelled := infl.cancelledByUser || errors.Is(err, context.Canceled) || errors.Is(acquireCtx.Err(), context.Canceled)
+	if cancelled {
+		if !errors.Is(err, context.Canceled) {
+			err = fmt.Errorf("cred: cancelled: %w", context.Canceled)
+		}
+		if rec, ok := m.records[sp.ID]; ok {
+			if rec.HasSecret {
+				rec.Status = StatusReady
+			} else {
+				rec.Status = StatusMissing
+			}
+			rec.LastError = ""
+			m.records[sp.ID] = rec
 		}
 	} else {
-		m.mu.Lock()
 		if cooldown > 0 {
 			m.cooldownUntil[sp.ID] = time.Now().Add(cooldown)
 		}
@@ -891,23 +1025,27 @@ func (m *Manager) Acquire(ctx context.Context, rawSpec Spec, triggerStatus int, 
 			rec.LastError = err.Error()
 			m.records[sp.ID] = rec
 		}
-		recs := m.sortedRecordsLocked()
-		m.revision++
-		m.mu.Unlock()
-		_ = m.vault.SaveRecords(recs)
 	}
-
-	m.mu.Lock()
+	recs := m.sortedRecordsLocked()
+	m.revision++
 	delete(m.inFlight, sp.ID)
 	infl.payload = payload
 	infl.err = err
 	close(infl.done)
+	onChange := m.handlers.OnChange
 	m.mu.Unlock()
 
+	_ = m.vault.SaveRecords(recs)
+	if onChange != nil {
+		onChange(sp.ID)
+	}
 	return payload, err
 }
 
 func dispatchProvider(ctx context.Context, sp Spec, h LoginHandlers) (SecretPayload, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return SecretPayload{}, ctx.Err()
+	}
 	switch sp.Provider {
 	case ProviderWebView:
 		if h.WebView != nil {
@@ -923,24 +1061,10 @@ func dispatchProvider(ctx context.Context, sp Spec, h LoginHandlers) (SecretPayl
 		}
 		return SecretPayload{}, errors.New("system browser login handler is unavailable")
 	case ProviderEgo:
-		var egoErr error
 		if h.Ego != nil {
-			p, err := h.Ego(ctx, sp)
-			if err == nil {
-				return p, nil
-			}
-			egoErr = err
-		} else {
-			p, err := FetchEgoCookies(ctx, sp)
-			if err == nil {
-				return p, nil
-			}
-			egoErr = err
+			return h.Ego(ctx, sp)
 		}
-		if h.WebView != nil {
-			return h.WebView(ctx, sp)
-		}
-		return SecretPayload{}, egoErr
+		return FetchEgoCookies(ctx, sp)
 	case ProviderCDP:
 		if h.CDP != nil {
 			return h.CDP(ctx, sp)

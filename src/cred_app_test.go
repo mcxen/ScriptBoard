@@ -317,3 +317,74 @@ export function render(ctx) {
 		t.Fatalf("expected editCredRecord to restore domains & pickCookies, got domains=%q pickCookies=%q", a.credForm.domains, a.credForm.pickCookies)
 	}
 }
+
+func TestCredentialsPageCancelButtonAndEnglishParity(t *testing.T) {
+	t.Cleanup(func() { setLang(langZH) })
+	a := newTestApp(t)
+
+	started := make(chan struct{}, 1)
+	released := make(chan struct{}, 1)
+	a.credMgr.SetHandlers(cred.LoginHandlers{
+		Ego: func(ctx context.Context, sp cred.Spec) (cred.SecretPayload, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			select {
+			case released <- struct{}{}:
+			default:
+			}
+			return cred.SecretPayload{}, ctx.Err()
+		},
+	})
+
+	_, err := a.credMgr.SaveSpec(cred.Spec{
+		ID:       "ego-ui-cred",
+		Name:     "Ego UI Cred",
+		Type:     cred.TypeCookie,
+		Origin:   "https://example.com",
+		Provider: cred.ProviderEgo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	syncDone := make(chan error, 1)
+	go func() {
+		_, err := a.credMgr.SyncCookies(context.Background(), "ego-ui-cred", cred.ProviderEgo, "")
+		syncDone <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Ego sync to start")
+	}
+
+	tt := ui.NewTester(a.view, 1100, 760)
+	a.openCredentials()
+	settle(tt)
+	requireText(t, tt, "登录中…")
+	requireText(t, tt, "终止")
+
+	// Verify English parity shows "Stop" with zero CJK text while authenticating.
+	a.set.Lang = langEN
+	setLang(langEN)
+	settle(tt)
+	requireText(t, tt, "Stop")
+	onlyEnglish(t, tt, "credentials-authenticating")
+
+	// Click Stop button in English mode -> must cancel in-flight sync and hide Stop button.
+	if err := tt.Click("Stop"); err != nil {
+		t.Fatalf("click Stop failed: %v", err)
+	}
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Ego sync cancellation after clicking Stop")
+	}
+	<-syncDone
+	settle(tt)
+	requireText(t, tt, "Stopped credential sync Ego UI Cred")
+}

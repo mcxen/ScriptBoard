@@ -114,11 +114,19 @@ func (s Server) Serve(in io.Reader, out io.Writer) error {
 // Handle answers one JSON-RPC message. It returns nil for a notification,
 // which gets no reply.
 func (s Server) Handle(msg []byte) []byte {
+	return s.HandleContext(context.Background(), msg)
+}
+
+// HandleContext answers one JSON-RPC message with request cancellation support.
+func (s Server) HandleContext(ctx context.Context, msg []byte) []byte {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var req request
 	if err := json.Unmarshal(msg, &req); err != nil {
 		return mustJSON(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, "bad JSON"}})
 	}
-	result, rerr := s.handle(req)
+	result, rerr := s.handleCtx(ctx, req)
 	if len(req.ID) == 0 {
 		return nil
 	}
@@ -158,7 +166,7 @@ func (s Server) HTTPHandler(key string) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		reply := s.Handle(body)
+		reply := s.HandleContext(r.Context(), body)
 		if reply == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -178,6 +186,10 @@ func NewKey() string {
 }
 
 func (s Server) handle(req request) (any, *rpcError) {
+	return s.handleCtx(context.Background(), req)
+}
+
+func (s Server) handleCtx(ctx context.Context, req request) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		return map[string]any{
@@ -197,7 +209,7 @@ func (s Server) handle(req request) (any, *rpcError) {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, &rpcError{-32602, "bad params"}
 		}
-		text, err := s.call(p.Name, p.Arguments)
+		text, err := s.callCtx(ctx, p.Name, p.Arguments)
 		if err != nil {
 			return map[string]any{
 				"content": []map[string]any{{"type": "text", "text": err.Error()}},
@@ -304,13 +316,17 @@ func Tools() []Tool {
 
 // call runs one tool and returns its text reply.
 func (s Server) call(name string, raw json.RawMessage) (string, error) {
+	return s.callCtx(context.Background(), name, raw)
+}
+
+func (s Server) callCtx(ctx context.Context, name string, raw json.RawMessage) (string, error) {
 	dataDir := s.DataDir
 	switch name {
 	case "plugin_save", "plugin_delete", "icon_add", "table_save", "table_append", "tray_set",
 		"bar_save", "bar_delete", "bar_cookies_set", "bar_cookies_clear",
 		"bar_storage_set", "bar_storage_clear", "feed_save", "feed_delete",
 		"cmd_save", "cmd_delete", "cmd_run", "cmd_history_clear", "cmd_style_set",
-		"cred_save", "cred_import", "cred_delete", "cred_sync_cdp", "cred_login":
+		"cred_save", "cred_import", "cred_delete", "cred_sync_cdp", "cred_login", "cred_cancel":
 		if s.readOnly() {
 			return "", fmt.Errorf("MCP 服务器现在是只读的，不能执行 %s", name)
 		}
@@ -422,7 +438,7 @@ func (s Server) call(name string, raw json.RawMessage) (string, error) {
 		}
 		return strings.Join(names, "\n") + "\n", nil
 	}
-	if out, handled, err := s.callExtra(name, a); handled {
+	if out, handled, err := s.callExtraCtx(ctx, name, a); handled {
 		return out, err
 	}
 	return "", fmt.Errorf("没有这个工具：%s", name)

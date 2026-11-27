@@ -168,6 +168,25 @@ type Settings struct {
 	CardScale float64 `json:"cardScale"`
 	// BarPlacements holds per-.bar-component enablement and display placements.
 	BarPlacements map[string]BarPlacement `json:"barPlacements,omitempty"`
+	// HomeViews stores multiple customizable Home dashboard view pages ("overview",
+	// "network", and user-created views), each keeping its component list, order,
+	// and per-size-preset ("small", "medium", "large") card size memory.
+	HomeViews         []HomeView `json:"homeViews,omitempty"`
+	ActiveHomeView    string     `json:"activeHomeView,omitempty"`
+	NetworkViewSeeded bool       `json:"networkViewSeeded,omitempty"`
+}
+
+// HomeView is one customizable dashboard view page shown on Home.
+type HomeView struct {
+	ID        string                        `json:"id"`
+	Name      string                        `json:"name"`
+	Icon      string                        `json:"icon,omitempty"`
+	All       bool                          `json:"all,omitempty"`
+	Builtin   bool                          `json:"builtin,omitempty"`
+	Scripts   []string                      `json:"scripts,omitempty"`
+	Order     []string                      `json:"order,omitempty"`
+	SizeMode  int                           `json:"sizeMode,omitempty"` // 0 small, 1 medium, 2 large
+	SizeBoxes map[string]map[string]CardBox `json:"sizeBoxes,omitempty"`
 }
 
 // BarPlacement records where a .bar component is enabled and displayed.

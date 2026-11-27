@@ -80,11 +80,12 @@ func credTools() []Tool {
 		},
 		{
 			Name:        "cred_sync_cdp",
-			Description: "Sync origin-authorized cookies from a running ego-browser session or local Chromium CDP endpoint (default http://127.0.0.1:9222) and store encrypted in the vault.",
+			Description: "Sync origin-authorized cookies from a running ego-browser session or local Chromium CDP endpoint (default http://127.0.0.1:9222) and store encrypted in the vault. Tracked in Credential Manager and cancellable via cred_cancel or the UI Stop button.",
 			InputSchema: obj(map[string]any{
-				"id":       str("credential id"),
-				"provider": str("ego (default) or cdp"),
-				"cdpUrl":   str("optional CDP endpoint override (e.g. http://127.0.0.1:9222)"),
+				"id":         str("credential id"),
+				"provider":   str("ego (default) or cdp"),
+				"cdpUrl":     str("optional CDP endpoint override (e.g. http://127.0.0.1:9222)"),
+				"timeoutSec": intProp("max seconds to wait for Ego/CDP cookie extraction (default 30, max 120)"),
 			}, "id"),
 		},
 		{
@@ -96,6 +97,13 @@ func credTools() []Tool {
 				"wait":       boolProp("true to block until login completes or times out"),
 				"timeoutSec": intProp("max seconds to wait when wait=true (default 120)"),
 			}, "id"),
+		},
+		{
+			Name:        "cred_cancel",
+			Description: "Cancel an in-flight credential login or Ego/CDP cookie sync. Omit id to cancel all active credential operations.",
+			InputSchema: obj(map[string]any{
+				"id": str("optional credential id; omit to cancel all active credential reads/logins"),
+			}),
 		},
 	}
 }
@@ -131,6 +139,13 @@ func (s Server) openCredManager() (*cred.Manager, error) {
 }
 
 func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
+	return s.callCredCtx(context.Background(), name, a)
+}
+
+func (s Server) callCredCtx(reqCtx context.Context, name string, a map[string]any) (string, bool, error) {
+	if reqCtx == nil {
+		reqCtx = context.Background()
+	}
 	str := func(key string) string {
 		v, _ := a[key].(string)
 		return v
@@ -257,30 +272,18 @@ func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
 		if err != nil {
 			return "", true, err
 		}
-		rec, ok := mgr.Get(id)
-		if !ok {
-			return "", true, fmt.Errorf("没有凭据 %q", id)
-		}
-		sp := rec.Spec
-		if cu := strings.TrimSpace(str("cdpUrl")); cu != "" {
-			sp.CDPURL = cu
-		}
+		cu := strings.TrimSpace(str("cdpUrl"))
 		prov := strings.ToLower(strings.TrimSpace(str("provider")))
 		if prov == "" {
 			prov = cred.ProviderEgo
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		timeoutSec := 30
+		if ts, ok := a["timeoutSec"].(float64); ok && int(ts) > 0 {
+			timeoutSec = min(int(ts), 120)
+		}
+		ctx, cancel := context.WithTimeout(reqCtx, time.Duration(timeoutSec)*time.Second)
 		defer cancel()
-		var p cred.SecretPayload
-		if prov == cred.ProviderCDP {
-			p, err = cred.FetchCDPCookies(ctx, sp.CDPURL, sp)
-		} else {
-			p, err = cred.FetchEgoCookies(ctx, sp)
-		}
-		if err != nil {
-			return "", true, err
-		}
-		updated, err := mgr.SaveSecret(id, p)
+		updated, err := mgr.SyncCookies(ctx, id, prov, cu)
 		if err != nil {
 			return "", true, err
 		}
@@ -328,7 +331,7 @@ func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
 			}, "", "  ")
 			return string(b), true, nil
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+		ctx, cancel := context.WithTimeout(reqCtx, time.Duration(timeoutSec)*time.Second)
 		defer cancel()
 		if _, err := mgr.Acquire(ctx, sp, 0, true); err != nil {
 			return "", true, err
@@ -336,6 +339,26 @@ func (s Server) callCred(name string, a map[string]any) (string, bool, error) {
 		s.notifyChange()
 		updated, _ := mgr.Get(id)
 		b, _ := json.MarshalIndent(updated, "", "  ")
+		return string(b), true, nil
+
+	case "cred_cancel":
+		mgr, err := s.openCredManager()
+		if err != nil {
+			return "", true, err
+		}
+		if id := strings.TrimSpace(str("id")); id != "" {
+			cancelled := mgr.Cancel(id)
+			b, _ := json.MarshalIndent(map[string]any{
+				"cancelled": cancelled,
+				"id":        id,
+			}, "", "  ")
+			return string(b), true, nil
+		}
+		count := mgr.CancelAll()
+		b, _ := json.MarshalIndent(map[string]any{
+			"cancelled": count > 0,
+			"count":     count,
+		}, "", "  ")
 		return string(b), true, nil
 	}
 	return "", false, nil

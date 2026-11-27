@@ -541,3 +541,213 @@ func TestCookieKeyTemplateExpansionAnd302Refresh(t *testing.T) {
 		t.Fatalf("ExpandTemplate mismatch:\n got: %q\nwant: %q", expanded, want)
 	}
 }
+
+func TestBuildEgoCookieScriptAndParseOutput(t *testing.T) {
+	sp := Spec{
+		ID:       "ali-sso",
+		Type:     TypeCookie,
+		Origin:   "https://token-hub.alibaba-inc.com",
+		LoginURL: "https://token-hub.alibaba-inc.com/bridge/usage",
+		Domains:  []string{".alibaba-inc.com"},
+		Cookies:  []string{"SSO_TOKEN", "csrf"},
+	}.Normalized()
+
+	script, err := buildEgoCookieScript(sp)
+	if err != nil {
+		t.Fatalf("buildEgoCookieScript failed: %v", err)
+	}
+	for _, want := range []string{
+		"await taskSpace(",
+		`task.page("p1")`,
+		`page.cdp("Network.getCookies"`,
+		`page.cdp("Network.getAllCookies"`,
+		"await task.finish({ keep: [] })",
+		egoCookieOutputMarker,
+		`"https://token-hub.alibaba-inc.com"`,
+		`"https://alibaba-inc.com"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected script to contain %q, got:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "process.env") {
+		t.Fatalf("script must not rely on process.env (not inherited by ego-browser nodejs):\n%s", script)
+	}
+
+	rawOut := strings.Join([]string{
+		"[ego-browser:notice] attached background tab",
+		`__SB_EGO_COOKIES__:[{"name":"SSO_TOKEN","value":"val[with]brackets","domain":".login.alibaba-inc.com","path":"/","httpOnly":true,"secure":true}]`,
+		"[ego-browser:notice] done",
+	}, "\n")
+	cookies, err := parseCDPCookiesJSON([]byte(rawOut))
+	if err != nil {
+		t.Fatalf("parseCDPCookiesJSON failed: %v", err)
+	}
+	if len(cookies) != 1 || cookies[0].Name != "SSO_TOKEN" || cookies[0].Value != "val[with]brackets" {
+		t.Fatalf("unexpected parsed cookies: %+v", cookies)
+	}
+}
+
+func TestFetchEgoCookiesSurfacesRealErrorAndHonorsCancel(t *testing.T) {
+	origFind := findEgoCLI
+	origRun := runEgoCLICmd
+	t.Cleanup(func() {
+		findEgoCLI = origFind
+		runEgoCLICmd = origRun
+	})
+
+	sp := Spec{
+		ID:      "ego-test",
+		Type:    TypeCookie,
+		Origin:  "https://token-hub.alibaba-inc.com",
+		Cookies: []string{"SSO_TOKEN"},
+	}.Normalized()
+
+	// 1. Success path, including SSO cookie on a sibling auth domain.
+	findEgoCLI = func() string { return "/mock/ego-browser" }
+	runEgoCLICmd = func(ctx context.Context, bin, script string) ([]byte, []byte, error) {
+		line := egoCookieOutputMarker + `[{"name":"SSO_TOKEN","value":"ego_secret_1","domain":".sso.vendor-idp.com","path":"/","httpOnly":true,"secure":true}]`
+		return []byte(line + "\n"), nil, nil
+	}
+	payload, err := FetchEgoCookies(context.Background(), sp)
+	if err != nil {
+		t.Fatalf("expected FetchEgoCookies success, got: %v", err)
+	}
+	if payload.Provider != ProviderEgo || len(payload.Cookies) != 1 || payload.Cookies[0].Value != "ego_secret_1" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+
+	// 2. CLI failure with empty CDPURL must surface the real Ego error (not 127.0.0.1:9222).
+	runEgoCLICmd = func(ctx context.Context, bin, script string) ([]byte, []byte, error) {
+		return nil, []byte("ego-browser desktop app is not running"), errors.New("exit status 1")
+	}
+	_, err = FetchEgoCookies(context.Background(), sp)
+	if err == nil || !strings.Contains(err.Error(), "ego-browser desktop app is not running") || strings.Contains(err.Error(), "9222") {
+		t.Fatalf("expected real Ego error without 9222 masking, got: %v", err)
+	}
+
+	// 3. Context cancellation mid-flight stops immediately with context.Canceled.
+	ctx, cancel := context.WithCancel(context.Background())
+	runEgoCLICmd = func(ctx context.Context, bin, script string) ([]byte, []byte, error) {
+		cancel()
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}
+	_, err = FetchEgoCookies(ctx, sp)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+}
+
+func TestFetchCDPCookiesCancelsImmediatelyOnContextCancel(t *testing.T) {
+	mux := http.NewServeMux()
+	var srvURL string
+	mux.Handle("/ws", websocket.Handler(func(ws *websocket.Conn) {
+		var req map[string]any
+		_ = websocket.JSON.Receive(ws, &req)
+		// Hold socket open without replying until client closes on cancel.
+		var sink map[string]any
+		_ = websocket.JSON.Receive(ws, &sink)
+	}))
+	mux.HandleFunc("/json/list", func(w http.ResponseWriter, r *http.Request) {
+		wsURL := "ws" + strings.TrimPrefix(srvURL, "http") + "/ws"
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"type": "page", "url": "https://example.com/", "webSocketDebuggerUrl": wsURL},
+		})
+	})
+
+	srv := httptest.NewServer(mux)
+	srvURL = srv.URL
+	defer srv.Close()
+
+	sp := Spec{ID: "cdp-cancel", Type: TypeCookie, Origin: "https://example.com", CDPURL: srv.URL}.Normalized()
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(40*time.Millisecond, cancel)
+
+	start := time.Now()
+	_, err := FetchCDPCookies(ctx, "", sp)
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("expected immediate cancellation well under 1s, took %s", elapsed)
+	}
+}
+
+func TestManagerCancelSyncCookiesAndNoWebViewFallbackOnEgo(t *testing.T) {
+	var webViewCalled atomic.Bool
+	egoStarted := make(chan struct{}, 1)
+	egoReleased := make(chan struct{}, 1)
+
+	mgr, err := NewManager(t.TempDir(), NewMemoryBackend(), LoginHandlers{
+		WebView: func(ctx context.Context, sp Spec) (SecretPayload, error) {
+			webViewCalled.Store(true)
+			return SecretPayload{}, errors.New("unexpected webview fallback")
+		},
+		Ego: func(ctx context.Context, sp Spec) (SecretPayload, error) {
+			select {
+			case egoStarted <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			select {
+			case egoReleased <- struct{}{}:
+			default:
+			}
+			return SecretPayload{}, ctx.Err()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.Cooldown = 10 * time.Second
+
+	_, err = mgr.SaveSpec(Spec{
+		ID:       "ego-sync",
+		Name:     "Ego Sync",
+		Type:     TypeCookie,
+		Origin:   "https://example.com",
+		Provider: ProviderWebView,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := mgr.SyncCookies(context.Background(), "ego-sync", ProviderEgo, "")
+		errCh <- err
+	}()
+
+	select {
+	case <-egoStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Ego handler to start")
+	}
+	if !mgr.IsAuthenticating("ego-sync") {
+		t.Fatal("expected IsAuthenticating(ego-sync) == true during SyncCookies")
+	}
+	if !mgr.Cancel("ego-sync") {
+		t.Fatal("expected Manager.Cancel(ego-sync) to return true")
+	}
+	select {
+	case <-egoReleased:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cancelled Ego handler to exit")
+	}
+	syncErr := <-errCh
+	if !errors.Is(syncErr, context.Canceled) {
+		t.Fatalf("expected SyncCookies to return context.Canceled, got: %v", syncErr)
+	}
+	if webViewCalled.Load() {
+		t.Fatal("ProviderEgo failure/cancellation must not fall back to WebView")
+	}
+	if mgr.IsAuthenticating("ego-sync") {
+		t.Fatal("expected IsAuthenticating(ego-sync) == false after cancel")
+	}
+	rec, ok := mgr.Get("ego-sync")
+	if !ok || rec.Status != StatusMissing || rec.LastError != "" || rec.Spec.Provider != ProviderWebView {
+		t.Fatalf("expected clean StatusMissing & preserved WebView provider after cancel, got: %+v", rec)
+	}
+}

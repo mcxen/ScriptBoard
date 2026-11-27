@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,21 +18,59 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const defaultCDPURL = "http://127.0.0.1:9222"
+const (
+	defaultCDPURL         = "http://127.0.0.1:9222"
+	defaultEgoTimeout     = 30 * time.Second
+	egoCookieOutputMarker = "__SB_EGO_COOKIES__:"
+)
 
-// FetchEgoCookies attempts to extract origin-scoped cookies from an active
-// ego-browser session via `ego-browser nodejs -e ...` using CDP, falling back
-// transparently to FetchCDPCookies if the CLI is absent or fails.
+// Test hooks allowing unit tests to exercise FetchEgoCookies without launching
+// an external ego-browser process.
+var (
+	findEgoCLI   = findEgoBrowserCLI
+	runEgoCLICmd = runEgoCLIExec
+)
+
+// FetchEgoCookies extracts cookies matching spec from an active ego-browser
+// session via `ego-browser nodejs -e ...` (`taskSpace` + `page.cdp`).
+// If ego-browser CLI is absent, or fails when an explicit CDPURL is configured,
+// it falls back to FetchCDPCookies while preserving the real Ego error.
 func FetchEgoCookies(ctx context.Context, spec Spec) (SecretPayload, error) {
 	spec = spec.Normalized()
-	bin := findEgoBrowserCLI()
+	if ctx != nil && ctx.Err() != nil {
+		return SecretPayload{}, ctx.Err()
+	}
+
+	bin := findEgoCLI()
 	if bin != "" {
-		p, err := fetchViaEgoCLI(ctx, bin, spec)
-		if err == nil {
+		p, egoErr := fetchViaEgoCLI(ctx, bin, spec)
+		if egoErr == nil {
 			return p, nil
 		}
+		if errors.Is(egoErr, context.Canceled) || (ctx != nil && ctx.Err() != nil) {
+			return SecretPayload{}, egoErr
+		}
+		if strings.TrimSpace(spec.CDPURL) != "" {
+			p, cdpErr := FetchCDPCookies(ctx, spec.CDPURL, spec)
+			if cdpErr == nil {
+				return p, nil
+			}
+			if errors.Is(cdpErr, context.Canceled) || (ctx != nil && ctx.Err() != nil) {
+				return SecretPayload{}, cdpErr
+			}
+			return SecretPayload{}, fmt.Errorf("ego failed (%v); cdp fallback failed (%w)", egoErr, cdpErr)
+		}
+		return SecretPayload{}, egoErr
 	}
-	return FetchCDPCookies(ctx, spec.CDPURL, spec)
+
+	p, cdpErr := FetchCDPCookies(ctx, spec.CDPURL, spec)
+	if cdpErr == nil {
+		return p, nil
+	}
+	if errors.Is(cdpErr, context.Canceled) || (ctx != nil && ctx.Err() != nil) {
+		return SecretPayload{}, cdpErr
+	}
+	return SecretPayload{}, fmt.Errorf("ego-browser CLI not found in PATH or ~/.local/bin, and CDP fallback failed: %w", cdpErr)
 }
 
 func findEgoBrowserCLI() string {
@@ -49,41 +88,130 @@ func findEgoBrowserCLI() string {
 	return ""
 }
 
+func egoTargetURLs(spec Spec) []string {
+	seen := map[string]bool{}
+	var urls []string
+	addURL := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || strings.Contains(raw, "{") {
+			return
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			return
+		}
+		scheme := strings.ToLower(u.Scheme)
+		if (scheme != "http" && scheme != "https") || u.Host == "" {
+			return
+		}
+		canonical := scheme + "://" + strings.ToLower(u.Host)
+		if !seen[canonical] {
+			seen[canonical] = true
+			urls = append(urls, canonical)
+		}
+	}
+	addURL(spec.Origin)
+	addURL(spec.LoginURL)
+	for _, dom := range spec.effectiveDomains() {
+		host := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(dom)), ".")
+		if host != "" && !strings.Contains(host, "/") {
+			addURL("https://" + host)
+		}
+	}
+	if urls == nil {
+		return []string{}
+	}
+	return urls
+}
+
+func buildEgoCookieScript(spec Spec) (string, error) {
+	targetURLs := egoTargetURLs(spec)
+	wantNames := spec.Cookies
+	if wantNames == nil {
+		wantNames = []string{}
+	}
+	urlsJSON, err := json.Marshal(targetURLs)
+	if err != nil {
+		return "", err
+	}
+	namesJSON, err := json.Marshal(wantNames)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`
+const targetUrls = %s;
+const wantNames = %s;
+const task = await taskSpace("sb-cred-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7));
+try {
+  const page = task.page("p1");
+  let cookies = [];
+  if (targetUrls.length > 0) {
+    const res = await page.cdp("Network.getCookies", { urls: targetUrls }, { timeout: 10000 });
+    if (res && Array.isArray(res.cookies)) {
+      cookies = res.cookies;
+    }
+  }
+  const missingWanted = wantNames.length > 0 && wantNames.some((n) => !cookies.some((c) => c && c.name === n));
+  if (cookies.length === 0 || missingWanted) {
+    const all = await page.cdp("Network.getAllCookies", undefined, { timeout: 10000 });
+    if (all && Array.isArray(all.cookies) && all.cookies.length > 0) {
+      cookies = all.cookies;
+    }
+  }
+  console.log(%q + JSON.stringify(cookies));
+} finally {
+  try {
+    await task.finish({ keep: [] });
+  } catch (_) {}
+}
+`, urlsJSON, namesJSON, egoCookieOutputMarker), nil
+}
+
+func runEgoCLIExec(ctx context.Context, bin, script string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, bin, "nodejs", "-e", script)
+	cmd.WaitDelay = 2 * time.Second
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
 func fetchViaEgoCLI(ctx context.Context, bin string, spec Spec) (SecretPayload, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	if ctx.Err() != nil {
+		return SecretPayload{}, ctx.Err()
+	}
+	runCtx, cancel := context.WithTimeout(ctx, defaultEgoTimeout)
 	defer cancel()
 
-	// Origin is passed via environment variable SB_CRED_ORIGIN (no JS string interpolation).
-	script := `
-const origin = process.env.SB_CRED_ORIGIN || "";
-const method = origin ? "Network.getCookies" : "Storage.getCookies";
-const params = origin ? { urls: [origin] } : undefined;
-const extract = async () => {
-  if (typeof task !== "undefined" && task && typeof task.cdp === "function") {
-    const res = await task.cdp(method, params);
-    return res && res.cookies ? res.cookies : [];
-  }
-  if (typeof page !== "undefined" && page && typeof page.cdp === "function") {
-    const res = await page.cdp(method, params);
-    return res && res.cookies ? res.cookies : [];
-  }
-  return [];
-};
-const cookies = await extract();
-console.log(JSON.stringify(cookies));
-`
-	cmd := exec.CommandContext(runCtx, bin, "nodejs", "-e", script)
-	cmd.Env = append(os.Environ(), "SB_CRED_ORIGIN="+spec.Origin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return SecretPayload{}, fmt.Errorf("ego-browser cli: %w (%s)", err, strings.TrimSpace(stderr.String()))
+	script, err := buildEgoCookieScript(spec)
+	if err != nil {
+		return SecretPayload{}, err
 	}
-	rawCookies, err := parseCDPCookiesJSON(stdout.Bytes())
+	stdout, stderr, err := runEgoCLICmd(runCtx, bin, script)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+			return SecretPayload{}, fmt.Errorf("cred: ego cookie read cancelled: %w", context.Canceled)
+		}
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+			return SecretPayload{}, fmt.Errorf("cred: ego-browser cli timed out after %s: %w", defaultEgoTimeout, context.DeadlineExceeded)
+		}
+		detail := strings.TrimSpace(string(stderr))
+		if detail == "" {
+			detail = strings.TrimSpace(string(stdout))
+		}
+		if len(detail) > 400 {
+			detail = detail[:400] + "..."
+		}
+		if detail != "" {
+			return SecretPayload{}, fmt.Errorf("cred: ego-browser cli failed: %w (%s)", err, detail)
+		}
+		return SecretPayload{}, fmt.Errorf("cred: ego-browser cli failed: %w", err)
+	}
+	rawCookies, err := parseCDPCookiesJSON(stdout)
 	if err != nil {
 		return SecretPayload{}, err
 	}
@@ -197,9 +325,14 @@ func queryCDPCookiesWS(ctx context.Context, wsURL, targetType, origin string) ([
 	}
 	ws, err := cfg.DialContext(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("cred: CDP cookie read cancelled: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("cred: dial CDP websocket: %w", err)
 	}
 	defer ws.Close()
+	stop := context.AfterFunc(ctx, func() { _ = ws.Close() })
+	defer stop()
 	if dl, ok := ctx.Deadline(); ok {
 		_ = ws.SetDeadline(dl)
 	}
@@ -218,6 +351,9 @@ func queryCDPCookiesWS(ctx context.Context, wsURL, targetType, origin string) ([
 		reqMsg["params"] = params
 	}
 	if err := websocket.JSON.Send(ws, reqMsg); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("cred: CDP cookie read cancelled: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("cred: send CDP %s: %w", method, err)
 	}
 
@@ -233,6 +369,9 @@ func queryCDPCookiesWS(ctx context.Context, wsURL, targetType, origin string) ([
 			} `json:"error"`
 		}
 		if err := websocket.JSON.Receive(ws, &resp); err != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("cred: CDP cookie read cancelled: %w", ctx.Err())
+			}
 			return nil, fmt.Errorf("cred: read CDP response: %w", err)
 		}
 		if resp.ID != 1 {
@@ -246,17 +385,34 @@ func queryCDPCookiesWS(ctx context.Context, wsURL, targetType, origin string) ([
 }
 
 func parseCDPCookiesJSON(raw []byte) ([]cdpCookie, error) {
-	s := strings.TrimSpace(string(raw))
-	if idx := strings.LastIndex(s, "["); idx >= 0 {
-		if end := strings.LastIndex(s, "]"); end > idx {
-			s = s[idx : end+1]
+	norm := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	lines := strings.Split(norm, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, egoCookieOutputMarker) {
+			payload := strings.TrimSpace(strings.TrimPrefix(line, egoCookieOutputMarker))
+			var out []cdpCookie
+			if err := json.Unmarshal([]byte(payload), &out); err != nil {
+				return nil, fmt.Errorf("cred: parse ego cookies output: %w", err)
+			}
+			return out, nil
 		}
 	}
+
+	s := strings.TrimSpace(norm)
 	var out []cdpCookie
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil, fmt.Errorf("cred: parse ego cookies output: %w", err)
+	if json.Unmarshal([]byte(s), &out) == nil {
+		return out, nil
 	}
-	return out, nil
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			if json.Unmarshal([]byte(line), &out) == nil {
+				return out, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("cred: parse ego cookies output: invalid JSON payload")
 }
 
 func finalizeCDPCookies(spec Spec, provider string, raw []cdpCookie) (SecretPayload, error) {
@@ -277,9 +433,22 @@ func finalizeCDPCookies(spec Spec, provider string, raw []cdpCookie) (SecretPayl
 			SameSite: c.SameSite,
 		})
 	}
-	selected := spec.SelectCookies(converted, spec.Origin != "" || len(spec.effectiveDomains()) > 0)
+	hasScope := spec.Origin != "" || len(spec.effectiveDomains()) > 0
+	selected := spec.SelectCookies(converted, hasScope)
+	if len(selected) == 0 && len(spec.Cookies) > 0 && hasScope {
+		// Retry without domain filtering when caller named explicit SSO cookies
+		// that may live on a separate IdP/auth domain.
+		selected = spec.SelectCookies(converted, false)
+	}
 	if len(selected) == 0 {
-		return SecretPayload{}, fmt.Errorf("cred: no matching cookies found in %s", provider)
+		target := spec.Origin
+		if target == "" && len(spec.effectiveDomains()) > 0 {
+			target = strings.Join(spec.effectiveDomains(), ",")
+		}
+		if target == "" {
+			target = "all"
+		}
+		return SecretPayload{}, fmt.Errorf("cred: no matching cookies found in %s for %s (inspected %d cookies)", provider, target, len(raw))
 	}
 	return SecretPayload{
 		Type:      TypeCookie,
